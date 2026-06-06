@@ -37,7 +37,7 @@ if [ "$EUID" -eq 0 ]; then
 
     # Coreutils
     cp $TARGET_DIR/ls         $MOUNT/bin/ls
-    cp $TARGET_DIR/cat        $MOuck/bin/cat
+    cp $TARGET_DIR/cat        $MOUNT/bin/cat
     cp $TARGET_DIR/echo       $MOUNT/bin/echo
     cp $TARGET_DIR/mkdir      $MOUNT/bin/mkdir
     cp $TARGET_DIR/rm         $MOUNT/bin/rm

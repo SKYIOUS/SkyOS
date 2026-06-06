@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsky::{aethos_main, println, ai, io};
+use libsarga::{sarga_main, println, ai, io};
 use alloc::string::String;
 
 fn main() -> i32 {
@@ -31,4 +31,4 @@ fn main() -> i32 {
     0
 }
 
-aethos_main!(main);
+sarga_main!(main);
