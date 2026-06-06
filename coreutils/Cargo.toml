@@ -1,0 +1,119 @@
+[package]
+name = "coreutils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libsarga = { path = "../libsarga" }
+
+[[bin]]
+name = "cat"
+path = "src/cat.rs"
+
+[[bin]]
+name = "ls"
+path = "src/ls.rs"
+
+[[bin]]
+name = "echo"
+path = "src/echo.rs"
+
+[[bin]]
+name = "mkdir"
+path = "src/mkdir.rs"
+
+[[bin]]
+name = "rm"
+path = "src/rm.rs"
+
+[[bin]]
+name = "cp"
+path = "src/cp.rs"
+
+[[bin]]
+name = "mv"
+path = "src/mv.rs"
+
+[[bin]]
+name = "grep"
+path = "src/grep.rs"
+
+[[bin]]
+name = "find"
+path = "src/find.rs"
+
+[[bin]]
+name = "head"
+path = "src/head.rs"
+
+[[bin]]
+name = "wc"
+path = "src/wc.rs"
+
+[[bin]]
+name = "sort"
+path = "src/sort.rs"
+
+[[bin]]
+name = "env"
+path = "src/env.rs"
+
+[[bin]]
+name = "kill"
+path = "src/kill.rs"
+
+[[bin]]
+name = "ps"
+path = "src/ps.rs"
+
+[[bin]]
+name = "top"
+path = "src/top.rs"
+
+[[bin]]
+name = "df"
+path = "src/df.rs"
+
+[[bin]]
+name = "du"
+path = "src/du.rs"
+
+[[bin]]
+name = "uname"
+path = "src/uname.rs"
+
+[[bin]]
+name = "date"
+path = "src/date.rs"
+
+[[bin]]
+name = "sleep"
+path = "src/sleep.rs"
+
+[[bin]]
+name = "true"
+path = "src/true.rs"
+
+[[bin]]
+name = "false"
+path = "src/false.rs"
+
+[[bin]]
+name = "hexdump"
+path = "src/hexdump.rs"
+
+[[bin]]
+name = "od"
+path = "src/od.rs"
+
+[[bin]]
+name = "dd"
+path = "src/dd.rs"
+
+[[bin]]
+name = "lspci"
+path = "src/lspci.rs"
+
+[[bin]]
+name = "ping"
+path = "src/ping.rs"

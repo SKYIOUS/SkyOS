@@ -1,0 +1,19 @@
+[package]
+name = "nettools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libsarga = { path = "../libsarga" }
+
+[[bin]]
+name = "ifconfig"
+path = "src/ifconfig.rs"
+
+[[bin]]
+name = "curl"
+path = "src/curl.rs"
+
+[[bin]]
+name = "nc"
+path = "src/nc.rs"

@@ -1,0 +1,17 @@
+target/
+.obsidian/
+
+# Build artifacts
+*.iso
+*.img
+staging/bin/*
+staging/etc/*
+!staging/etc/init.cfg
+disk/aethos.img
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
