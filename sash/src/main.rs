@@ -22,6 +22,7 @@ fn init_env() {
             if let Some(env) = env_slot.as_mut() {
                 env.push(String::from("PATH=/bin:/usr/bin"));
                 env.push(String::from("HOME=/home/user"));
+                env.push(String::from("PWD=/"));
                 env.push(String::from("SHELL=/bin/sash"));
                 env.push(String::from("TERM=vt100"));
             }
@@ -101,9 +102,13 @@ sarga_main!(user_main);
 fn user_main() {
     init_env();
     io::write_all(1, b"Sarga Shell (sash) v0.2.0\n").ok();
+    io::write_all(1, b"Type help for commands. Use pwd, cd, export, unset, and ai.\n").ok();
     let mut input_buffer = String::new();
     loop {
-        io::write_all(1, b"sash> ").ok();
+        let prompt_dir = get_env_val("PWD").unwrap_or_else(|| String::from("/"));
+        io::write_all(1, b"sash[").ok();
+        io::write_all(1, prompt_dir.as_bytes()).ok();
+        io::write_all(1, b"]> ").ok();
         let mut buf = [0u8; 1024];
         match io::read(0, &mut buf) {
             Ok(0) => break,
@@ -261,6 +266,7 @@ fn execute_single(parts: &[String]) {
             io::write_all(1, b"  help       - Show this help\n").ok();
             io::write_all(1, b"  exit       - Exit the shell\n").ok();
             io::write_all(1, b"  cd <dir>   - Change directory\n").ok();
+            io::write_all(1, b"  pwd        - Print current directory\n").ok();
             io::write_all(1, b"  export     - Set env var (name=value)\n").ok();
             io::write_all(1, b"  unset      - Unset env var\n").ok();
             io::write_all(1, b"  env        - List environment\n").ok();
@@ -276,7 +282,14 @@ fn execute_single(parts: &[String]) {
                 io::write_all(1, b"cd: ").ok();
                 io::write_all(1, dir.as_bytes()).ok();
                 io::write_all(1, b": no such directory\n").ok();
+            } else {
+                set_env("PWD", dir);
             }
+        }
+        "pwd" => {
+            let cwd = get_env_val("PWD").unwrap_or_else(|| String::from("/"));
+            io::write_all(1, cwd.as_bytes()).ok();
+            io::write_all(1, b"\n").ok();
         }
         "export" => {
             if parts.len() < 2 {
