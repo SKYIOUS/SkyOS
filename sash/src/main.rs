@@ -270,6 +270,7 @@ fn execute_single(parts: &[String]) {
             io::write_all(1, b"  export     - Set env var (name=value)\n").ok();
             io::write_all(1, b"  unset      - Unset env var\n").ok();
             io::write_all(1, b"  env        - List environment\n").ok();
+            io::write_all(1, b"  date       - Print current date and time\n").ok();
             io::write_all(1, b"  ai <int>   - Query VahiAI\n").ok();
             io::write_all(1, b"  [cmd]      - Execute system command\n").ok();
             io::write_all(1, b"  Pipes:     cmd1 | cmd2\n").ok();
