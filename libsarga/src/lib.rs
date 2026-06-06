@@ -13,13 +13,16 @@ pub mod sync;
 pub mod start;
 pub mod errno;
 pub mod stdio;
+pub mod args;
+pub mod net;
 
 #[macro_export]
 macro_rules! sarga_main {
     ($main_fn:path) => {
         #[no_mangle]
         pub extern "Rust" fn main() -> i32 {
-            $main_fn()
+            $main_fn();
+            0
         }
     };
 }

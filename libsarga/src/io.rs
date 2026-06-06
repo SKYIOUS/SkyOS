@@ -53,6 +53,9 @@ macro_rules! print {
 }
 #[macro_export]
 macro_rules! println {
-    () => { $crate::print!("\n") };
-    ($($arg:tt)*) => { $crate::io::print_str(&$crate::alloc::format!("{}\n", $($arg)*)) }
+    () => { $crate::io::print_str("\n") };
+    ($($arg:tt)*) => {{
+        $crate::io::print_str(&$crate::alloc::format!($($arg)*));
+        $crate::io::print_str("\n")
+    }}
 }

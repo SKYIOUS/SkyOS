@@ -17,3 +17,11 @@ path = "src/curl.rs"
 [[bin]]
 name = "nc"
 path = "src/nc.rs"
+
+[[bin]]
+name = "echod"
+path = "src/echod.rs"
+
+[[bin]]
+name = "resolve"
+path = "src/resolve.rs"
