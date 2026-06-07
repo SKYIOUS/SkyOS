@@ -1,34 +1,22 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, ai, io};
-use alloc::string::String;
+use libsarga::sarga_main;
+use libsarga::io;
+use libsarga::println;
 
-fn main() -> i32 {
-    println!("Aethos SkyAI CLI");
-    println!("Type 'exit' to quit.");
-    
-    let mut buf = [0u8; 1024];
+fn user_main() {
     loop {
-        libsky::print!("ai> ");
-        match io::read(0, &mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                let input = core::str::from_utf8(&buf[..n]).unwrap_or("").trim();
-                if input == "exit" {
-                    break;
-                }
-                if input.is_empty() { continue; }
-                
-                match ai::query(input) {
-                    Ok(resp) => println!("{}", resp),
-                    Err(e) => println!("AI Error: {}", e),
-                }
-            }
-            Err(_) => break,
+        io::write_all(1, b"ai> ").ok();
+        let mut input = [0u8; 512];
+        let n = io::read(0, &mut input).unwrap_or(0);
+        if n == 0 { break; }
+        let s = core::str::from_utf8(&input[..n]).unwrap_or("").trim();
+        if s.is_empty() { continue; }
+        match libsarga::ai::query(s) {
+            Ok(resp) => println!("{}", resp),
+            Err(e) => println!("AI Error: {}", e),
         }
     }
-    0
 }
-
-sarga_main!(main);
+sarga_main!(user_main);

@@ -1,0 +1,6 @@
+[unstable]
+build-std = ["core", "alloc"]
+
+[build]
+target = "x86_64-sarga.json"
+rustflags = ["-C", "panic=abort"]

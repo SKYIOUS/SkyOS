@@ -1,10 +1,7 @@
 #![no_std]
 #![no_main]
-extern crate alloc;
-use libsarga::{sarga_main, println};
+use libsarga::sarga_main;
 
-fn user_main() {
-
-}
+fn user_main() { libsarga::process::exit(1); }
 
 sarga_main!(user_main);
