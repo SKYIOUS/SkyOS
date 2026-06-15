@@ -17,6 +17,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [How This Project Was Built](#how-this-project-was-built)
 - [Architecture](#architecture)
 - [Application Suite](#application-suite)
 - [Core Utilities](#core-utilities)
@@ -43,6 +44,25 @@
 - **Multi-architecture**: x86_64 and aarch64 userspace targets
 
 SkyOS runs on top of the **Vahi kernel** -- a monolithic Rust kernel with 90+ syscalls, 7 filesystems, 12+ drivers, networking, eBPF, and GUI compositor.
+
+## How This Project Was Built
+>
+> The vast majority of this codebase was generated with the assistance of AI (large language models).
+> This allowed a single developer to create an entire OS userland from scratch — something that
+> would normally require a team of engineers over many years.
+>
+> **We are looking for human contributors.** If you understand Rust, operating systems, or any part
+> of this codebase — whether you wrote none of it or all of it — your help is needed and welcome.
+> We are actively seeking people to:
+>
+> - Review the code for correctness, security, and performance
+> - Fix bugs, edge cases, and incomplete implementations
+> - Refactor AI-generated code into idiomatic, maintainable Rust
+> - Add tests, documentation, and missing features
+> - Help transition this from an AI-driven prototype to a community-maintained project
+>
+> No contribution is too small. Open an issue, submit a PR, or start a discussion.
+> See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ---
 
