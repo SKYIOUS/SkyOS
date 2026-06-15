@@ -1,0 +1,11 @@
+[package]
+name = "skyfiles"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "skyfiles"
+path = "src/main.rs"
+
+[dependencies]
+libsarga = { path = "../libsarga" }

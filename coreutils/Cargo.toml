@@ -117,3 +117,139 @@ path = "src/lspci.rs"
 [[bin]]
 name = "ping"
 path = "src/ping.rs"
+
+[[bin]]
+name = "mkfs_skyfs"
+path = "src/mkfs_skyfs.rs"
+
+[[bin]]
+name = "login"
+path = "src/login.rs"
+
+[[bin]]
+name = "passwd"
+path = "src/passwd.rs"
+
+[[bin]]
+name = "chmod"
+path = "src/chmod.rs"
+
+[[bin]]
+name = "chown"
+path = "src/chown.rs"
+
+[[bin]]
+name = "id"
+path = "src/id.rs"
+
+[[bin]]
+name = "whoami"
+path = "src/whoami.rs"
+
+[[bin]]
+name = "su"
+path = "src/su.rs"
+
+[[bin]]
+name = "ln"
+path = "src/ln.rs"
+
+[[bin]]
+name = "readlink"
+path = "src/readlink.rs"
+
+[[bin]]
+name = "tee"
+path = "src/tee.rs"
+
+[[bin]]
+name = "which"
+path = "src/which.rs"
+
+[[bin]]
+name = "basename"
+path = "src/basename.rs"
+
+[[bin]]
+name = "dirname"
+path = "src/dirname.rs"
+
+[[bin]]
+name = "xargs"
+path = "src/xargs.rs"
+
+[[bin]]
+name = "sync"
+path = "src/sync.rs"
+
+[[bin]]
+name = "hostname"
+path = "src/hostname.rs"
+
+[[bin]]
+name = "uptime"
+path = "src/uptime.rs"
+
+[[bin]]
+name = "free"
+path = "src/free.rs"
+
+[[bin]]
+name = "stat"
+path = "src/stat.rs"
+
+[[bin]]
+name = "touch"
+path = "src/touch.rs"
+
+[[bin]]
+name = "cut"
+path = "src/cut.rs"
+
+[[bin]]
+name = "tr"
+path = "src/tr.rs"
+
+[[bin]]
+name = "uniq"
+path = "src/uniq.rs"
+
+[[bin]]
+name = "diff"
+path = "src/diff.rs"
+
+[[bin]]
+name = "tac"
+path = "src/tac.rs"
+
+[[bin]]
+name = "nl"
+path = "src/nl.rs"
+
+[[bin]]
+name = "sed"
+path = "src/sed.rs"
+
+[[bin]]
+name = "awk"
+path = "src/awk.rs"
+
+[[bin]]
+name = "patch"
+path = "src/patch.rs"
+
+[[bin]]
+name = "tar"
+path = "src/tar.rs"
+
+[[bin]]
+name = "gzip"
+path = "src/gzip.rs"
+
+[[bin]]
+name = "mount"
+path = "src/mount.rs"
+
+[[bin]]
+name = "umount"
+path = "src/umount.rs"

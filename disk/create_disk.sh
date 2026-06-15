@@ -29,7 +29,7 @@ if [ "$EUID" -eq 0 ]; then
     mkdir -p $MOUNT/{bin,sbin,lib,etc,tmp,proc,dev,home,usr/bin,usr/lib,var/log}
 
     # Copy files
-    TARGET_DIR="target/x86_64-unknown-none/release"
+    TARGET_DIR="target/x86_64-sarga/release"
     cp $TARGET_DIR/init       $MOUNT/sbin/init
     cp $TARGET_DIR/ash        $MOUNT/bin/ash
     cp $TARGET_DIR/ade        $MOUNT/bin/ade

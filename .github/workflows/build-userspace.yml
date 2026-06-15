@@ -1,0 +1,26 @@
+name: Build Userspace
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly
+        targets: x86_64-sarga.json
+        components: rust-src
+
+    - name: Build all userspace crates
+      run: cargo build --target x86_64-sarga.json

@@ -1,13 +1,12 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, ai, io, syscall::*};
-use alloc::string::String;
+use libsarga::{sarga_main, println, io, syscall::*};
 
-fn update_proc_file(path: &str, query: &str) {
-    if let Ok(info) = ai::query(query) {
-        if let Ok(fd) = io::open(path, 0x2 | 0x40) { // O_RDWR | O_CREAT
-            let _ = io::write(fd, info.as_bytes());
+fn copy_ctl_to_proc(ctl_path: &str, proc_path: &str) {
+    if let Ok(data) = io::read_to_string(ctl_path) {
+        if let Ok(fd) = io::open(proc_path, 0x2 | 0x40) {
+            let _ = io::write_all(fd, data.as_bytes());
             let _ = io::close(fd);
         }
     }
@@ -15,23 +14,20 @@ fn update_proc_file(path: &str, query: &str) {
 
 fn user_main() {
     println!("Sarga /proc daemon (procd) started");
-    
-    // Create /proc structure
-    let _ = io::open("/proc/cpuinfo", 0x40);
-    let _ = io::open("/proc/meminfo", 0x40);
-    let _ = io::open("/proc/uptime", 0x40);
-    let _ = io::open("/proc/version", 0x40);
 
     loop {
-        // Populate system info using the VahiAI bridge
-        update_proc_file("/proc/cpuinfo", "report cpu model, cores, and MHz raw format");
-        update_proc_file("/proc/meminfo", "report memory usage raw MemTotal MemFree MemAvailable Cached");
-        update_proc_file("/proc/uptime", "report system uptime since boot in seconds");
-        update_proc_file("/proc/version", "report kernel version string");
-        
-        // Sleep for 5 seconds between updates (syscall 35 nanosleep)
+        // Copy real kernel data from /ctl to /proc
+        copy_ctl_to_proc("/ctl/sys/cpu/info", "/proc/cpuinfo");
+        copy_ctl_to_proc("/ctl/sys/mem/total", "/proc/meminfo");
+        copy_ctl_to_proc("/ctl/kernel/uptime", "/proc/uptime");
+        copy_ctl_to_proc("/ctl/kernel/version", "/proc/version");
+        copy_ctl_to_proc("/ctl/proc/list", "/proc/self/status");
+        copy_ctl_to_proc("/ctl/sys/net/eth0/addr", "/proc/net/if_inet6");
+        copy_ctl_to_proc("/ctl/sys/net/stat", "/proc/net/sockstat");
+
+        // Sleep 2 seconds between updates
         unsafe {
-            let req = [5u64, 0u64]; // 5 seconds, 0 nanoseconds
+            let req = [2u64, 0u64];
             syscall2(35, req.as_ptr() as u64, 0);
         }
     }

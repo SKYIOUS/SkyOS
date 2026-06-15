@@ -4,12 +4,30 @@ SECTIONS {
     . = 0x400000;
 
     .text : {
-        *(.text._start)
+        KEEP(*(.text._start))
         *(.text .text.*)
     }
 
     .rodata : {
         *(.rodata .rodata.*)
+    }
+
+    .data.rel.ro : {
+        *(.data.rel.ro .data.rel.ro.*)
+    }
+
+    .dynamic : {
+        *(.dynamic)
+    }
+
+    .got : {
+        *(.got)
+        *(.got.plt)
+    }
+
+    .plt : {
+        *(.plt)
+        *(.plt.*)
     }
 
     .data : {
@@ -24,5 +42,7 @@ SECTIONS {
     /DISCARD/ : {
         *(.note.gnu.property)
         *(.comment)
+        *(.ARM.exidx)
+        *(.note.GNU-stack)
     }
 }

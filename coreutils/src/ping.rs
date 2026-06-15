@@ -2,7 +2,6 @@
 #![no_main]
 extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
-use alloc::string::String;
 
 fn user_main() {
     let target = if args::argc() > 1 {

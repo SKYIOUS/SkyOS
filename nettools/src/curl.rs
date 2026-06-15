@@ -5,19 +5,21 @@ use alloc::vec::Vec;
 use libsarga::{sarga_main, println, io, net, args};
 
 fn resolve_host(host: &str) -> Option<[u8; 4]> {
-    if let Ok(fd) = io::open(host, 0) {
-        let _ = io::close(fd);
-    }
+    // Try dotted-quad IP first
     let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() == 4 {
-        Some([
+    if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
+        return Some([
             parts[0].parse().unwrap_or(0),
             parts[1].parse().unwrap_or(0),
             parts[2].parse().unwrap_or(0),
             parts[3].parse().unwrap_or(0),
-        ])
-    } else {
-        None
+        ]);
+    }
+    // Fall back to kernel DNS resolver
+    let mut ip = [0u8; 4];
+    match net::resolve(host, &mut ip) {
+        Ok(()) => Some(ip),
+        Err(_) => None,
     }
 }
 

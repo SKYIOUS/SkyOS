@@ -10,7 +10,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "aicli"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "calculator"
 version = "0.1.0"
 dependencies = [
  "libsarga",
@@ -24,6 +37,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "font8x8"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e"
+
+[[package]]
 name = "init"
 version = "0.1.0"
 dependencies = [
@@ -33,6 +52,27 @@ dependencies = [
 [[package]]
 name = "libsarga"
 version = "0.1.0"
+dependencies = [
+ "font8x8",
+ "miniz_oxide",
+ "ttf-parser",
+]
+
+[[package]]
+name = "login-manager"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+]
 
 [[package]]
 name = "nettools"
@@ -49,7 +89,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "sarga-term"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "sash"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skyd"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skyedit"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skyfiles"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skysettings"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skyview"
 version = "0.1.0"
 dependencies = [
  "libsarga",
@@ -61,3 +143,9 @@ version = "0.1.0"
 dependencies = [
  "libsarga",
 ]
+
+[[package]]
+name = "ttf-parser"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17f77d76d837a7830fe1d4f12b7b4ba4192c1888001c7164257e4bc6d21d96b4"

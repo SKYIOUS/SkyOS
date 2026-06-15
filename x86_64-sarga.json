@@ -22,7 +22,8 @@
     "tier": 2
   },
   "panic-strategy": "abort",
-  "plt-by-default": false,
+  "plt-by-default": true,
+  "dynamic-linking": true,
   "position-independent-executables": true,
   "relro-level": "full",
   "rustc-abi": "x86-softfloat",

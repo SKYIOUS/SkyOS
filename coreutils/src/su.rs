@@ -1,0 +1,136 @@
+#![no_std]
+#![no_main]
+
+extern crate alloc;
+extern crate libsarga;
+
+use libsarga::io::{self, open, read, close};
+use libsarga::process::{geteuid, setuid, setgid, execve};
+use alloc::string::ToString;
+
+fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, i64> {
+    let fd = open(path, 0)?;
+    let mut buf = alloc::vec::Vec::new();
+    let mut tmp = [0u8; 512];
+    loop {
+        let n = read(fd, &mut tmp)?;
+        if n == 0 { break; }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    close(fd)?;
+    Ok(buf)
+}
+
+fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, i64> {
+    let mut buf = alloc::vec::Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        let n = read(fd, &mut byte)?;
+        if n == 0 { break; }
+        if byte[0] == b'\n' || byte[0] == b'\r' { break; }
+        buf.push(byte[0]);
+    }
+    Ok(buf)
+}
+
+fn lookup_user(username: &str) -> Option<(u32, u32, alloc::vec::Vec<u8>, alloc::vec::Vec<u8>)> {
+    let data = read_whole_file("/etc/passwd\0").ok()?;
+    for line in data.split(|&b| b == b'\n') {
+        if line.is_empty() { continue; }
+        let mut parts = line.splitn(7, |&b| b == b':');
+        let name = parts.next()?;
+        if name == username.as_bytes() {
+            let _pw_passwd = parts.next()?;
+            let uid_str = parts.next()?;
+            let gid_str = parts.next()?;
+            let _gecos = parts.next()?;
+            let home = parts.next()?;
+            let shell = parts.next()?;
+            let uid = core::str::from_utf8(uid_str).ok()?.parse::<u32>().ok()?;
+            let gid = core::str::from_utf8(gid_str).ok()?.parse::<u32>().ok()?;
+            return Some((uid, gid, home.to_vec(), shell.to_vec()));
+        }
+    }
+    None
+}
+
+fn hex_nibble(v: u8) -> u8 {
+    if v < 10 { b'0' + v } else { b'a' + v - 10 }
+}
+
+fn verify_password(username: &str, password: &str) -> bool {
+    let data = match read_whole_file("/etc/shadow\0") {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let mut attempt_hex = alloc::vec::Vec::new();
+    for &b in password.as_bytes() {
+        attempt_hex.push(hex_nibble(b >> 4));
+        attempt_hex.push(hex_nibble(b & 0xf));
+    }
+    for line in data.split(|&b| b == b'\n') {
+        if line.is_empty() { continue; }
+        let mut parts = line.splitn(2, |&b| b == b':');
+        let name = parts.next().unwrap_or(b"");
+        if name == username.as_bytes() {
+            let rest = parts.next().unwrap_or(b"");
+            if rest.starts_with(b"PLAINTEXT-") {
+                return &rest[9..] == attempt_hex.as_slice();
+            }
+            return false;
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    let argc = libsarga::args::argc();
+
+    if argc < 2 {
+        io::print_str("Usage: su [username]\n");
+        libsarga::process::exit(0);
+    }
+
+    let target_user = libsarga::args::get(1).unwrap_or("root");
+    let (uid, gid, home, shell) = match lookup_user(target_user) {
+        Some(v) => v,
+        None => {
+            io::print_str(&alloc::format!("su: unknown user: {}\n", target_user));
+            libsarga::process::exit(1);
+        }
+    };
+
+    let euid = geteuid();
+    if euid != 0 {
+        io::print_str("Password: ");
+        let pw_bytes = match read_line(0) {
+            Ok(b) => b,
+            Err(_) => libsarga::process::exit(1),
+        };
+        let password = core::str::from_utf8(&pw_bytes).unwrap_or("");
+        if !verify_password(target_user, password) {
+            io::print_str("\nsu: incorrect password\n");
+            libsarga::process::exit(1);
+        }
+        io::print_str("\n");
+    }
+
+    setgid(gid as u64);
+    setuid(uid as u64);
+
+    let shell_name = core::str::from_utf8(&shell).unwrap_or("/bin/sash");
+    let home_dir = core::str::from_utf8(&home).unwrap_or("/");
+
+    let env = [
+        alloc::format!("HOME={}", home_dir),
+        alloc::format!("USER={}", target_user),
+        alloc::format!("LOGNAME={}", target_user),
+        alloc::format!("SHELL={}", shell_name),
+        "TERM=xterm-256color".to_string(),
+    ];
+    let env_refs: alloc::vec::Vec<&str> = env.iter().map(|s: &alloc::string::String| s.as_str()).collect();
+
+    execve(shell_name, &[], &env_refs);
+    libsarga::process::exit(1);
+}

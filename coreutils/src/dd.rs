@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::string::String;
 use libsarga::{sarga_main, println, io, args};
 

@@ -1,5 +1,21 @@
 use crate::syscall::*;
 
+pub fn getuid() -> u64 { unsafe { syscall0(301) as u64 } }
+pub fn geteuid() -> u64 { unsafe { syscall0(305) as u64 } }
+pub fn getgid() -> u64 { unsafe { syscall0(302) as u64 } }
+pub fn getegid() -> u64 { unsafe { syscall0(306) as u64 } }
+pub fn setuid(uid: u64) -> i64 { unsafe { syscall1(303, uid) } }
+pub fn setgid(gid: u64) -> i64 { unsafe { syscall1(304, gid) } }
+
+pub fn signal(sig: u64, handler: u64) -> i64 {
+    // SYS_RT_SIGACTION = 13, sets handler, 0 for oldact
+    unsafe { syscall3(13, sig, 0, handler) }
+}
+
+pub fn kill(pid: i64, sig: u32) -> i64 {
+    unsafe { syscall2(62, pid as u64, sig as u64) }
+}
+
 pub fn fork() -> Result<u64, i64> {
     let r = unsafe { syscall0(57) };
     if r < 0 { Err(-r) } else { Ok(r as u64) }

@@ -9,6 +9,14 @@ members = [
     "nettools",
     "aicli",
     "proc",
+    "sarga-term",
+    "skyedit",
+    "calculator",
+    "skyfiles",
+    "skysettings",
+    "skyd",
+    "skyview",
+    "login-manager",
 ]
 resolver = "2"
 

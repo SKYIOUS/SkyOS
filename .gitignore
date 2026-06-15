@@ -4,10 +4,20 @@ target/
 # Build artifacts
 *.iso
 *.img
+*.vdi
+*.log
+initrd.tar
+disk/aethos.img
 staging/bin/*
 staging/etc/*
 !staging/etc/init.cfg
-disk/aethos.img
+
+# AI / IDE config
+.opencode/
+
+# Planning / prompt docs
+*_PROMPT_v*.md
+plan.md
 
 # Editor files
 *.swp
@@ -15,3 +25,5 @@ disk/aethos.img
 *~
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/

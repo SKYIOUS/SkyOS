@@ -6,6 +6,7 @@ use libsarga::io;
 use libsarga::println;
 
 fn user_main() {
+    println!("VahiAI v0.3 — Type 'help' for commands.");
     loop {
         io::write_all(1, b"ai> ").ok();
         let mut input = [0u8; 512];
@@ -13,9 +14,9 @@ fn user_main() {
         if n == 0 { break; }
         let s = core::str::from_utf8(&input[..n]).unwrap_or("").trim();
         if s.is_empty() { continue; }
-        match libsarga::ai::query(s) {
+        match libsarga::vahiai::handle_intent(s) {
             Ok(resp) => println!("{}", resp),
-            Err(e) => println!("AI Error: {}", e),
+            Err(e) => println!("Error: {}", e),
         }
     }
 }

@@ -1,0 +1,37 @@
+{
+  "arch": "aarch64",
+  "os": "none",
+  "env": "sarga",
+  "cpu": "generic",
+  "crt-objects-fallback": "false",
+  "data-layout": "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+  "disable-redzone": true,
+  "features": "+soft-float",
+  "llvm-target": "aarch64-unknown-none",
+  "linker-flavor": "ld.lld",
+  "linker": "rust-lld",
+  "pre-link-args": {
+    "ld.lld": ["-T", "aarch64-sarga.ld"]
+  },
+  "max-atomic-width": 64,
+  "metadata": {
+    "description": "Freestanding/bare-metal aarch64 softfloat",
+    "host_tools": false,
+    "std": false,
+    "tier": 2
+  },
+  "panic-strategy": "abort",
+  "plt-by-default": true,
+  "dynamic-linking": true,
+  "position-independent-executables": true,
+  "relro-level": "full",
+  "stack-probes": {
+    "kind": "inline"
+  },
+  "static-position-independent-executables": true,
+  "supported-sanitizers": [
+    "kcfi",
+    "kernel-address"
+  ],
+  "target-pointer-width": 64
+}

@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use alloc::vec::Vec;
-use libsarga::{sarga_main, println, io, net, args};
+use libsarga::{sarga_main, println, net, args};
 
 fn user_main() {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
