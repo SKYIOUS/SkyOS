@@ -96,42 +96,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "sargad"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sargaedit"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sargafiles"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sargasettings"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sargaview"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "sash"
-version = "0.1.0"
-dependencies = [
- "libsarga",
-]
-
-[[package]]
-name = "skyd"
-version = "0.1.0"
-dependencies = [
- "libsarga",
-]
-
-[[package]]
-name = "skyedit"
-version = "0.1.0"
-dependencies = [
- "libsarga",
-]
-
-[[package]]
-name = "skyfiles"
-version = "0.1.0"
-dependencies = [
- "libsarga",
-]
-
-[[package]]
-name = "skysettings"
-version = "0.1.0"
-dependencies = [
- "libsarga",
-]
-
-[[package]]
-name = "skyview"
 version = "0.1.0"
 dependencies = [
  "libsarga",

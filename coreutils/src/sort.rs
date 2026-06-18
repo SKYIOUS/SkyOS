@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use libsarga::{sarga_main, println, io, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut lines = Vec::new();
     let mut buf = [0u8; 1024];
     let fd = if args::argc() > 1 {
@@ -30,6 +30,8 @@ fn user_main() {
     if fd != 0 { let _ = io::close(fd); }
     lines.sort();
     for line in &lines { println!("{}", line); }
+    0
+    0
 }
 
 sarga_main!(user_main);

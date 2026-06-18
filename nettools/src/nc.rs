@@ -4,17 +4,17 @@ extern crate alloc;
 use alloc::vec::Vec;
 use libsarga::{sarga_main, println, io, net, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 3 {
         println!("Usage: nc <host> <port>");
-        return;
+        return 0;
     }
     let host = args::get(1).unwrap_or("10.0.2.2");
     let port_str = args::get(2).unwrap_or("80");
     let port: u16 = port_str.parse().unwrap_or(80);
 
     let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() != 4 { println!("nc: bad address"); return; }
+    if parts.len() != 4 { println!("nc: bad address"); return 0; }
     let ip: [u8; 4] = [
         parts[0].parse().unwrap_or(10),
         parts[1].parse().unwrap_or(0),
@@ -45,12 +45,14 @@ fn user_main() {
                         }
                     }
                     let _ = net::close(fd);
+                    0
                 }
-                Err(e) => println!("nc: connect failed: {}", e),
+                Err(e) => { println!("nc: connect failed: {}", e); 1 }
             }
         }
-        Err(e) => println!("nc: socket failed: {}", e),
+        Err(e) => { println!("nc: socket failed: {}", e); 1 }
     }
+    0
 }
 
 sarga_main!(user_main);

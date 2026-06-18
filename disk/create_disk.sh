@@ -1,11 +1,11 @@
 #!/bin/bash
-# disk/create_disk.sh — builds the Aethos OS disk image
+# disk/create_disk.sh — builds the SARGA OS disk image
 set -e
 
-DISK="aethos.img"
+DISK="sarga.img"
 # Need root to mount loop, using a local mount or just skipping if not root for demonstration
 if [ "$EUID" -ne 0 ]; then
-  echo "Warning: please run as root to mount and build aethos.img."
+  echo "Warning: please run as root to mount and build sarga.img."
   echo "Will create dummy files if cannot mount."
 fi
 
@@ -22,7 +22,7 @@ mkfs.ext2 -F -L "AETHOS" $DISK
 # On windows/wsl we might not be able to mount a loop device easily without proper permissions,
 # so we will just mention it's created. We will assume the build environment has root / loop.
 if [ "$EUID" -eq 0 ]; then
-    MOUNT="/mnt/aethos"
+    MOUNT="/mnt/sarga"
     mkdir -p $MOUNT
     mount -o loop $DISK $MOUNT
 
@@ -31,9 +31,9 @@ if [ "$EUID" -eq 0 ]; then
     # Copy files
     TARGET_DIR="target/x86_64-sarga/release"
     cp $TARGET_DIR/init       $MOUNT/sbin/init
-    cp $TARGET_DIR/ash        $MOUNT/bin/ash
+    cp $TARGET_DIR/sash        $MOUNT/bin/ash
     cp $TARGET_DIR/ade        $MOUNT/bin/ade
-    cp $TARGET_DIR/apkg       $MOUNT/bin/apkg
+    cp $TARGET_DIR/spkg       $MOUNT/bin/apkg
 
     # Coreutils
     cp $TARGET_DIR/ls         $MOUNT/bin/ls
@@ -52,7 +52,7 @@ if [ "$EUID" -eq 0 ]; then
 
     # Configs
     cat > $MOUNT/etc/hostname << 'EOF'
-aethos
+sarga
 EOF
 
     cat > $MOUNT/etc/init.d/network.toml << 'EOF'
@@ -65,4 +65,4 @@ EOF
     umount $MOUNT
 fi
 
-echo "Aethos disk image created: $DISK"
+echo "SARGA OS disk image created: $DISK"

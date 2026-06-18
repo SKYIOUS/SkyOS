@@ -72,7 +72,7 @@ pub fn set_env(name: &str, val: &str) {
             for i in 0..env.len() {
                 if env[i].starts_with(name) && env[i].len() > name.len() && env[i].as_bytes()[name.len()] == b'=' {
                     env[i] = entry;
-                    return;
+                    return 0;
                 }
             }
             env.push(entry);
@@ -118,7 +118,7 @@ pub fn set_alias(name: &str, val: &str) {
     unsafe {
         let tbl = &mut *ALIAS_TABLE.0.get();
         for (k, v) in tbl.iter_mut() {
-            if k == name { *v = val.to_string(); return; }
+            if k == name { *v = val.to_string(); return 0; }
         }
         tbl.push((name.to_string(), val.to_string()));
     }
@@ -213,7 +213,7 @@ pub fn define_function(name: &str, body: &[String]) {
     unsafe {
         let tbl = &mut *FUNC_TABLE.0.get();
         for (k, v) in tbl.iter_mut() {
-            if k == name { *v = body.to_vec(); return; }
+            if k == name { *v = body.to_vec(); return 0; }
         }
         tbl.push((name.to_string(), body.to_vec()));
     }
@@ -311,7 +311,7 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
     input
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     init_env();
 
     unsafe {
@@ -409,4 +409,5 @@ fn read_raw_line() -> String {
         }
     }
     input
+    0
 }

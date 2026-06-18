@@ -12,12 +12,12 @@ const SECTORS_PER_BLOCK: u64 = 8;
 const SKYFS_MAGIC: u64 = 0x315620534B59534B;
 const SKYFS_VERSION: u32 = 1;
 
-fn user_main() {
+fn user_main() -> i32 {
     let dev_path = libsarga::args::get(1).unwrap_or("/dev/sda");
 
     let fd = match io::open(dev_path, 2) {
         Ok(f) => f,
-        Err(e) => { println!("Error: cannot open {}: {}", dev_path, e); return; }
+        Err(e) => { println!("Error: cannot open {}: {}", dev_path, e); return 0; }
     };
 
     let total_blocks: u64 = 65536;
@@ -48,7 +48,7 @@ fn user_main() {
         let start = i as usize * SECTOR_SIZE;
         if io::write(fd, &sb_buf[start..start + SECTOR_SIZE]).is_err() {
             println!("Error writing superblock sector {}", i);
-            return;
+            return 0;
         }
     }
 
@@ -80,12 +80,13 @@ fn user_main() {
         let start = i as usize * SECTOR_SIZE;
         if io::write(fd, &inode_buf[start..start + SECTOR_SIZE]).is_err() {
             println!("Error writing inode block");
-            return;
+            return 0;
         }
     }
 
     io::close(fd).ok();
     println!("SkyFS filesystem created on {}: {} blocks, {} inodes", dev_path, total_blocks, inode_count);
+    0
 }
 
 #[repr(C, packed)]
@@ -101,6 +102,8 @@ struct SkyfsInode {
     mode: u16, uid: u32, gid: u32, size: u64,
     atime: u64, mtime: u64, ctime: u64, links: u32, flags: u32,
     block_count: u64, extent_count: u32, data: [u8; 256],
+    0
+    0
 }
 
 sarga_main!(user_main);

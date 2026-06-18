@@ -6,6 +6,7 @@ extern crate libsarga;
 
 use libsarga::io::{self, open, read, close};
 use libsarga::process::{getuid, geteuid, getgid, getegid};
+use libsarga::sarga_main;
 use alloc::string::ToString;
 
 fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, i64> {
@@ -55,8 +56,7 @@ fn lookup_name_by_gid(gid: u32) -> alloc::string::String {
     alloc::format!("{}", gid)
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let uid = getuid() as u32;
     let euid = geteuid() as u32;
     let gid = getgid() as u32;
@@ -68,5 +68,8 @@ pub extern "C" fn _start() -> ! {
     io::print_str(&alloc::format!("uid={}({}) euid={}({}) gid={}({}) egid={}({})\n",
         uid, uname, euid, lookup_name_by_uid(euid),
         gid, gname, egid, lookup_name_by_gid(egid)));
-    libsarga::process::exit(0);
+    return 0;
+    0
 }
+
+sarga_main!(user_main);

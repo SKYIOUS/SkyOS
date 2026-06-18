@@ -359,8 +359,8 @@ fn builtin_help() -> i64 {
 fn builtin_ai(args: &[String]) -> i64 {
     if args.len() < 2 { println!("Usage: ai <intent> [args...]"); return 1; }
     match libsarga::ai::query(&args[1]) {
-        Ok(resp) => { println!("VahiAI: {}", resp); 0 }
-        Err(_) => { println!("VahiAI: Error"); 1 }
+        Ok(resp) => { println!("SARGAAI: {}", resp); 0 }
+        Err(_) => { println!("SARGAAI: Error"); 1 }
     }
 }
 

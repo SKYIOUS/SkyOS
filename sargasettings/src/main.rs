@@ -77,7 +77,7 @@ fn draw_radio(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, sele
     win.draw_string(x + 22, y + 1, label, theme.text, 0);
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
     let mut settings = Settings::new();
 
@@ -86,7 +86,7 @@ fn user_main() {
 
     let mut win = match Window::create("System Settings", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("skysettings: window failed: {}\n", e)); return; }
+        Err(e) => { io::print_str(&alloc::format!("sargasettings: window failed: {}\n", e)); return 0; }
     };
 
     let mut prev_pressed = false;
@@ -141,7 +141,7 @@ fn user_main() {
                     2 => {
                         // About - copy info button
                         if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= 240 && my < 270 {
-                            clipboard_write(b"SkyOS v0.4.0\nKernel: Vahi\nArch: x86_64\n");
+                            clipboard_write(b"SARGA OS v0.4.0\nKernel: SARGA\nArch: x86_64\n");
                             notify("Copied system info to clipboard", 2000);
                         }
                     }
@@ -232,7 +232,7 @@ fn user_main() {
             }
             2 => {
                 // About
-                win.draw_string(SIDEBAR_W + 16, 12, "About SkyOS", theme.text, 0);
+                win.draw_string(SIDEBAR_W + 16, 12, "About SARGA OS", theme.text, 0);
                 win.draw_line_h(SIDEBAR_W + 16, 32, win_w - SIDEBAR_W - 32, theme.separator);
 
                 // Logo area
@@ -242,8 +242,8 @@ fn user_main() {
 
                 // Info
                 let info_x = SIDEBAR_W + 112;
-                win.draw_string(info_x, 52, "SkyOS v0.4.0", theme.text, 0);
-                win.draw_string(info_x, 72, "Kernel: Vahi", theme.text_secondary, 0);
+                win.draw_string(info_x, 52, "SARGA OS v0.4.0", theme.text, 0);
+                win.draw_string(info_x, 72, "Kernel: SARGA", theme.text_secondary, 0);
                 win.draw_string(info_x, 88, "Arch: x86_64", theme.text_secondary, 0);
                 win.draw_string(info_x, 104, "Shell: SargaSH", theme.text_secondary, 0);
                 win.draw_string(info_x, 120, "Desktop: ADE", theme.text_secondary, 0);
@@ -293,6 +293,7 @@ fn user_main() {
         prev_pressed = pressed;
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
+    0
 }
 
 sarga_main!(user_main);

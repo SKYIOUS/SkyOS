@@ -169,7 +169,7 @@ impl Terminal {
     }
 
     fn put_char(&mut self, c: u8) {
-        if self.cursor >= ROWS * COLS { return; }
+        if self.cursor >= ROWS * COLS { return 0; }
         self.chars[self.cursor] = c;
         self.fg[self.cursor] = self.effective_fg();
         self.bg[self.cursor] = self.effective_bg();
@@ -405,7 +405,7 @@ fn create_tab(theme: &Theme) -> Option<TabPage> {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
     let term_h = (ROWS as u32) * CELL_H + 8;
     let tab_bar_h = TAB_H + 4;
@@ -414,7 +414,7 @@ fn user_main() {
 
     let mut win = match Window::create("sarga-term", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("sarga-term: window failed: {}\n", e)); return; }
+        Err(e) => { io::print_str(&alloc::format!("sarga-term: window failed: {}\n", e)); return 0; }
     };
 
     win.clear(theme.bg_primary);
@@ -426,7 +426,7 @@ fn user_main() {
         pages.push(page);
     } else {
         io::print_str("sarga-term: failed to create initial tab\n");
-        return;
+        return 0;
     }
 
     let mut read_buf = [0u8; 4096];
@@ -598,6 +598,7 @@ fn user_main() {
 
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
+    0
 }
 
 sarga_main!(user_main);

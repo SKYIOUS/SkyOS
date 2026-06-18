@@ -1,10 +1,10 @@
 [package]
-name = "skysettings"
+name = "sargafiles"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "skysettings"
+name = "sargafiles"
 path = "src/main.rs"
 
 [dependencies]

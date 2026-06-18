@@ -3,26 +3,26 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, net, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
     let ip = [10, 0, 2, 15];
 
     let fd = match net::socket(net::AF_INET, net::SOCK_STREAM, 0) {
         Ok(fd) => fd,
-        Err(e) => { println!("echod: socket: {}", e); return; }
+        Err(e) => { println!("echod: socket: {}", e); return 0; }
     };
 
     let addr = net::SockAddrIn::new(ip, port);
     if net::bind(fd, addr.as_bytes()).is_err() {
         println!("echod: bind failed");
         let _ = net::close(fd);
-        return;
+        return 0;
     }
 
     if net::listen(fd, 5).is_err() {
         println!("echod: listen failed");
         let _ = net::close(fd);
-        return;
+        return 0;
     }
 
     println!("echod: listening on {}:{}", "10.0.2.15", port);
@@ -55,6 +55,7 @@ fn user_main() {
             }
         }
     }
+    0
 }
 
 sarga_main!(user_main);

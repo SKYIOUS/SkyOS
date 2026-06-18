@@ -18,7 +18,7 @@ fn read_all_stdin() -> alloc::vec::Vec<u8> {
     data
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut delim = b'\t';
     let mut fields: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
     let mut i = 1;
@@ -49,7 +49,7 @@ fn user_main() {
     }
     if fields.is_empty() {
         io::print_str("Usage: cut -d<delim> -f<fields>\n");
-        return;
+        return 0;
     }
     let data = read_all_stdin();
     let text = alloc::string::String::from_utf8_lossy(&data);
@@ -73,6 +73,8 @@ fn user_main() {
         }
         let _ = io::write(1, b"\n");
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

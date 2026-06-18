@@ -19,7 +19,7 @@ pub struct PngImage {
 }
 
 fn u32_be(data: &[u8], off: usize) -> u32 {
-    if off + 4 > data.len() { return 0; }
+    if off + 4 > data.len() { }
     (data[off] as u32) << 24 | (data[off + 1] as u32) << 16
         | (data[off + 2] as u32) << 8 | data[off + 3] as u32
 }

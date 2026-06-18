@@ -5,7 +5,7 @@ use alloc::string::String;
 use libsarga::{sarga_main, println, io, args};
 
 fn find_dir(dir: &str, name: &str, depth: u32) {
-    if depth > 64 { return; }
+    if depth > 64 { return 0; }
     let mut name_bytes = alloc::vec![0u8; 4096];
     let fd = match io::open(dir, 0) {
         Ok(fd) => fd,
@@ -43,12 +43,15 @@ fn find_dir(dir: &str, name: &str, depth: u32) {
     let _ = io::close(fd);
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let start_dir = if args::argc() > 1 { args::get(1).unwrap_or(".") } else { "." };
     let filter = if args::argc() > 2 { args::get(2).unwrap_or("") } else { "" };
     let sd = String::from(start_dir);
     let fl = String::from(filter);
     find_dir(&sd, &fl, 0);
+
+    0
+    0
 }
 
 sarga_main!(user_main);

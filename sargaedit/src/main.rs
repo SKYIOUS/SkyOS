@@ -61,7 +61,7 @@ impl Editor {
     fn save(&mut self) {
         if self.filename.is_empty() {
             self.status = alloc::string::String::from("No filename!");
-            return;
+            return 0;
         }
         let mut content = alloc::string::String::new();
         for (i, line) in self.lines.iter().enumerate() {
@@ -120,7 +120,7 @@ impl Editor {
         self.modified = true;
     }
 
-    fn handle_key(&mut self, key: u8) {
+    fn handle_key(&mut self, key: u8) -> Option<i32> {
         match self.mode {
             EditMode::Normal => match key {
                 b'j' => { self.cursor_y = (self.cursor_y + 1).min(self.lines.len() - 1); }
@@ -161,14 +161,14 @@ impl Editor {
                 b'd' => { self.status = alloc::string::String::from("Press dd to delete line"); }
                 b':' => { self.mode = EditMode::Command; self.status = alloc::string::String::from(":"); }
                 b'q' => {
-                    if !self.modified { libsarga::process::exit(0); }
+                    if !self.modified { return Some(0); }
                     else { self.status = alloc::string::String::from("Use :q! to quit"); }
                 }
                 b'w' => { self.save(); }
                 _ => {}
             },
             EditMode::Command => match key {
-                0x0A | 0x0D => { self.execute_command(); }
+                0x0A | 0x0D => { return self.execute_command(); }
                 0x7F | 0x08 => { self.status.pop(); }
                 c if c.is_ascii_graphic() || c == b' ' => {
                     self.status.push(c as char);
@@ -176,18 +176,20 @@ impl Editor {
                 _ => {}
             },
         }
+        None
     }
 
-    fn execute_command(&mut self) {
+    fn execute_command(&mut self) -> Option<i32> {
         let cmd = self.status.trim_start_matches(':').trim();
+        let mut result = None;
         match cmd {
             "q" | "quit" => {
-                if !self.modified { libsarga::process::exit(0); }
+                if !self.modified { result = Some(0); }
                 else { self.status = alloc::string::String::from("Modified! Use :q!"); }
             }
-            "q!" => { libsarga::process::exit(0); }
+            "q!" => { result = Some(0); }
             "w" => { self.save(); }
-            "wq" => { self.save(); libsarga::process::exit(0); }
+            "wq" => { self.save(); result = Some(0); }
             s if s.starts_with("w ") => {
                 self.filename = alloc::string::String::from(&s[2..]);
                 self.save();
@@ -199,6 +201,7 @@ impl Editor {
             _ => { self.status = alloc::format!("Unknown: {}", cmd); }
         }
         self.mode = EditMode::Normal;
+        result
     }
 
     fn render(&self, win: &mut Window) {
@@ -245,11 +248,11 @@ impl Editor {
         win.draw_string(pos_x, status_y + 3, &pos, 0xFF888888, 0xFF2D2D2D);
 
         let title = if self.filename.is_empty() {
-            alloc::string::String::from("SkyEdit - [New]")
+            alloc::string::String::from("SARGA Edit - [New]")
         } else if self.modified {
-            alloc::format!("SkyEdit - [{}] *", self.filename)
+            alloc::format!("SARGA Edit - [{}] *", self.filename)
         } else {
-            alloc::format!("SkyEdit - [{}]", self.filename)
+            alloc::format!("SARGA Edit - [{}]", self.filename)
         };
         win.draw_string(8, 4, &title, 0xFFFFFFFF, 0xFF2D2D2D);
 
@@ -287,7 +290,7 @@ fn draw_syntax_highlighted(win: &mut Window, x: u32, y: u32, line: &str) {
         let cmt = &line[cs..];
         draw_tokens(win, x, y, code);
         win.draw_string(x + cs as u32 * 8, y, cmt, C_CMT, C_BG);
-        return;
+        return 0;
     }
     draw_tokens(win, x, y, line);
 }
@@ -341,7 +344,7 @@ fn draw_tokens(win: &mut Window, x: u32, y: u32, s: &str) {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut ed = if args::argc() > 1 {
         let path = args::get(1).unwrap_or("");
         Editor::open(path)
@@ -349,18 +352,18 @@ fn user_main() {
         Editor::new()
     };
 
-    let mut win = match Window::create("SkyEdit", 800, 600) {
+    let mut win = match Window::create("SARGA Edit", 800, 600) {
         Ok(w) => w,
         Err(e) => {
-            io::print_str(&alloc::format!("[skyedit] failed: {}\n", e));
-            return;
+            io::print_str(&alloc::format!("[sargaedit] failed: {}\n", e));
+            return 0;
         }
     };
 
     loop {
         while let Some(key) = win.get_key() {
             match key {
-                0x1B => { libsarga::process::exit(0); }
+                0x1B => { return 0; }
                 0x7F | 0x08 => { ed.delete_char(); }
                 0x0A | 0x0D => {
                     if ed.mode == EditMode::Command {
@@ -428,7 +431,7 @@ fn user_main() {
                 }
                 b'w' if ed.mode == EditMode::Normal => { ed.save(); }
                 b'q' if ed.mode == EditMode::Normal => {
-                    if !ed.modified { libsarga::process::exit(0); }
+                    if !ed.modified { return 0; }
                     else { ed.status = alloc::string::String::from("Modified! Use :q!"); }
                 }
                 c => {
@@ -436,7 +439,7 @@ fn user_main() {
                         if c >= 0x20 && c < 0x7F {
                             ed.insert_char(c as char);
                         } else {
-                            ed.handle_key(c);
+                            if let Some(code) = ed.handle_key(c) { return code; }
                         }
                     }
                 }
@@ -455,6 +458,7 @@ fn user_main() {
         let _ = win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
     }
+    0
 }
 
 sarga_main!(user_main);

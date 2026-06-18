@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, println, args};
 use libsarga::fs;
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 3 {
         println!("Usage: mount [-t fstype] <device> <target>");
         println!("       mount [-t fstype] <target>");
@@ -12,7 +12,7 @@ fn user_main() {
         println!("Filesystems: tmpfs, devfs, ctlfs, ext2");
         println!("If -t omitted, source is mounted with 'ext2' (block device)");
         println!("If source is 'none' or 'tmpfs', use 'tmpfs'");
-        return;
+        return 0;
     }
 
     let mut fstype = "ext2";
@@ -26,7 +26,7 @@ fn user_main() {
 
     if args_start >= args::argc() as usize {
         println!("mount: missing operand");
-        return;
+        return 0;
     }
 
     let source = args::get(args_start).unwrap_or("none");
@@ -39,5 +39,7 @@ fn user_main() {
         Ok(_) => {},
         Err(e) => println!("mount: {}: error {}", target, e),
     }
+    0
+    0
 }
 sarga_main!(user_main);

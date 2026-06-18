@@ -29,7 +29,7 @@ fn human_size(size: u64) -> String {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut long = false;
     let mut all = false;
     let mut human = false;
@@ -48,9 +48,12 @@ fn user_main() {
         else { path = arg; break; }
     }
 
-    let fd = match io::open(path, 0) {
+    let mut path_c = String::from(path);
+    path_c.push('\0');
+
+    let fd = match io::open(&path_c, 0) {
         Ok(fd) => fd,
-        Err(_) => { println!("ls: {}: not found", path); return; }
+        Err(_) => { println!("ls: {}: not found", path); return 1; }
     };
     let mut buf = [0u8; 4096];
     loop {
@@ -73,46 +76,56 @@ fn user_main() {
             i += reclen;
         }
         names.sort_by(|a, b| a.1.cmp(&b.1));
-        if long {
-            for (_, name) in &names {
-                let entry_path = join_path(path, name);
-                let mut st = [0u64; 32];
-                let r2 = unsafe { syscall::syscall2(4, entry_path.as_ptr() as u64, st.as_mut_ptr() as u64) };
-                if r2 == 0 {
-                    let mode = st[1];
-                    let _uid = st[2];
-                    let _gid = st[3];
-                    let size = st[6] as u64;
-                    let type_char = if (mode & 0o170000) == 0o040000 { 'd' } else if (mode & 0o170000) == 0o120000 { 'l' } else { '-' };
-                    let perm = |shift: u32| -> char {
-                        if mode & (1 << shift) != 0 { match shift { 8 => 'r', 7 => 'w', 6 => 'x', _ => '-' } } else { '-' }
-                    };
-                    let perm_str: String = (0..9).rev().map(|i| perm(i)).collect();
-                    let size_str = if human { human_size(size) } else { alloc::format!("{}", size) };
-                    print!("{}{} ", type_char, perm_str);
-                    print!("{:>8} ", size_str);
-                } else {
-                    print!("?--------- ???????? ");
+        for (_, name) in &names {
+            let entry_path = join_path(path, name);
+            if long {
+                match libsarga::fs::stat(&entry_path) {
+                    Ok(st) => {
+                        let mode = st.mode;
+                        let size = st.size as u64;
+                        let type_char = if (mode & 0o170000) == 0o040000 { 'd' }
+                                        else if (mode & 0o170000) == 0o120000 { 'l' }
+                                        else { '-' };
+                        let perm = |m: u32, r: u32, w: u32, x: u32| -> String {
+                            alloc::format!("{}{}{}",
+                                if m & r != 0 { "r" } else { "-" },
+                                if m & w != 0 { "w" } else { "-" },
+                                if m & x != 0 { "x" } else { "-" })
+                        };
+                        let perm_str = alloc::format!("{}{}{}",
+                            perm(mode, 0o400, 0o200, 0o100),
+                            perm(mode, 0o040, 0o020, 0o010),
+                            perm(mode, 0o004, 0o002, 0o001));
+
+                        let size_str = if human { human_size(size) } else { alloc::format!("{}", size) };
+                        print!("{}{} ", type_char, perm_str);
+                        print!("{:>8} ", size_str);
+                    }
+                    Err(_) => {
+                        print!("?--------- ???????? ");
+                    }
                 }
                 println!("{}", name);
-            }
-        } else {
-            for (_, name) in &names {
-                let entry_path = join_path(path, name);
-                let mut st = [0u64; 32];
-                let r2 = unsafe { syscall::syscall2(4, entry_path.as_ptr() as u64, st.as_mut_ptr() as u64) };
-                if r2 == 0 && (st[1] & 0o170000) == 0o040000 {
-                    print!("d ");
-                } else if r2 == 0 {
-                    print!("- ");
-                } else {
-                    print!("? ");
+            } else {
+                match libsarga::fs::stat(&entry_path) {
+                    Ok(st) => {
+                        if (st.mode & 0o170000) == 0o040000 {
+                            print!("d ");
+                        } else {
+                            print!("- ");
+                        }
+                    }
+                    Err(_) => {
+                        print!("? ");
+                    }
                 }
                 println!("{}", name);
             }
         }
     }
     let _ = io::close(fd);
+    0
+    0
 }
 
 sarga_main!(user_main);

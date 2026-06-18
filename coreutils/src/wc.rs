@@ -3,7 +3,7 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, args, io};
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut lines = 0u64;
     let mut words = 0u64;
     let mut bytes = 0u64;
@@ -31,6 +31,9 @@ fn user_main() {
         }
     }
     println!("{} {} {} {}", lines, words, bytes, args::get(1).unwrap_or(""));
+
+    0
+    0
 }
 
 sarga_main!(user_main);

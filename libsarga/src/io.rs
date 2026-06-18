@@ -278,13 +278,17 @@ pub fn notify_with_type(text: &str, duration_ms: u64, kind: u64) {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => { $crate::io::print_str(&$crate::alloc::format!($($arg)*)) }
+    ($($arg:tt)*) => {{
+        let s = $crate::alloc::format!($($arg)*);
+        $crate::io::print_str(&s);
+    }}
 }
 #[macro_export]
 macro_rules! println {
     () => { $crate::io::print_str("\n") };
     ($($arg:tt)*) => {{
-        $crate::io::print_str(&$crate::alloc::format!($($arg)*));
-        $crate::io::print_str("\n")
+        let s = $crate::alloc::format!($($arg)*);
+        $crate::io::print_str(&s);
+        $crate::io::print_str("\n");
     }}
 }

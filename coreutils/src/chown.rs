@@ -12,12 +12,12 @@ fn parse_num(s: &str) -> Option<u32> {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
     if argc < 3 {
         io::print_str("Usage: chown <owner>[:<group>] <file>...\n");
-        libsarga::process::exit(0);
+        return 0;
     }
 
     let spec = libsarga::args::get(1).unwrap_or("0");
@@ -49,5 +49,5 @@ pub extern "C" fn _start() -> ! {
             io::print_str(&alloc::format!("chown: {}: failed\n", file));
         }
     }
-    libsarga::process::exit(0);
+    return 0;
 }

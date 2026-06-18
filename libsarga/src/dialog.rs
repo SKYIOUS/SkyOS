@@ -42,7 +42,7 @@ impl Dialog {
 
 impl Widget for Dialog {
     fn render(&self, win: &mut Window, theme: &Theme) {
-        if !self.open { return; }
+        if !self.open { return 0; }
 
         // Overlay (semi-transparent)
         win.draw_rect(0, 0, win.width, win.height, 0x80000000);

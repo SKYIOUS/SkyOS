@@ -73,8 +73,8 @@ fn copy_recursive(src: &str, dst: &str) -> i64 {
     0
 }
 
-fn user_main() {
-    if args::argc() < 3 { println!("Usage: cp [-r] <src>... <dst>"); return; }
+fn user_main() -> i32 {
+    if args::argc() < 3 { println!("Usage: cp [-r] <src>... <dst>"); return 0; }
     let mut recursive = false;
     let mut preserve = false;
     let mut files = Vec::new();
@@ -87,7 +87,7 @@ fn user_main() {
             else { files.push(String::from(s)); }
         }
     }
-    if files.len() < 2 { println!("cp: missing operand"); return; }
+    if files.len() < 2 { println!("cp: missing operand"); return 0; }
     let dst = files.pop().unwrap();
     for src in &files {
         let mut st = [0u64; 32];
@@ -117,6 +117,8 @@ fn user_main() {
             unsafe { syscall::syscall2(4, src.as_ptr() as u64, st.as_mut_ptr() as u64); }
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

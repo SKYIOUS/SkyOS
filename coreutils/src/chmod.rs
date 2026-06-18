@@ -5,6 +5,7 @@ extern crate alloc;
 extern crate libsarga;
 
 use libsarga::io::{self, open, close, fchmod};
+use libsarga::sarga_main;
 
 fn parse_mode(s: &str) -> Option<u32> {
     if s.as_bytes().iter().all(|&b| b >= b'0' && b <= b'7') {
@@ -13,13 +14,12 @@ fn parse_mode(s: &str) -> Option<u32> {
     None
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
     if argc < 3 {
         io::print_str("Usage: chmod <mode> <file>\n");
-        libsarga::process::exit(0);
+        return 0;
     }
 
     let mode_str = libsarga::args::get(1).unwrap_or("644");
@@ -27,7 +27,7 @@ pub extern "C" fn _start() -> ! {
         Some(m) => m,
         None => {
             io::print_str(&alloc::format!("chmod: invalid mode: {}\n", mode_str));
-            libsarga::process::exit(1);
+            return 1;
         }
     };
 
@@ -50,5 +50,8 @@ pub extern "C" fn _start() -> ! {
             io::print_str(&alloc::format!("chmod: {}: failed\n", file));
         }
     }
-    libsarga::process::exit(0);
+    return 0;
+    0
 }
+
+sarga_main!(user_main);

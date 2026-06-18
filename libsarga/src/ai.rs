@@ -11,5 +11,5 @@ pub fn query(prompt: &str) -> Result<alloc::string::String, i64> {
     };
     if n < 0 { return Err(-n); }
     Ok(alloc::string::String::from(core::str::from_utf8(&out[..n as usize])
-        .unwrap_or("[VahiAI response not valid UTF-8]")))
+        .unwrap_or("[SARGAAI response not valid UTF-8]")))
 }

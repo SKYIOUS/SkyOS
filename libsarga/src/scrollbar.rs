@@ -33,7 +33,7 @@ impl ScrollBar {
 
     pub fn scroll_offset(&self) -> u32 {
         let max_scroll = self.content_size.saturating_sub(self.view_size);
-        if max_scroll == 0 { return 0; }
+        if max_scroll == 0 { }
         (self.thumb_pos as f32 / (self.length as f32 - self.thumb_size as f32) * max_scroll as f32) as u32
     }
 }

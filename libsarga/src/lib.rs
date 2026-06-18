@@ -44,8 +44,7 @@ macro_rules! sarga_main {
     ($main_fn:path) => {
         #[no_mangle]
         pub extern "Rust" fn main() -> i32 {
-            $main_fn();
-            0
+            $main_fn()
         }
     };
 }

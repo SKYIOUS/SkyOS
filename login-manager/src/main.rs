@@ -64,11 +64,11 @@ fn verify_password(username: &str, password: &str) -> bool {
     username == "root"
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
     let mut win = match Window::create("SARGA OS", 800, 600) {
         Ok(w) => w,
-        Err(_) => { io::print_str("[login] failed to create window\n"); return; }
+        Err(_) => { io::print_str("[login] failed to create window\n"); return 0; }
     };
 
     let mut username_buf = alloc::vec::Vec::new();
@@ -86,7 +86,7 @@ fn user_main() {
                     let pass = core::str::from_utf8(&password_buf).unwrap_or("");
                     if verify_password(user, pass) {
                         process::execve("/bin/ade", &["/bin/ade"], &[]);
-                        return;
+                        return 0;
                     } else {
                         error_msg = String::from("Invalid username or password");
                         password_buf.clear();
@@ -169,6 +169,7 @@ fn user_main() {
         let _ = win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_666_000u64); }
     }
+    0
 }
 
 sarga_main!(user_main);

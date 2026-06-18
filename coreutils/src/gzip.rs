@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::sarga_main;
 use libsarga::io;
 
-fn user_main() {
+fn user_main() -> i32 {
     io::print_str("gzip: compression not supported in this build\n");
     io::print_str("(binary data passthrough)\n");
     let mut buf = [0u8; 4096];
@@ -15,6 +15,8 @@ fn user_main() {
             Err(_) => break,
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

@@ -412,8 +412,8 @@ impl Window {
 
     pub fn draw_rect_alpha(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
         let a = ((color >> 24) & 0xFF) as u8;
-        if a == 0 { return; }
-        if a == 255 { self.draw_rect(x, y, w, h, color); return; }
+        if a == 0 { return 0; }
+        if a == 255 { self.draw_rect(x, y, w, h, color); return 0; }
         let sw = self.width as usize;
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
@@ -469,7 +469,7 @@ impl Window {
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
         let x1 = (x + w).min(sw as u32) as usize;
-        if y as usize >= sh { return; }
+        if y as usize >= sh { return 0; }
         let row = y as usize * sw;
         for px in x0..x1 { self.buffer[row + px] = color; }
     }
@@ -477,7 +477,7 @@ impl Window {
     pub fn draw_line_v(&mut self, x: u32, y: u32, h: u32, color: u32) {
         let sw = self.width as usize;
         let sh = self.height as usize;
-        if x as usize >= sw { return; }
+        if x as usize >= sw { return 0; }
         let y0 = y.min(sh as u32) as usize;
         let y1 = (y + h).min(sh as u32) as usize;
         for py in y0..y1 { self.buffer[py * sw + x as usize] = color; }
@@ -495,6 +495,12 @@ impl Window {
         if x < self.width && y < self.height {
             Some(self.buffer[(y * self.width + x) as usize])
         } else { None }
+    }
+
+    pub fn draw_pixel(&mut self, x: u32, y: u32, color: u32) {
+        if x < self.width && y < self.height {
+            self.buffer[(y * self.width + x) as usize] = color;
+        }
     }
 
     pub fn draw_char(&mut self, x: u32, y: u32, c: char, fg: u32, bg: u32) {
@@ -569,7 +575,7 @@ impl Window {
                         }
                     }
                 }
-                return;
+                return 0;
             }
         }
         // Fallback to font8x8

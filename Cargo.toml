@@ -10,12 +10,12 @@ members = [
     "aicli",
     "proc",
     "sarga-term",
-    "skyedit",
+    "sargaedit",
     "calculator",
-    "skyfiles",
-    "skysettings",
-    "skyd",
-    "skyview",
+    "sargafiles",
+    "sargasettings",
+    "sargad",
+    "sargaview",
     "login-manager",
 ]
 resolver = "2"

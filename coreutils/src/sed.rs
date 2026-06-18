@@ -5,7 +5,7 @@ use libsarga::sarga_main;
 use libsarga::io;
 use libsarga::args;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut expr = "";
     let mut i = 1;
     while i < args::argc() {
@@ -22,7 +22,7 @@ fn user_main() {
     }
     if expr.is_empty() {
         io::print_str("Usage: sed 's/pattern/replacement/'\n");
-        return;
+        return 0;
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
@@ -68,13 +68,15 @@ fn user_main() {
             io::print_str("\n");
         }
     } else if expr.starts_with("d") {
-        return;
+        return 0;
     } else {
         for line in text.lines() {
             io::print_str(line);
             io::print_str("\n");
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

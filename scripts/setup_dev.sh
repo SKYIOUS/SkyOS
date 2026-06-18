@@ -1,8 +1,8 @@
 #!/bin/bash
-# setup_dev.sh — One-click SkyOS development environment setup (Linux/WSL)
+# setup_dev.sh — One-click SARGA OS development environment setup (Linux/WSL)
 set -e
 
-echo "=== SkyOS Dev Environment Setup ==="
+echo "=== SARGA OS Dev Environment Setup ==="
 
 # 1. Check Rust
 if ! command -v rustc &> /dev/null; then
@@ -17,7 +17,7 @@ rustup toolchain install nightly --allow-downgrade -c rust-src -c llvm-tools-pre
 echo "[OK] nightly toolchain ready"
 
 # 3. Install targets
-for t in x86_64-unknown-none x86_64-skyos; do
+for t in x86_64-unknown-none x86_64-sarga; do
     rustup target add "$t" --toolchain nightly 2>/dev/null
     echo "[OK] target $t"
 done

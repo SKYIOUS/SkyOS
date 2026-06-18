@@ -4,7 +4,7 @@ extern crate alloc;
 use alloc::string::String;
 use libsarga::{sarga_main, println, io, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut ifile = String::new();
     let mut ofile = String::new();
     let mut bs = 512usize;
@@ -38,6 +38,9 @@ fn user_main() {
     if ifile.is_empty() && infd != 0 { let _ = io::close(infd); }
     if !ofile.is_empty() { let _ = io::close(outfd); }
     println!("{} bytes copied", total);
+
+    0
+    0
 }
 
 sarga_main!(user_main);

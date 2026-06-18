@@ -1,11 +1,7 @@
 [package]
-name = "skyd"
+name = "sargaedit"
 version = "0.1.0"
 edition = "2021"
-
-[[bin]]
-name = "skyd"
-path = "src/main.rs"
 
 [dependencies]
 libsarga = { path = "../libsarga" }

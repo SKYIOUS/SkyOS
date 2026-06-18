@@ -19,10 +19,10 @@ fn read_file(path: &str) -> alloc::string::String {
     alloc::string::String::from_utf8_lossy(&data).into_owned()
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 3 {
         io::print_str("Usage: diff <file1> <file2>\n");
-        return;
+        return 0;
     }
     let file1 = args::get(1).unwrap_or("");
     let file2 = args::get(2).unwrap_or("");
@@ -43,6 +43,8 @@ fn user_main() {
     if !diffs {
         io::print_str("No differences\n");
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

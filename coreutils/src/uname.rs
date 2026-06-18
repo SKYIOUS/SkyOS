@@ -13,7 +13,7 @@ fn emit(first: &mut bool, s: &str) {
     *first = false;
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut buf = [0u8; 65 * 6];
     let r = unsafe { syscall1(63, buf.as_mut_ptr() as u64) };
     if r == 0 {
@@ -66,8 +66,10 @@ fn user_main() {
         }
         println!();
     } else {
-        println!("SkyOS");
+        println!("SARGA OS");
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

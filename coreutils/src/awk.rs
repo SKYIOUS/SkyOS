@@ -5,7 +5,7 @@ use libsarga::sarga_main;
 use libsarga::io;
 use libsarga::args;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut action = "";
     let mut pattern = "";
     let mut fs = ' ';
@@ -30,7 +30,7 @@ fn user_main() {
     }
     if action.is_empty() {
         io::print_str("Usage: awk 'pattern { action }'\n");
-        return;
+        return 0;
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
@@ -75,6 +75,8 @@ fn user_main() {
             }
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

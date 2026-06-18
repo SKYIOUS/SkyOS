@@ -1,6 +1,6 @@
-# Contributing to SkyOS
+# Contributing to SARGA OS
 
-Thank you for your interest in contributing to **SkyOS**, the userspace environment of SARGA OS. All contributions are welcome — code, documentation, testing, bug reports, feature requests, and ideas.
+Thank you for your interest in contributing to **SARGA OS**, the userspace environment of SARGA OS. All contributions are welcome — code, documentation, testing, bug reports, feature requests, and ideas.
 
 This project is governed by the **SKYIOUS Software License (SSL)**. By contributing, you agree that your contributions will be licensed under the same terms.
 
@@ -86,8 +86,8 @@ You don't need to write code to contribute. Here are many ways to help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/SkyOS.git
-cd SkyOS
+git clone https://github.com/your-username/SARGA OS.git
+cd SARGA OS
 
 # Ensure you have nightly Rust
 rustup default nightly
@@ -136,7 +136,7 @@ cargo build --target x86_64-sarga.json -p coreutils
 ### Keeping Your Fork Updated
 
 ```bash
-git remote add upstream https://github.com/SKYIOUS/SkyOS.git
+git remote add upstream https://github.com/SKYIOUS/SARGA OS.git
 git fetch upstream
 git rebase upstream/master
 ```
@@ -145,7 +145,7 @@ git rebase upstream/master
 
 ## Build System
 
-SkyOS uses a workspace Cargo.toml with 19 member crates. The custom target `x86_64-sarga.json` enables the `no_std` environment.
+SARGA OS uses a workspace Cargo.toml with 19 member crates. The custom target `x86_64-sarga.json` enables the `no_std` environment.
 
 ### Targets
 
@@ -352,7 +352,7 @@ cargo build --target x86_64-sarga.json --release -p sash
 
 ### Integration Testing
 
-Integration tests require booting in QEMU with the Vahi kernel:
+Integration tests require booting in QEMU with the SARGA kernel:
 
 ```bash
 # Run the full dev loop
@@ -425,6 +425,6 @@ We strive to:
 
 ## License
 
-By contributing to SkyOS, you agree that your contributions will be licensed under the **SKYIOUS Software License (SSL) v1.0**. See the [LICENSE](LICENSE) file for details.
+By contributing to SARGA OS, you agree that your contributions will be licensed under the **SKYIOUS Software License (SSL) v1.0**. See the [LICENSE](LICENSE) file for details.
 
 This project and its contributors operate under the principle that **code contributions are irrevocable** — once submitted and accepted, they become part of the project under the project's license.

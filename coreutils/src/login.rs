@@ -6,6 +6,7 @@ extern crate libsarga;
 
 use libsarga::io::{self, open, read, close};
 use libsarga::process::{setuid, setgid, execve};
+use libsarga::sarga_main;
 use alloc::string::ToString;
 
 const PASSWD_PATH: &str = "/etc/passwd\0";
@@ -137,8 +138,7 @@ fn verify_password(username: &str, password: &str) -> bool {
     false
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
     let username = if argc > 1 {
@@ -149,7 +149,7 @@ pub extern "C" fn _start() -> ! {
             Ok(b) => b,
             Err(_) => libsarga::process::exit(1),
         };
-        if name_bytes.is_empty() { libsarga::process::exit(1); }
+        if name_bytes.is_empty() { return 1; }
         core::str::from_utf8(&name_bytes).unwrap_or("root").to_string()
     };
 
@@ -157,7 +157,7 @@ pub extern "C" fn _start() -> ! {
         Some(v) => v,
         None => {
             io::print_str("login: unknown user\n");
-            libsarga::process::exit(1);
+            return 1;
         }
     };
 
@@ -170,7 +170,7 @@ pub extern "C" fn _start() -> ! {
 
     if !verify_password(&username, password) {
         io::print_str("\nLogin incorrect\n");
-        libsarga::process::exit(1);
+        return 1;
     }
 
     io::print_str("\n");
@@ -190,5 +190,8 @@ pub extern "C" fn _start() -> ! {
     let env_refs: alloc::vec::Vec<&str> = env.iter().map(|s: &alloc::string::String| s.as_str()).collect();
 
     execve(shell_name, &[], &env_refs);
-    libsarga::process::exit(1);
+    return 1;
+    0
 }
+
+sarga_main!(user_main);

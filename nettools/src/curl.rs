@@ -23,10 +23,10 @@ fn resolve_host(host: &str) -> Option<[u8; 4]> {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 2 {
         println!("Usage: curl <url>");
-        return;
+        return 0;
     }
     let url = args::get(1).unwrap_or("http://10.0.2.2/");
     let rest = if let Some(r) = url.strip_prefix("http://") { r } else { url };
@@ -37,7 +37,7 @@ fn user_main() {
     };
     let ip = match resolve_host(host) {
         Some(ip) => ip,
-        None => { println!("curl: could not resolve {}", host); return; }
+        None => { println!("curl: could not resolve {}", host); return 0; }
     };
 
     match net::socket(net::AF_INET, net::SOCK_STREAM, 0) {
@@ -60,12 +60,14 @@ fn user_main() {
                         }
                     }
                     let _ = net::close(fd);
+                    0
                 }
-                Err(e) => println!("curl: connect failed: {}", e),
+                Err(e) => { println!("curl: connect failed: {}", e); 1 }
             }
         }
-        Err(e) => println!("curl: socket failed: {}", e),
+        Err(e) => { println!("curl: socket failed: {}", e); 1 }
     }
+    0
 }
 
 sarga_main!(user_main);

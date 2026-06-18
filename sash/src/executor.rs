@@ -78,7 +78,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
         if r < 0 {
             println!("sash: command not found: {}", cmd_name);
         }
-        libsarga::process::exit(127);
+        return 127;
     }
 
     if !bg {
@@ -247,7 +247,7 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
             if r < 0 {
                 println!("sash: command not found: {}", expanded_name);
             }
-            libsarga::process::exit(127);
+            return 127;
         }
 
         if let Some(fd) = prev_read { let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) }; }
@@ -321,7 +321,8 @@ pub fn capture_output(cmd_str: &str) -> String {
         let env_strings = crate::get_env_refs();
         let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
         let _ = libsarga::process::execve(&expanded_args[0], &args, &env_refs);
-        libsarga::process::exit(1);
+        unsafe { libsarga::syscall::syscall1(1, 1); }
+        loop {}
     }
 
     let _ = unsafe { libsarga::syscall::syscall1(3, fds[1] as u64) };

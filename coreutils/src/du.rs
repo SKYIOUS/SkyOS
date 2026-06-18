@@ -46,11 +46,14 @@ fn du_dir(path: &str, depth: u32) -> u64 {
     total
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let start = if args::argc() > 1 { args::get(1).unwrap_or(".") } else { "." };
     let s = String::from(start);
     let size = du_dir(&s, 0);
     println!("{}\t{}", size, s);
+
+    0
+    0
 }
 
 sarga_main!(user_main);

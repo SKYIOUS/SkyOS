@@ -14,7 +14,7 @@ pub fn query(prompt: &str) -> Result<String, i64> {
     };
     if n < 0 { return Err(-n); }
     let slice = &out[..n as usize];
-    Ok(from_utf8(slice).unwrap_or("[VahiAI response not valid UTF-8]").trim().into())
+    Ok(from_utf8(slice).unwrap_or("[SARGAAI response not valid UTF-8]").trim().into())
 }
 
 pub fn query_with_args(prompt: &str, args: &[&str]) -> Result<String, i64> {
@@ -115,7 +115,7 @@ pub fn handle_intent(input: &str) -> Result<String, i64> {
     }
     if lower.starts_with("help") || lower == "?" || lower.starts_with("commands") {
         let help = "\
-VahiAI Commands:
+SARGAAI Commands:
   ps, procs, list proc   — Show process list
   mem, memory, free      — Show memory info
   cpu, load              — Show CPU load
@@ -124,7 +124,7 @@ VahiAI Commands:
   log, dmesg             — Show kernel log
   info, status, sysinfo  — Show all system info
   help, ?                — Show this help
-  <anything else>        — Send to kernel VahiAI intent engine";
+  <anything else>        — Send to kernel SARGAAI intent engine";
         return Ok(String::from(help));
     }
 

@@ -5,7 +5,7 @@ use libsarga::sarga_main;
 use libsarga::io;
 use libsarga::args;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut delete = false;
     let mut from = "";
     let mut to = "";
@@ -23,7 +23,7 @@ fn user_main() {
     }
     if from.is_empty() {
         io::print_str("Usage: tr [-d] <from> <to>\n");
-        return;
+        return 0;
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
@@ -57,6 +57,8 @@ fn user_main() {
             let _ = io::write(1, s.as_bytes());
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

@@ -6,6 +6,7 @@ extern crate libsarga;
 
 use libsarga::io::{self, open, read, close};
 use libsarga::process::geteuid;
+use libsarga::sarga_main;
 use alloc::string::ToString;
 
 fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, i64> {
@@ -95,8 +96,7 @@ fn set_password(username: &str, new_password: &str) -> Result<(), i64> {
     Ok(())
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let argc = libsarga::args::argc();
     let euid = geteuid();
 
@@ -108,12 +108,12 @@ pub extern "C" fn _start() -> ! {
 
     if target_user.is_empty() || target_user == "-h" || target_user == "--help" {
         io::print_str("Usage: passwd [username]\n");
-        libsarga::process::exit(0);
+        return 0;
     }
 
     if euid != 0 {
         io::print_str("passwd: only root can change passwords\n");
-        libsarga::process::exit(1);
+        return 1;
     }
 
     io::print_str("New password: ");
@@ -128,16 +128,19 @@ pub extern "C" fn _start() -> ! {
     };
     if pw1 != pw2 {
         io::print_str("\npasswd: passwords do not match\n");
-        libsarga::process::exit(1);
+        return 1;
     }
     if pw1.is_empty() {
         io::print_str("\npasswd: password cannot be empty\n");
-        libsarga::process::exit(1);
+        return 1;
     }
 
     match set_password(&target_user, &pw1) {
         Ok(_) => io::print_str("passwd: password updated successfully\n"),
-        Err(e) => { io::print_str(&alloc::format!("passwd: update failed: {}\n", e)); libsarga::process::exit(1); }
+        Err(e) => { io::print_str(&alloc::format!("passwd: update failed: {}\n", e)); return 1; }
     }
-    libsarga::process::exit(0);
+    return 0;
+    0
 }
+
+sarga_main!(user_main);

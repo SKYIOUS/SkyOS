@@ -5,7 +5,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::{sarga_main, println, args, io, syscall};
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut append = false;
     let mut files = Vec::new();
     for i in 1..args::argc() {
@@ -35,6 +35,8 @@ fn user_main() {
         }
     }
     for &fd in &fds { let _ = io::close(fd); }
+    0
+    0
 }
 
 sarga_main!(user_main);

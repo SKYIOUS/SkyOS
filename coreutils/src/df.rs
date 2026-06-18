@@ -6,7 +6,7 @@ use alloc::vec;
 use alloc::string::{String, ToString};
 use libsarga::{sarga_main, println, fs, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let paths: Vec<String> = if args::argc() > 1 {
         (1..args::argc()).filter_map(|i| args::get(i as usize)).map(|s| s.to_string()).collect()
     } else {
@@ -47,6 +47,7 @@ fn user_main() {
             }
         }
     }
+    0
 }
 
 fn fmt_size(kb: u64) -> String {
@@ -59,6 +60,8 @@ fn fmt_size(kb: u64) -> String {
     } else {
         alloc::format!("{}B", kb)
     }
+    0
+    0
 }
 
 sarga_main!(user_main);
