@@ -76,12 +76,19 @@ fn user_main() -> i32 {
     let mut active_field = 0usize;
     let mut error_msg = String::new();
 
+    let mut show_password = false;
+    let mut power_menu = false;
+
     loop {
+        let mouse = win.get_mouse();
+        let mx = mouse.x;
+        let my = mouse.y;
+        let m_pressed = mouse.buttons != 0;
+
         while let Some(key) = win.get_key() {
             match key {
-                0x09 => { active_field = (active_field + 1) % 2; } // Tab: switch field
+                0x09 => { active_field = (active_field + 1) % 2; } // Tab
                 0x0A | 0x0D => {
-                    // Submit
                     let user = core::str::from_utf8(&username_buf).unwrap_or("");
                     let pass = core::str::from_utf8(&password_buf).unwrap_or("");
                     if verify_password(user, pass) {
@@ -110,64 +117,100 @@ fn user_main() -> i32 {
         }
 
         win.clear(theme.bg_primary);
-
-        // Dark overlay
-        win.fill_rect(0, 0, 800, 600, 0xCC000000);
+        win.draw_gradient_rect(0, 0, 800, 600, theme.bg_primary, 0xFF000000, true);
 
         // Login panel
-        let panel_w = 360u32;
-        let panel_h = 280u32;
+        let panel_w = 400u32;
+        let panel_h = 320u32;
         let px = (800 - panel_w) / 2;
         let py = (600 - panel_h) / 2;
 
-        win.draw_rounded_rect(px, py, panel_w, panel_h, 8, theme.bg_elevated);
-        win.draw_rect(px, py, panel_w, panel_h, theme.accent);
+        win.draw_rounded_rect(px, py, panel_w, panel_h, theme.border_radius, theme.bg_surface);
+        win.draw_rounded_rect_outline(px, py, panel_w, panel_h, theme.border_radius, theme.border);
 
-        // Title
-        win.draw_string_centered(py + 20, "SARGA OS", 0xFFFFFFFF, theme.bg_elevated);
+        // Logo / Title
+        win.draw_gradient_rect(px + 10, py + 10, panel_w - 20, 40, theme.accent, theme.accent_dark, false);
+        win.draw_string_centered(py + 22, "SARGA OS", 0xFFFFFFFF, 0);
 
-        // Username field
-        let field_x = px + 30;
-        let field_w = panel_w - 60;
-        win.draw_string(field_x, py + 60, "Username", theme.text_secondary, 0);
-        let uy = py + 80;
-        let u_bg = if active_field == 0 { 0xFF3A3A3A } else { 0xFF2D2D2D };
-        win.draw_rounded_rect(field_x, uy, field_w, 30, 4, u_bg);
-        if active_field == 0 { win.draw_rect(field_x, uy, field_w, 30, theme.accent); }
+        // Username
+        let field_x = px + 40;
+        let field_w = panel_w - 80;
+        win.draw_string(field_x, py + 70, "Username", theme.text_secondary, 0);
+        let uy = py + 95;
+        let u_bg = if active_field == 0 { theme.bg_elevated } else { theme.bg_primary };
+        win.draw_rounded_rect(field_x, uy, field_w, 35, 6, u_bg);
+        if active_field == 0 { win.draw_rounded_rect_outline(field_x, uy, field_w, 35, 6, theme.accent); }
         let u_text = core::str::from_utf8(&username_buf).unwrap_or("");
-        win.draw_string(field_x + 8, uy + 6, u_text, theme.text, u_bg);
-        // Cursor
-        let uc_x = field_x + 8 + username_buf.len() as u32 * 8;
-        win.fill_rect(uc_x, uy + 5, 1, 20, theme.accent);
+        win.draw_string(field_x + 10, uy + 10, u_text, theme.text, 0);
 
-        // Password field
-        win.draw_string(field_x, py + 120, "Password", theme.text_secondary, 0);
-        let pwy = py + 140;
-        let p_bg = if active_field == 1 { 0xFF3A3A3A } else { 0xFF2D2D2D };
-        win.draw_rounded_rect(field_x, pwy, field_w, 30, 4, p_bg);
-        if active_field == 1 { win.draw_rect(field_x, pwy, field_w, 30, theme.accent); }
-        let pw_text: String = core::iter::repeat('*')
-            .take(password_buf.len())
-            .collect();
-        win.draw_string(field_x + 8, pwy + 6, &pw_text, theme.text, p_bg);
-        let pc_x = field_x + 8 + password_buf.len() as u32 * 8;
-        win.fill_rect(pc_x, pwy + 5, 1, 20, theme.accent);
+        // Password
+        win.draw_string(field_x, py + 145, "Password", theme.text_secondary, 0);
+        let pwy = py + 170;
+        let p_bg = if active_field == 1 { theme.bg_elevated } else { theme.bg_primary };
+        win.draw_rounded_rect(field_x, pwy, field_w, 35, 6, p_bg);
+        if active_field == 1 { win.draw_rounded_rect_outline(field_x, pwy, field_w, 35, 6, theme.accent); }
+
+        let pw_text: String = if show_password {
+             core::str::from_utf8(&password_buf).unwrap_or("").into()
+        } else {
+            core::iter::repeat('*').take(password_buf.len()).collect()
+        };
+        win.draw_string(field_x + 10, pwy + 10, &pw_text, theme.text, 0);
+
+        // Show Password toggle
+        let eye_x = field_x + field_w - 30;
+        let eye_y = pwy + 10;
+        win.draw_string(eye_x, eye_y, if show_password { "O" } else { "X" }, theme.text_disabled, 0);
+        if m_pressed && mx >= eye_x as i32 && mx < (eye_x + 20) as i32 && my >= eye_y as i32 && my < (eye_y + 20) as i32 {
+            show_password = !show_password;
+            unsafe { libsarga::syscall::syscall1(35, 100_000_000u64); }
+        }
 
         // Error message
         if !error_msg.is_empty() {
-            win.draw_string_centered(py + 195, &error_msg, theme.error, theme.bg_elevated);
+            win.draw_string_centered(py + 215, &error_msg, theme.error, 0);
         }
 
         // Login button
-        let btn_x = px + panel_w / 2 - 60;
-        win.draw_rounded_rect(btn_x, py + 220, 120, 32, 4, theme.accent);
-        win.draw_string_centered(py + 228, "Login", 0xFFFFFFFF, theme.accent);
+        let btn_w = 120;
+        let btn_x = px + (panel_w - btn_w) / 2;
+        let btn_y = py + 250;
+        win.draw_gradient_rect(btn_x, btn_y, btn_w, 35, theme.accent, theme.accent_dark, true);
+        win.draw_string_centered(btn_y + 10, "Login", 0xFFFFFFFF, 0);
 
-        // Hint
-        win.draw_string_centered(py + panel_h - 20, "Press Enter to login, Tab to switch fields", theme.text_disabled, theme.bg_elevated);
+        // Power button
+        let pwr_x = 760u32;
+        let pwr_y = 560u32;
+        win.draw_rounded_rect(pwr_x, pwr_y, 30, 30, 15, theme.bg_elevated);
+        win.draw_string(pwr_x + 10, pwr_y + 7, "P", 0xFFFFFFFF, 0);
+        if m_pressed && mx >= pwr_x as i32 && my >= pwr_y as i32 {
+            power_menu = !power_menu;
+            unsafe { libsarga::syscall::syscall1(35, 100_000_000u64); }
+        }
+
+        if power_menu {
+            let menu_w = 120;
+            let menu_h = 80;
+            let mx_pos = pwr_x - menu_w + 30;
+            let my_pos = pwr_y - menu_h - 5;
+            win.draw_rounded_rect(mx_pos, my_pos, menu_w, menu_h, 8, theme.bg_surface);
+            win.draw_rounded_rect_outline(mx_pos, my_pos, menu_w, menu_h, 8, theme.border);
+            win.draw_string(mx_pos + 10, my_pos + 15, "Reboot", theme.text, 0);
+            win.draw_string(mx_pos + 10, my_pos + 45, "Shutdown", theme.text, 0);
+
+            if m_pressed && mx >= mx_pos as i32 && mx < (mx_pos + menu_w) as i32 {
+                if my >= (my_pos + 10) as i32 && my < (my_pos + 40) as i32 {
+                    // Reboot syscall or exit
+                    process::exit(0);
+                } else if my >= (my_pos + 40) as i32 && my < (my_pos + 70) as i32 {
+                    // Shutdown syscall
+                    process::exit(0);
+                }
+            }
+        }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 16_666_000u64); }
+        unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
     }
     0
 }

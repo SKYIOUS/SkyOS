@@ -412,8 +412,8 @@ impl Window {
 
     pub fn draw_rect_alpha(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
         let a = ((color >> 24) & 0xFF) as u8;
-        if a == 0 { return 0; }
-        if a == 255 { self.draw_rect(x, y, w, h, color); return 0; }
+        if a == 0 { return; }
+        if a == 255 { self.draw_rect(x, y, w, h, color); return; }
         let sw = self.width as usize;
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
@@ -431,34 +431,126 @@ impl Window {
     pub fn draw_rounded_rect(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
         let sw = self.width as usize;
         let sh = self.height as usize;
-        let r = radius as i32;
-        for dy in 0..h {
-            for dx in 0..w {
-                let px = (x + dx) as i32;
-                let py = (y + dy) as i32;
-                if px < 0 || py < 0 || px >= sw as i32 || py >= sh as i32 { continue; }
+        let r = radius.min(w / 2).min(h / 2) as i32;
+        if r <= 0 {
+            self.draw_rect(x, y, w, h, color);
+            return;
+        }
 
-                let mut skip = false;
-                if (dx as i32) < r && (dy as i32) < r {
-                    let cx = r - dx as i32;
-                    let cy = r - dy as i32;
-                    if cx * cx + cy * cy > r * r { skip = true; }
-                } else if (dx as i32) >= (w as i32 - r) && (dy as i32) < r {
-                    let cx = dx as i32 - (w as i32 - r - 1);
-                    let cy = r - dy as i32;
-                    if cx * cx + cy * cy > r * r { skip = true; }
-                } else if (dx as i32) < r && (dy as i32) >= (h as i32 - r) {
-                    let cx = r - dx as i32;
-                    let cy = dy as i32 - (h as i32 - r - 1);
-                    if cx * cx + cy * cy > r * r { skip = true; }
-                } else if (dx as i32) >= (w as i32 - r) && (dy as i32) >= (h as i32 - r) {
-                    let cx = dx as i32 - (w as i32 - r - 1);
-                    let cy = dy as i32 - (h as i32 - r - 1);
-                    if cx * cx + cy * cy > r * r { skip = true; }
+        // Draw central horizontal and vertical rectangles
+        self.draw_rect(x + r as u32, y, w - 2 * r as u32, h, color);
+        self.draw_rect(x, y + r as u32, r as u32, h - 2 * r as u32, color);
+        self.draw_rect(x + w - r as u32, y + r as u32, r as u32, h - 2 * r as u32, color);
+
+        // Draw four corners
+        for dy in 0..r {
+            for dx in 0..r {
+                let r2 = r * r;
+                // Top-left
+                if (r - dx - 1) * (r - dx - 1) + (r - dy - 1) * (r - dy - 1) <= r2 {
+                    self.draw_pixel(x + dx as u32, y + dy as u32, color);
                 }
+                // Top-right
+                if (dx) * (dx) + (r - dy - 1) * (r - dy - 1) <= r2 {
+                    self.draw_pixel(x + w - r as u32 + dx as u32, y + dy as u32, color);
+                }
+                // Bottom-left
+                if (r - dx - 1) * (r - dx - 1) + (dy) * (dy) <= r2 {
+                    self.draw_pixel(x + dx as u32, y + h - r as u32 + dy as u32, color);
+                }
+                // Bottom-right
+                if (dx) * (dx) + (dy) * (dy) <= r2 {
+                    self.draw_pixel(x + w - r as u32 + dx as u32, y + h - r as u32 + dy as u32, color);
+                }
+            }
+        }
+    }
 
-                if !skip {
-                    self.buffer[py as usize * sw + px as usize] = color;
+    pub fn draw_rounded_rect_outline(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
+        let r = radius.min(w / 2).min(h / 2) as i32;
+        if r <= 0 {
+            self.draw_rect_outline(x, y, w, h, color);
+            return;
+        }
+
+        // Draw straight edges
+        self.draw_line_h(x + r as u32, y, w - 2 * r as u32, color);
+        self.draw_line_h(x + r as u32, y + h - 1, w - 2 * r as u32, color);
+        self.draw_line_v(x, y + r as u32, h - 2 * r as u32, color);
+        self.draw_line_v(x + w - 1, y + r as u32, h - 2 * r as u32, color);
+
+        // Draw corner arcs using Midpoint Circle Algorithm variant
+        let mut cx = 0;
+        let mut cy = r;
+        let mut d = 3 - 2 * r;
+        while cx <= cy {
+            // Top-left
+            self.draw_pixel(x + (r - cx) as u32, y + (r - cy) as u32, color);
+            self.draw_pixel(x + (r - cy) as u32, y + (r - cx) as u32, color);
+            // Top-right
+            self.draw_pixel(x + w - 1 - (r - cx) as u32, y + (r - cy) as u32, color);
+            self.draw_pixel(x + w - 1 - (r - cy) as u32, y + (r - cx) as u32, color);
+            // Bottom-left
+            self.draw_pixel(x + (r - cx) as u32, y + h - 1 - (r - cy) as u32, color);
+            self.draw_pixel(x + (r - cy) as u32, y + h - 1 - (r - cx) as u32, color);
+            // Bottom-right
+            self.draw_pixel(x + w - 1 - (r - cx) as u32, y + h - 1 - (r - cy) as u32, color);
+            self.draw_pixel(x + w - 1 - (r - cy) as u32, y + h - 1 - (r - cx) as u32, color);
+
+            if d < 0 { d += 4 * cx + 6; }
+            else { d += 4 * (cx - cy) + 10; cy -= 1; }
+            cx += 1;
+        }
+    }
+
+    pub fn draw_rect_outline(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
+        self.draw_line_h(x, y, w, color);
+        self.draw_line_h(x, y + h - 1, w, color);
+        self.draw_line_v(x, y, h, color);
+        self.draw_line_v(x + w - 1, y, h, color);
+    }
+
+    pub fn draw_gradient_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color1: u32, color2: u32, vertical: bool) {
+        let sw = self.width as usize;
+        let sh = self.height as usize;
+        let x0 = x.min(sw as u32) as usize;
+        let y0 = y.min(sh as u32) as usize;
+        let x1 = (x + w).min(sw as u32) as usize;
+        let y1 = (y + h).min(sh as u32) as usize;
+
+        let r1 = ((color1 >> 16) & 0xFF) as i32;
+        let g1 = ((color1 >> 8) & 0xFF) as i32;
+        let b1 = (color1 & 0xFF) as i32;
+        let a1 = ((color1 >> 24) & 0xFF) as i32;
+
+        let r2 = ((color2 >> 16) & 0xFF) as i32;
+        let g2 = ((color2 >> 8) & 0xFF) as i32;
+        let b2 = (color2 & 0xFF) as i32;
+        let a2 = ((color2 >> 24) & 0xFF) as i32;
+
+        if vertical {
+            for py in y0..y1 {
+                let t = (py - y0) as f32 / (y1 - y0).max(1) as f32;
+                let r = (r1 as f32 + t * (r2 - r1) as f32) as u32;
+                let g = (g1 as f32 + t * (g2 - g1) as f32) as u32;
+                let b = (b1 as f32 + t * (b2 - b1) as f32) as u32;
+                let a = (a1 as f32 + t * (a2 - a1) as f32) as u32;
+                let color = (a << 24) | (r << 16) | (g << 8) | b;
+                let row = py * sw;
+                for px in x0..x1 {
+                    self.buffer[row + px] = color;
+                }
+            }
+        } else {
+            for px in x0..x1 {
+                let t = (px - x0) as f32 / (x1 - x0).max(1) as f32;
+                let r = (r1 as f32 + t * (r2 - r1) as f32) as u32;
+                let g = (g1 as f32 + t * (g2 - g1) as f32) as u32;
+                let b = (b1 as f32 + t * (b2 - b1) as f32) as u32;
+                let a = (a1 as f32 + t * (a2 - a1) as f32) as u32;
+                let color = (a << 24) | (r << 16) | (g << 8) | b;
+                for py in y0..y1 {
+                    self.buffer[py * sw + px] = color;
                 }
             }
         }
@@ -469,7 +561,7 @@ impl Window {
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
         let x1 = (x + w).min(sw as u32) as usize;
-        if y as usize >= sh { return 0; }
+        if y as usize >= sh { return; }
         let row = y as usize * sw;
         for px in x0..x1 { self.buffer[row + px] = color; }
     }
@@ -477,7 +569,7 @@ impl Window {
     pub fn draw_line_v(&mut self, x: u32, y: u32, h: u32, color: u32) {
         let sw = self.width as usize;
         let sh = self.height as usize;
-        if x as usize >= sw { return 0; }
+        if x as usize >= sw { return; }
         let y0 = y.min(sh as u32) as usize;
         let y1 = (y + h).min(sh as u32) as usize;
         for py in y0..y1 { self.buffer[py * sw + x as usize] = color; }
@@ -575,7 +667,7 @@ impl Window {
                         }
                     }
                 }
-                return 0;
+                return;
             }
         }
         // Fallback to font8x8
