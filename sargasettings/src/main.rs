@@ -142,9 +142,22 @@ fn user_main() -> i32 {
                         // Update - Update system button
                         if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= 100 && my < 140 {
                             notify("Checking for updates...", 3000);
-                            // Mock network call
-                            unsafe { libsarga::syscall::syscall1(35, 1_000_000_000u64); }
-                            notify("System is up to date!", 3000);
+                            match libsarga::net::HttpClient::get("http://updates.skyious.org/update.toml") {
+                                Ok(data) => {
+                                    let manifest = core::str::from_utf8(&data).unwrap_or("");
+                                    if manifest.contains("version = \"0.6.0\"") {
+                                        notify("New version v0.6.0 found! Downloading...", 5000);
+                                        // Trigger download and update daemon
+                                        let _ = libsarga::fs::write("/tmp/update.toml", &data);
+                                        notify("Update downloaded. Restart to apply.", 5000);
+                                    } else {
+                                        notify("System is up to date!", 3000);
+                                    }
+                                }
+                                Err(_) => {
+                                    notify("Failed to connect to update server.", 3000);
+                                }
+                            }
                         }
                     }
                     3 => {

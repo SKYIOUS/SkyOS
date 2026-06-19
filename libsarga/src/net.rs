@@ -91,3 +91,43 @@ pub fn resolve(hostname: &str, ip_out: &mut [u8; 4]) -> Result<(), i64> {
     let r = unsafe { crate::syscall::syscall2(200, hostname.as_ptr() as u64, ip_out.as_mut_ptr() as u64) };
     if r < 0 { Err(-r) } else { Ok(()) }
 }
+
+pub struct HttpClient;
+
+impl HttpClient {
+    pub fn get(url: &str) -> Result<alloc::vec::Vec<u8>, i64> {
+        // Simple URL parser (only http:// supported)
+        if !url.starts_with("http://") { return Err(22); }
+        let rest = &url[7..];
+        let (host, path) = match rest.find('/') {
+            Some(pos) => (&rest[..pos], &rest[pos..]),
+            None => (rest, "/"),
+        };
+
+        let mut ip = [0u8; 4];
+        resolve(host, &mut ip)?;
+
+        let fd = socket(AF_INET, SOCK_STREAM, 0)?;
+        let addr = SockAddrIn::new(ip, 80);
+        connect(fd, addr.as_bytes())?;
+
+        let request = alloc::format!("GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", path, host);
+        send(fd, request.as_bytes())?;
+
+        let mut response = alloc::vec::Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = recv(fd, &mut buf)?;
+            if n == 0 { break; }
+            response.extend_from_slice(&buf[..n]);
+        }
+        close(fd)?;
+
+        // Find end of headers
+        if let Some(pos) = response.windows(4).position(|w| w == b"\r\n\r\n") {
+            Ok(response[pos + 4..].to_vec())
+        } else {
+            Ok(response)
+        }
+    }
+}
