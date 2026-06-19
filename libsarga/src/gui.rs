@@ -496,7 +496,7 @@ impl Window {
             // Bottom-right
             self.draw_pixel(x + w - 1 - (r - cx) as u32, y + h - 1 - (r - cy) as u32, color);
             self.draw_pixel(x + w - 1 - (r - cy) as u32, y + h - 1 - (r - cx) as u32, color);
-
+            
             if d < 0 { d += 4 * cx + 6; }
             else { d += 4 * (cx - cy) + 10; cy -= 1; }
             cx += 1;

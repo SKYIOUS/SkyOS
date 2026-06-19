@@ -28,6 +28,7 @@ members = [
     "archive",
     "search",
     "installer",
+    "skyd-update",
 ]
 resolver = "2"
 
