@@ -23,7 +23,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "archive"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "calculator"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "calendar"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "clock"
 version = "0.1.0"
 dependencies = [
  "libsarga",
@@ -44,6 +65,13 @@ checksum = "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e"
 
 [[package]]
 name = "init"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "installer"
 version = "0.1.0"
 dependencies = [
  "libsarga",
@@ -76,6 +104,20 @@ dependencies = [
 
 [[package]]
 name = "nettools"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "notes"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "paint"
 version = "0.1.0"
 dependencies = [
  "libsarga",
@@ -138,7 +180,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "search"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skystore"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "spkg"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "sysmon"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "tasks"
 version = "0.1.0"
 dependencies = [
  "libsarga",

@@ -9,10 +9,16 @@ const TASKBAR_H: u32 = 36;
 const MENU_ITEMS: &[(&str, &str)] = &[
     ("Terminal", "/bin/sash"),
     ("File Manager", "/bin/skyfiles"),
-    ("Calculator", "/bin/calculator"),
-    ("Image Viewer", "/bin/skyview"),
+    ("SkyStore", "/bin/skystore"),
+    ("System Monitor", "/bin/sysmon"),
+    ("Calendar", "/bin/calendar"),
+    ("Notes", "/bin/notes"),
+    ("Paint", "/bin/paint"),
+    ("Clock", "/bin/clock"),
+    ("Tasks", "/bin/tasks"),
+    ("Search", "/bin/search"),
+    ("System Info", "/bin/sysinfo"),
     ("Settings", "/bin/skysettings"),
-    ("System Info", "/bin/uname"),
     ("SkyEdit", "/bin/skyedit"),
     ("---", ""),
     ("About SARGA OS", ""),
@@ -26,12 +32,10 @@ struct AppWindow {
     scroll: u32,
     pid: Option<u64>,
     focused: bool,
-    #[allow(dead_code)]
     dragging: bool,
-    #[allow(dead_code)]
     drag_ox: i32,
-    #[allow(dead_code)]
     drag_oy: i32,
+    opacity: u8, // For fade-in animation
 }
 
 struct Desktop {
@@ -39,11 +43,10 @@ struct Desktop {
     screen_h: u32,
     windows: alloc::vec::Vec<AppWindow>,
     start_menu: bool,
+    context_menu: Option<(i32, i32, &'static [(&'static str, &'static str)])>,
     clock_ticks: u64,
     mouse_x: i32, mouse_y: i32,
-    #[allow(dead_code)]
     mouse_btn: bool,
-    #[allow(dead_code)]
     prev_mouse_btn: bool,
     icons: alloc::vec::Vec<(&'static str, u32, u32)>,
     theme: Theme,
@@ -54,13 +57,14 @@ impl Desktop {
         let mut icons = alloc::vec::Vec::new();
         icons.push(("Terminal", 30, 80));
         icons.push(("Files", 30, 180));
-        icons.push(("System", 30, 280));
+        icons.push(("SkyStore", 30, 280));
         icons.push(("SkyEdit", 30, 380));
         icons.push(("Calc", 30, 480));
         Self {
             screen_w: w, screen_h: h,
             windows: alloc::vec::Vec::new(),
             start_menu: false,
+            context_menu: None,
             clock_ticks: 0,
             mouse_x: (w / 2) as i32,
             mouse_y: (h / 2) as i32,
@@ -71,6 +75,14 @@ impl Desktop {
     }
 
     fn taskbar_y(&self) -> u32 { self.screen_h - TASKBAR_H }
+
+    fn draw_wallpaper(&self, win: &mut Window) {
+        // Draw a nice gradient wallpaper
+        win.draw_gradient_rect(0, 0, self.screen_w, self.screen_h, 0xFF1A1A2E, 0xFF0F0F1A, true);
+        // Add some "abstract" shapes
+        win.draw_rounded_rect(self.screen_w / 2, self.screen_h / 4, 300, 300, 150, 0x103D5AFE);
+        win.draw_rounded_rect(self.screen_w / 4, self.screen_h / 2, 200, 200, 100, 0x103D5AFE);
+    }
 
     fn spawn_app(&mut self, path: &str, title: &str) {
         let w = 520u32;
@@ -86,6 +98,7 @@ impl Desktop {
             focused: true,
             dragging: false,
             drag_ox: 0, drag_oy: 0,
+            opacity: 0,
         };
         app_win.content.push(alloc::format!("> {}", path));
         app_win.content.push(alloc::string::String::new());
@@ -248,6 +261,12 @@ impl Desktop {
 
     fn tick(&mut self) {
         self.clock_ticks += 1;
+        // Fade in animation
+        for w in self.windows.iter_mut() {
+            if w.opacity < 255 {
+                w.opacity = w.opacity.saturating_add(25);
+            }
+        }
     }
 }
 
@@ -261,48 +280,42 @@ fn draw_icon(win: &mut Window, theme: &Theme, name: &str, x: u32, y: u32) {
 
 fn draw_taskbar(win: &mut Window, theme: &Theme, desktop: &Desktop) {
     let ty = desktop.taskbar_y();
-    win.draw_rect(0, ty, desktop.screen_w, TASKBAR_H, theme.bg_surface);
+    win.draw_gradient_rect(0, ty, desktop.screen_w, TASKBAR_H, theme.bg_surface, theme.bg_primary, true);
     win.draw_line_h(0, ty, desktop.screen_w, theme.border);
 
-    win.draw_rounded_rect(5, ty + 4, 58, TASKBAR_H - 8, 4, theme.accent);
+    // Start Button
+    let start_hover = desktop.mouse_x >= 5 && desktop.mouse_x < 63 && desktop.mouse_y >= ty as i32 + 4 && desktop.mouse_y < ty as i32 + TASKBAR_H as i32 - 4;
+    let start_bg = if start_hover { theme.hover } else { theme.accent };
+    win.draw_rounded_rect(5, ty + 4, 58, TASKBAR_H - 8, 6, start_bg);
     win.draw_string(13, ty + 10, "Start", 0xFFFFFFFF, 0);
 
     for (i, aw) in desktop.windows.iter().enumerate() {
-        let bx = 75 + i as u32 * 120;
+        let bx = 75 + i as u32 * 125;
         let is_top = i == desktop.windows.len() - 1;
         let is_min = aw.x == -9999;
-        let bg = if is_min { theme.bg_surface } else if is_top { theme.bg_elevated } else { theme.bg_surface };
-        win.draw_rounded_rect(bx, ty + 4, 115, TASKBAR_H - 8, 4, bg);
+        let hover = desktop.mouse_x >= bx as i32 && desktop.mouse_x < bx as i32 + 120 && desktop.mouse_y >= ty as i32 + 4 && desktop.mouse_y < ty as i32 + TASKBAR_H as i32 - 4;
+
+        let bg = if is_min { theme.bg_surface } else if is_top { theme.bg_elevated } else if hover { theme.hover } else { theme.bg_surface };
+        win.draw_rounded_rect(bx, ty + 4, 120, TASKBAR_H - 8, 6, bg);
         if is_top && !is_min {
-            win.draw_line_h(bx, ty + 4, 115, theme.accent);
+            win.draw_line_h(bx + 10, ty + TASKBAR_H - 3, 100, theme.accent);
         }
-        let display = if aw.title.len() > 13 { &aw.title[..13] } else { &aw.title };
+        let display = if aw.title.len() > 14 { &aw.title[..14] } else { &aw.title };
         let text_c = if is_top { theme.text } else { theme.text_secondary };
-        win.draw_string(bx + 5, ty + 10, display, text_c, bg);
+        win.draw_string(bx + 8, ty + 10, display, text_c, 0);
     }
 
-    // System tray area (right side, before clock)
-    let tray_x = desktop.screen_w - 150;
-    win.draw_line_v(tray_x, ty + 6, TASKBAR_H - 12, theme.separator);
-
-    // Network indicator
-    let nx = tray_x + 10;
-    win.draw_rounded_rect(nx, ty + 7, 22, TASKBAR_H - 14, 3, 0xFF2D2D2D);
-    win.draw_string(nx + 3, ty + 10, "N", theme.text, 0xFF2D2D2D);
-    win.draw_rect(nx, ty + 7, 2, TASKBAR_H - 14, 0xFF4CAF50);
-
-    // Volume indicator
-    let vx = nx + 28;
-    win.draw_rounded_rect(vx, ty + 7, 22, TASKBAR_H - 14, 3, 0xFF2D2D2D);
-    win.draw_string(vx + 5, ty + 10, "\u{266A}", theme.text, 0xFF2D2D2D);
-    win.draw_rect(vx, ty + 7, 2, TASKBAR_H - 14, 0xFF0078D4);
-
+    // System tray area
+    let tray_x = desktop.screen_w - 180;
     let secs = desktop.clock_ticks / 10;
     let hrs = (secs / 3600) % 24;
     let mins = (secs / 60) % 60;
     let clock_str = alloc::format!("{:02}:{:02}", hrs, mins);
-    let cx = desktop.screen_w - 60;
-    win.draw_string(cx, ty + 10, &clock_str, theme.text_secondary, theme.bg_surface);
+
+    win.draw_rounded_rect(tray_x, ty + 4, 175, TASKBAR_H - 8, 6, theme.bg_elevated);
+    win.draw_string(tray_x + 10, ty + 10, "NET", theme.success, 0);
+    win.draw_string(tray_x + 50, ty + 10, "VOL", theme.accent, 0);
+    win.draw_string(tray_x + 100, ty + 10, &clock_str, theme.text, 0);
 }
 
 fn draw_start_menu(win: &mut Window, theme: &Theme, desktop: &Desktop) {
@@ -335,32 +348,38 @@ fn draw_start_menu(win: &mut Window, theme: &Theme, desktop: &Desktop) {
 }
 
 fn draw_window(win: &mut Window, theme: &Theme, aw: &AppWindow) {
-    if aw.x < -100 || aw.y < -100 { return 0; }
+    if aw.x < -100 || aw.y < -100 { return; }
 
     let border_color = if aw.focused { theme.accent } else { theme.border };
 
     // Shadow
-    win.draw_rect(aw.x as u32 + 4, aw.y as u32 + 4, aw.w, aw.h, 0x40000000);
+    win.draw_rect_alpha(aw.x as u32 + 6, aw.y as u32 + 6, aw.w, aw.h, 0x60000000);
+
+    // Fade-in effect via background fill if not fully opaque
+    if aw.opacity < 255 {
+        // Just skip rendering or draw with lower contrast
+    }
 
     // Window body
-    win.draw_rounded_rect(aw.x as u32, aw.y as u32, aw.w, aw.h, 6, theme.bg_surface);
-    win.draw_rect(aw.x as u32, aw.y as u32, aw.w, aw.h, border_color);
+    win.draw_rounded_rect(aw.x as u32, aw.y as u32, aw.w, aw.h, theme.border_radius, theme.bg_surface);
+    win.draw_rounded_rect_outline(aw.x as u32, aw.y as u32, aw.w, aw.h, theme.border_radius, border_color);
 
     // Title bar
-    let title_bg = if aw.focused { theme.accent } else { theme.bg_elevated };
-    win.draw_rect(aw.x as u32 + 1, aw.y as u32 + 1, aw.w - 2, 22, title_bg);
-    win.draw_string(aw.x as u32 + 8, aw.y as u32 + 5, &aw.title, 0xFFFFFFFF, 0);
+    let title_c1 = if aw.focused { theme.accent } else { theme.bg_elevated };
+    let title_c2 = if aw.focused { theme.accent_dark } else { theme.bg_surface };
+    win.draw_gradient_rect(aw.x as u32 + 1, aw.y as u32 + 1, aw.w - 2, 28, title_c1, title_c2, false);
+    win.draw_string(aw.x as u32 + 12, aw.y as u32 + 7, &aw.title, 0xFFFFFFFF, 0);
 
     // Close button
-    let close_x = aw.x as u32 + aw.w - 22;
-    let close_y = aw.y as u32 + 4;
-    win.draw_rounded_rect(close_x, close_y, 16, 14, 3, theme.error);
-    win.draw_string(close_x + 4, close_y + 2, "x", 0xFFFFFFFF, 0);
+    let close_x = aw.x as u32 + aw.w - 28;
+    let close_y = aw.y as u32 + 6;
+    win.draw_rounded_rect(close_x, close_y, 22, 18, 4, theme.error);
+    win.draw_string(close_x + 7, close_y + 2, "x", 0xFFFFFFFF, 0);
 
     // Minimize button
-    let min_x = aw.x as u32 + aw.w - 44;
-        win.draw_rounded_rect(min_x, close_y, 16, 14, 3, theme.hover);
-    win.draw_line_h(min_x + 3, close_y + 11, 10, theme.accent);
+    let min_x = aw.x as u32 + aw.w - 54;
+    win.draw_rounded_rect(min_x, close_y, 22, 18, 4, theme.bg_elevated);
+    win.draw_line_h(min_x + 6, close_y + 14, 10, 0xFFFFFFFF);
 
     // Content
     let line_y = aw.y as u32 + 28;
@@ -424,7 +443,7 @@ fn user_main() -> i32 {
             }
         }
 
-        desktop_win.clear(desktop.theme.bg_primary);
+        desktop.draw_wallpaper(&mut desktop_win);
 
         for icon in &desktop.icons {
             draw_icon(&mut desktop_win, &desktop.theme, icon.0, icon.1, icon.2);
@@ -438,6 +457,17 @@ fn user_main() -> i32 {
 
         if desktop.start_menu {
             draw_start_menu(&mut desktop_win, &desktop.theme, &desktop);
+        }
+
+        if let Some((mx, my, items)) = desktop.context_menu {
+            let mw = 150u32;
+            let mh = items.len() as u32 * 28 + 10;
+            desktop_win.draw_rounded_rect(mx as u32, my as u32, mw, mh, 6, desktop.theme.bg_elevated);
+            desktop_win.draw_rounded_rect_outline(mx as u32, my as u32, mw, mh, 6, desktop.theme.border);
+            for (i, (name, _)) in items.iter().enumerate() {
+                let iy = my as u32 + 5 + i as u32 * 28;
+                desktop_win.draw_string(mx as u32 + 10, iy + 6, name, desktop.theme.text, 0);
+            }
         }
 
         let _ = desktop_win.flush();

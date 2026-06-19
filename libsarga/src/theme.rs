@@ -1,16 +1,16 @@
 /// Color constants for the dark theme
 pub mod colors {
-    pub const BG_PRIMARY: u32 = 0xFF1B1B2F;     // Deep navy background
-    pub const BG_SURFACE: u32 = 0xFF252540;     // Card/surface
-    pub const BG_ELEVATED: u32 = 0xFF2D2D4A;    // Elevated surface
-    pub const ACCENT: u32 = 0xFF0078D4;         // Windows blue accent
+    pub const BG_PRIMARY: u32 = 0xFF0F0F1A;     // Darker navy background
+    pub const BG_SURFACE: u32 = 0xFF1A1A2E;     // Card/surface
+    pub const BG_ELEVATED: u32 = 0xFF252540;    // Elevated surface
+    pub const ACCENT: u32 = 0xFF3D5AFE;         // Indigo accent
     pub const ACCENT_LIGHT: u32 = 0xFF1A8FE8;   // Lighter accent
     pub const ACCENT_DARK: u32 = 0xFF005A9E;    // Darker accent
     pub const TEXT_PRIMARY: u32 = 0xFFFFFFFF;    // White text
     pub const TEXT_SECONDARY: u32 = 0xFFB0B0B0;  // Gray text
     pub const TEXT_DISABLED: u32 = 0xFF606060;   // Disabled text
-    pub const BORDER: u32 = 0xFF3A3A5C;         // Border color
-    pub const HOVER: u32 = 0xFF3A3A5C;          // Hover state
+    pub const BORDER: u32 = 0xFF30304D;         // Border color
+    pub const HOVER: u32 = 0xFF3D5AFE;          // Hover state (use accent or lighter)
     pub const PRESSED: u32 = 0xFF1A1A30;        // Pressed state
     pub const ERROR: u32 = 0xFFD32F2F;          // Error red
     pub const SUCCESS: u32 = 0xFF4CAF50;        // Success green
@@ -79,9 +79,9 @@ impl Theme {
             separator: colors::SEPARATOR,
             shadow: colors::SHADOW,
             font_size: 14,
-            border_radius: 6,
-            padding: 8,
-            spacing: 4,
+            border_radius: 12, // More rounded corners
+            padding: 10,
+            spacing: 6,
         }
     }
 }

@@ -7,7 +7,7 @@ use libsarga::gui::Window;
 use libsarga::io::{self, notify, clipboard_write};
 use libsarga::theme::Theme;
 
-const TAB_NAMES: &[&str] = &["Display", "Theme", "About"];
+const TAB_NAMES: &[&str] = &["Display", "Theme", "Update", "About"];
 const SIDEBAR_W: u32 = 120;
 const TAB_H: u32 = 28;
 
@@ -139,6 +139,15 @@ fn user_main() -> i32 {
                         }
                     }
                     2 => {
+                        // Update - Update system button
+                        if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= 100 && my < 140 {
+                            notify("Checking for updates...", 3000);
+                            // Mock network call
+                            unsafe { libsarga::syscall::syscall1(35, 1_000_000_000u64); }
+                            notify("System is up to date!", 3000);
+                        }
+                    }
+                    3 => {
                         // About - copy info button
                         if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= 240 && my < 270 {
                             clipboard_write(b"SARGA OS v0.4.0\nKernel: SARGA\nArch: x86_64\n");
@@ -231,6 +240,22 @@ fn user_main() -> i32 {
                 draw_checkbox(&mut win, &theme, SIDEBAR_W + 16, toggle_y + 48, "Show animations", true);
             }
             2 => {
+                // Update
+                win.draw_string(SIDEBAR_W + 16, 12, "System Updates", theme.text, 0);
+                win.draw_line_h(SIDEBAR_W + 16, 32, win_w - SIDEBAR_W - 32, theme.separator);
+
+                win.draw_string(SIDEBAR_W + 16, 50, "Current Version: v0.5.0", theme.text, 0);
+                win.draw_string(SIDEBAR_W + 16, 70, "Branch: stable", theme.text_secondary, 0);
+
+                let btn_y = 100;
+                let btn_hover = mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= btn_y && my < btn_y + 40;
+                let btn_bg = if btn_hover { theme.hover } else { theme.accent };
+                win.draw_rounded_rect(SIDEBAR_W + 16, btn_y, 164, 40, 6, btn_bg);
+                win.draw_string(SIDEBAR_W + 30, btn_y + 12, "Check for Updates", 0xFFFFFFFF, 0);
+
+                win.draw_string(SIDEBAR_W + 16, 160, "Source: GitHub (SKYIOUS/sarga-os)", theme.text_disabled, 0);
+            }
+            3 => {
                 // About
                 win.draw_string(SIDEBAR_W + 16, 12, "About SARGA OS", theme.text, 0);
                 win.draw_line_h(SIDEBAR_W + 16, 32, win_w - SIDEBAR_W - 32, theme.separator);
@@ -285,6 +310,7 @@ fn user_main() -> i32 {
                 b'1' => settings.active_tab = 0,
                 b'2' => settings.active_tab = 1,
                 b'3' => settings.active_tab = 2,
+                b'4' => settings.active_tab = 3,
                 _ => {}
             }
         }

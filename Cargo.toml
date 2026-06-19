@@ -17,6 +17,17 @@ members = [
     "sargad",
     "sargaview",
     "login-manager",
+    "skystore",
+    "sysmon",
+    "calendar",
+    "notes",
+    "paint",
+    "sysinfo",
+    "clock",
+    "tasks",
+    "archive",
+    "search",
+    "installer",
 ]
 resolver = "2"
 
