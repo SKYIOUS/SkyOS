@@ -86,8 +86,8 @@ You don't need to write code to contribute. Here are many ways to help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/SARGA OS.git
-cd SARGA OS
+git clone https://github.com/SKYIOUS/SARGA-OS.git
+cd SARGA-OS
 
 # Ensure you have nightly Rust
 rustup default nightly
@@ -136,7 +136,7 @@ cargo build --target x86_64-sarga.json -p coreutils
 ### Keeping Your Fork Updated
 
 ```bash
-git remote add upstream https://github.com/SKYIOUS/SARGA OS.git
+git remote add upstream https://github.com/SKYIOUS/SARGA-OS.git
 git fetch upstream
 git rebase upstream/master
 ```

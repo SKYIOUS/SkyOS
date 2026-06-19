@@ -4,104 +4,107 @@ import subprocess
 import sys
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR    = os.path.dirname(SCRIPT_DIR)
-KERNEL_DIR  = os.path.normpath(os.path.join(ROOT_DIR, "..", "SKYIOUS KERNEL"))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(SCRIPT_DIR)
+KERNEL_DIR = os.path.normpath(os.path.join(ROOT_DIR, "..", "SKYIOUS KERNEL"))
 
 # Determine profile (--release flag)
 PROFILE = "release" if "--release" in sys.argv else "debug"
 
-KERNEL_IMAGE = os.path.join(KERNEL_DIR, f"target\\x86_64-vahi\\{PROFILE}\\bootimage-vahi_kernel.bin")
-TARGET_DIR   = os.path.join(ROOT_DIR, "target", "x86_64-sarga", PROFILE)
-VBOX         = r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+KERNEL_IMAGE = os.path.join(
+    KERNEL_DIR, f"target\\x86_64-vahi\\{PROFILE}\\bootimage-vahi_kernel.bin"
+)
+TARGET_DIR = os.path.join(ROOT_DIR, "target", "x86_64-sarga", PROFILE)
+VBOX = r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
 
 # ── Binaries to include in initrd ────────────────────────────────────────────
 BINARIES = {
     # Core
-    "init":  "init",
-    "sash":  "sash",
-    "proc":  "proc",
+    "init": "init",
+    "sash": "sash",
+    "proc": "proc",
     # Coreutils
-    "cat":   "coreutils",
-    "ls":    "coreutils",
+    "cat": "coreutils",
+    "ls": "coreutils",
     "mkdir": "coreutils",
-    "rm":    "coreutils",
-    "echo":  "coreutils",
+    "rm": "coreutils",
+    "echo": "coreutils",
     "uname": "coreutils",
-    "true":  "coreutils",
+    "true": "coreutils",
     "false": "coreutils",
-    "df":    "coreutils",
-    "ps":    "coreutils",
-    "top":   "coreutils",
-    "cp":    "coreutils",
-    "mv":    "coreutils",
-    "grep":  "coreutils",
-    "head":  "coreutils",
-    "wc":    "coreutils",
-    "sort":  "coreutils",
-    "find":  "coreutils",
-    "kill":  "coreutils",
+    "df": "coreutils",
+    "ps": "coreutils",
+    "top": "coreutils",
+    "cp": "coreutils",
+    "mv": "coreutils",
+    "grep": "coreutils",
+    "head": "coreutils",
+    "wc": "coreutils",
+    "sort": "coreutils",
+    "find": "coreutils",
+    "kill": "coreutils",
     "sleep": "coreutils",
     "chmod": "coreutils",
     "chown": "coreutils",
-    "ln":    "coreutils",
+    "ln": "coreutils",
     "readlink": "coreutils",
-    "tee":   "coreutils",
+    "tee": "coreutils",
     "which": "coreutils",
     "xargs": "coreutils",
-    "date":  "coreutils",
+    "date": "coreutils",
     "hostname": "coreutils",
-    "id":    "coreutils",
+    "id": "coreutils",
     "whoami": "coreutils",
     "uptime": "coreutils",
-    "free":  "coreutils",
-    "dd":    "coreutils",
-    "sync":  "coreutils",
+    "free": "coreutils",
+    "dd": "coreutils",
+    "sync": "coreutils",
     "hexdump": "coreutils",
-    "od":    "coreutils",
+    "od": "coreutils",
     "basename": "coreutils",
     "dirname": "coreutils",
     "passwd": "coreutils",
     "login": "coreutils",
-    "su":    "coreutils",
-    "env":   "coreutils",
-    "ping":  "coreutils",
+    "su": "coreutils",
+    "env": "coreutils",
+    "ping": "coreutils",
     "lspci": "coreutils",
     "mkfs_skyfs": "coreutils",
-    "cut":   "coreutils",
-    "tr":    "coreutils",
-    "uniq":  "coreutils",
-    "diff":  "coreutils",
-    "tac":   "coreutils",
-    "nl":    "coreutils",
-    "sed":   "coreutils",
-    "awk":   "coreutils",
+    "cut": "coreutils",
+    "tr": "coreutils",
+    "uniq": "coreutils",
+    "diff": "coreutils",
+    "tac": "coreutils",
+    "nl": "coreutils",
+    "sed": "coreutils",
+    "awk": "coreutils",
     "patch": "coreutils",
-    "tar":   "coreutils",
-    "gzip":  "coreutils",
-    "stat":  "coreutils",
+    "tar": "coreutils",
+    "gzip": "coreutils",
+    "stat": "coreutils",
     "touch": "coreutils",
-    "du":    "coreutils",
+    "du": "coreutils",
     # Apps
     "sarga-term": "sarga-term",
-    "ade":        "ade",
-    "skyedit":    "skyedit",
+    "ade": "ade",
+    "skyedit": "skyedit",
     "calculator": "calculator",
-    "skyfiles":   "skyfiles",
+    "skyfiles": "skyfiles",
     "skysettings": "skysettings",
-    "skyd":        "skyd",
-    "skyview":     "skyview",
+    "skyd": "skyd",
+    "skyview": "skyview",
     # Nettools
-    "curl":     "nettools",
-    "nc":       "nettools",
-    "echod":    "nettools",
+    "curl": "nettools",
+    "nc": "nettools",
+    "echod": "nettools",
     "ifconfig": "nettools",
-    "resolve":  "nettools",
+    "resolve": "nettools",
     # Package manager
-    "spkg":  "spkg",
+    "spkg": "spkg",
     # AI CLI
     "aicli": "aicli",
 }
+
 
 def run(cmd, cwd=None, fatal=True):
     print(f"  > {' '.join(cmd)}")
@@ -110,6 +113,7 @@ def run(cmd, cwd=None, fatal=True):
         print(f"  [ERROR] Command failed (exit {res.returncode})")
         sys.exit(1)
     return res.returncode
+
 
 def main():
     print("=" * 60)
@@ -128,7 +132,15 @@ def main():
     staging = os.path.join(ROOT_DIR, "staging")
     if os.path.exists(staging):
         shutil.rmtree(staging)
-    for d in ["bin", "proc", "etc", "tmp", "dev", os.path.join("usr", "bin"), os.path.join("usr", "share", "fonts")]:
+    for d in [
+        "bin",
+        "proc",
+        "etc",
+        "tmp",
+        "dev",
+        os.path.join("usr", "bin"),
+        os.path.join("usr", "share", "fonts"),
+    ]:
         os.makedirs(os.path.join(staging, d))
 
     copied = 0
@@ -156,7 +168,7 @@ def main():
     init_cfg = os.path.join(staging, "etc", "init.toml")
     with open(init_cfg, "w") as f:
         f.write("# SkyOS init configuration\n")
-        f.write("hostname = \"sarga-os\"\n\n")
+        f.write('hostname = "sarga-os"\n\n')
         f.write("[[service]]\n")
         f.write('name = "login"\n')
         f.write('exec = "/bin/sash"\n')
@@ -201,13 +213,21 @@ def main():
     print("\n[5/6] Creating VirtualBox VDI...")
     output_vdi = os.path.join(ROOT_DIR, "sarga.vdi")
     if os.path.exists(output_vdi):
-        try: os.remove(output_vdi)
-        except OSError: pass
+        try:
+            os.remove(output_vdi)
+        except OSError:
+            pass
 
     if os.path.exists(VBOX):
         run([VBOX, "convertfromraw", KERNEL_IMAGE, output_vdi, "--format", "VDI"])
-        vdi_mb = os.path.exists(output_vdi) and os.path.getsize(output_vdi) / 1024 / 1024
-        print(f"  sarga.vdi created ({vdi_mb:.1f} MB)" if vdi_mb else "  [WARN] VDI may not have been created.")
+        vdi_mb = (
+            os.path.exists(output_vdi) and os.path.getsize(output_vdi) / 1024 / 1024
+        )
+        print(
+            f"  sarga.vdi created ({vdi_mb:.1f} MB)"
+            if vdi_mb
+            else "  [WARN] VDI may not have been created."
+        )
     else:
         print("  [WARN] VBoxManage not found — skipping VDI creation.")
 
@@ -219,13 +239,16 @@ def main():
     print(f"  VDI    : {output_vdi}")
     print()
     print("  +-- QEMU -----------------------------------------------------------")
-    print(f"  |  qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=\"{KERNEL_IMAGE}\" -m 2G -smp 1 -serial stdio -display sdl")
+    print(
+        f'  |  qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file="{KERNEL_IMAGE}" -m 2G -smp 1 -serial stdio -display sdl'
+    )
     print("  |")
     print("  +-- VirtualBox ------------------------------------------------------")
     print("     1. Create VM -> Other Linux (64-bit)")
     print("     2. System -> Motherboard -> Enable EFI")
     print(f"     3. Storage -> Add {output_vdi} as primary disk")
     print("     4. Boot! (initrd is embedded in the kernel)")
+
 
 if __name__ == "__main__":
     main()

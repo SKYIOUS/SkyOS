@@ -65,7 +65,7 @@ Creates 128 MB ext2 disk image (`sarga.img`), mounts via loopback, copies binari
 ### `SKYIOUS KERNEL/build_initrd.py`
 Creates `initrd.tar` with full FHS: ~40 userspace binaries, symlinks, config files, empty directories.
 ```
-python build_initrd.py [SARGA OS_directory]
+python build_initrd.py [SARGA-OS_directory]
 ```
 
 ### `SARGA OS/scripts/make_sarga_image.py`

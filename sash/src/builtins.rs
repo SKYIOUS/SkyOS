@@ -406,5 +406,3 @@ fn format_errno(r: i64) -> &'static str {
         _ => "error",
     }
 }
-
-

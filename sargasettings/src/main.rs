@@ -2,9 +2,9 @@
 #![no_main]
 #![allow(unused_assignments)]
 extern crate alloc;
-use libsarga::sarga_main;
 use libsarga::gui::Window;
-use libsarga::io::{self, notify, clipboard_write};
+use libsarga::io::{self, clipboard_write, notify};
+use libsarga::sarga_main;
 use libsarga::theme::Theme;
 
 const TAB_NAMES: &[&str] = &["Display", "Theme", "Update", "About"];
@@ -57,7 +57,11 @@ const ACCENT_COLORS: &[(&str, u32)] = &[
 
 fn draw_checkbox(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, checked: bool) {
     // Checkbox box
-    let bg = if checked { theme.accent } else { theme.bg_elevated };
+    let bg = if checked {
+        theme.accent
+    } else {
+        theme.bg_elevated
+    };
     win.draw_rounded_rect(x, y, 16, 16, 3, bg);
     if checked {
         win.draw_string(x + 2, y + 1, "x", 0xFFFFFFFF, 0);
@@ -68,7 +72,11 @@ fn draw_checkbox(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, c
 
 fn draw_radio(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, selected: bool) {
     // Radio circle (draw as rounded rect approximation)
-    let bg = if selected { theme.accent } else { theme.bg_elevated };
+    let bg = if selected {
+        theme.accent
+    } else {
+        theme.bg_elevated
+    };
     win.draw_rounded_rect(x, y, 16, 16, 8, bg);
     if selected {
         win.draw_rounded_rect(x + 4, y + 4, 8, 8, 4, 0xFFFFFFFF);
@@ -86,7 +94,10 @@ fn user_main() -> i32 {
 
     let mut win = match Window::create("System Settings", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("sargasettings: window failed: {}\n", e)); return 0; }
+        Err(e) => {
+            io::print_str(&alloc::format!("sargasettings: window failed: {}\n", e));
+            return 0;
+        }
     };
 
     let mut prev_pressed = false;
@@ -142,9 +153,24 @@ fn user_main() -> i32 {
                         // Update - Update system button
                         if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= 100 && my < 140 {
                             notify("Checking for updates...", 3000);
-                            // Mock network call
-                            unsafe { libsarga::syscall::syscall1(35, 1_000_000_000u64); }
-                            notify("System is up to date!", 3000);
+                            match libsarga::net::HttpClient::get(
+                                "http://updates.skyious.org/update.toml",
+                            ) {
+                                Ok(data) => {
+                                    let manifest = core::str::from_utf8(&data).unwrap_or("");
+                                    if manifest.contains("version = \"0.6.0\"") {
+                                        notify("New version v0.6.0 found! Downloading...", 5000);
+                                        // Trigger download and update daemon
+                                        let _ = libsarga::fs::write("/tmp/update.toml", &data);
+                                        notify("Update downloaded. Restart to apply.", 5000);
+                                    } else {
+                                        notify("System is up to date!", 3000);
+                                    }
+                                }
+                                Err(_) => {
+                                    notify("Failed to connect to update server.", 3000);
+                                }
+                            }
                         }
                     }
                     3 => {
@@ -158,7 +184,9 @@ fn user_main() -> i32 {
                 }
             }
         }
-        if !pressed { prev_pressed = false; }
+        if !pressed {
+            prev_pressed = false;
+        }
 
         // Hover tracking
         settings.hover_tab = None;
@@ -187,9 +215,21 @@ fn user_main() -> i32 {
             let ty = 40 + i as u32 * (TAB_H + 4);
             let is_active = settings.active_tab == i;
             let is_hover = settings.hover_tab == Some(i);
-            let bg = if is_active { theme.accent } else if is_hover { theme.hover } else { 0 };
-            if bg != 0 { win.draw_rounded_rect(4, ty, SIDEBAR_W - 8, TAB_H, 4, bg); }
-            let tc = if is_active { 0xFFFFFFFF } else { theme.text_secondary };
+            let bg = if is_active {
+                theme.accent
+            } else if is_hover {
+                theme.hover
+            } else {
+                0
+            };
+            if bg != 0 {
+                win.draw_rounded_rect(4, ty, SIDEBAR_W - 8, TAB_H, 4, bg);
+            }
+            let tc = if is_active {
+                0xFFFFFFFF
+            } else {
+                theme.text_secondary
+            };
             win.draw_string(12, ty + 7, name, tc, 0);
         }
 
@@ -235,9 +275,29 @@ fn user_main() -> i32 {
 
                 // Dark mode toggle
                 let toggle_y = 64 + ACCENT_COLORS.len() as u32 * 28 + 16;
-                win.draw_string(SIDEBAR_W + 16, toggle_y, "Appearance", theme.text_secondary, 0);
-                draw_checkbox(&mut win, &theme, SIDEBAR_W + 16, toggle_y + 24, "Dark Mode (always on)", true);
-                draw_checkbox(&mut win, &theme, SIDEBAR_W + 16, toggle_y + 48, "Show animations", true);
+                win.draw_string(
+                    SIDEBAR_W + 16,
+                    toggle_y,
+                    "Appearance",
+                    theme.text_secondary,
+                    0,
+                );
+                draw_checkbox(
+                    &mut win,
+                    &theme,
+                    SIDEBAR_W + 16,
+                    toggle_y + 24,
+                    "Dark Mode (always on)",
+                    true,
+                );
+                draw_checkbox(
+                    &mut win,
+                    &theme,
+                    SIDEBAR_W + 16,
+                    toggle_y + 48,
+                    "Show animations",
+                    true,
+                );
             }
             2 => {
                 // Update
@@ -245,15 +305,34 @@ fn user_main() -> i32 {
                 win.draw_line_h(SIDEBAR_W + 16, 32, win_w - SIDEBAR_W - 32, theme.separator);
 
                 win.draw_string(SIDEBAR_W + 16, 50, "Current Version: v0.5.0", theme.text, 0);
-                win.draw_string(SIDEBAR_W + 16, 70, "Branch: stable", theme.text_secondary, 0);
+                win.draw_string(
+                    SIDEBAR_W + 16,
+                    70,
+                    "Branch: stable",
+                    theme.text_secondary,
+                    0,
+                );
 
                 let btn_y = 100;
-                let btn_hover = mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= btn_y && my < btn_y + 40;
+                let btn_hover =
+                    mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= btn_y && my < btn_y + 40;
                 let btn_bg = if btn_hover { theme.hover } else { theme.accent };
                 win.draw_rounded_rect(SIDEBAR_W + 16, btn_y, 164, 40, 6, btn_bg);
-                win.draw_string(SIDEBAR_W + 30, btn_y + 12, "Check for Updates", 0xFFFFFFFF, 0);
+                win.draw_string(
+                    SIDEBAR_W + 30,
+                    btn_y + 12,
+                    "Check for Updates",
+                    0xFFFFFFFF,
+                    0,
+                );
 
-                win.draw_string(SIDEBAR_W + 16, 160, "Source: GitHub (SKYIOUS/sarga-os)", theme.text_disabled, 0);
+                win.draw_string(
+                    SIDEBAR_W + 16,
+                    160,
+                    "Source: GitHub (SKYIOUS/sarga-os)",
+                    theme.text_disabled,
+                    0,
+                );
             }
             3 => {
                 // About
@@ -295,7 +374,8 @@ fn user_main() -> i32 {
 
                 // Copy button
                 let btn_y = 240;
-                let btn_hover = mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= btn_y && my < btn_y + 28;
+                let btn_hover =
+                    mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= btn_y && my < btn_y + 28;
                 let btn_bg = if btn_hover { theme.hover } else { theme.accent };
                 win.draw_rounded_rect(SIDEBAR_W + 16, btn_y, 144, 28, 4, btn_bg);
                 win.draw_string(SIDEBAR_W + 28, btn_y + 6, "Copy Info", 0xFFFFFFFF, 0);
@@ -317,7 +397,9 @@ fn user_main() -> i32 {
 
         let _ = win.flush();
         prev_pressed = pressed;
-        unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
+        unsafe {
+            libsarga::syscall::syscall1(35, 16_666_000);
+        }
     }
     0
 }

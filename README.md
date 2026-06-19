@@ -1,4 +1,4 @@
-# SARGIUOUS + SARGA OS
+# SKYIOUS + SARGA OS
 
 > A modern, GPL-free operating system userland built on the SARGA kernel.
 > Fast, lightweight, self-hosted, and extensible.
@@ -308,7 +308,7 @@ cd ../SARGIUOUS\ KERNEL
 ./make_bootimage.sh
 
 # 3. Run in QEMU
-cd SARGA OS
+cd SARGA-OS
 make run
 ```
 
@@ -335,7 +335,7 @@ QEMU configuration (from `Makefile`):
 ## Project Structure
 
 ```
-SARGA OS/
+SARGA-OS/
 ├── .cargo/                 # Cargo configuration (build-std, rustflags)
 ├── libsarga/               # Core standard library (no_std)
 │   └── src/
@@ -503,7 +503,7 @@ Same structure targeting `aarch64-unknown-none` with the `aarch64-sarga.ld` link
 
 ## Contributing
 
-Contributions are welcome under the **SARGIUOUS Software License (SSL)** terms.
+Contributions are welcome under the **SKYIOUS Software License (SSL)** terms.
 
 ### Development Workflow
 
@@ -527,7 +527,7 @@ Contributions are welcome under the **SARGIUOUS Software License (SSL)** terms.
 
 ## License
 
-**SARGIUOUS Software License (SSL) v1.0**
+**SKYIOUS Software License (SSL) v1.0**
 
 Copyright (c) 2026 SARGA OS Contributors
 
