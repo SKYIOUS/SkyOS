@@ -3,12 +3,12 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let target = if args::argc() > 1 {
         args::get(1).unwrap_or("10.0.2.2")
     } else {
         println!("Usage: ping <host>");
-        return;
+        return 0;
     };
     let count = 4u32;
     println!("PING {}: 64 byte packets", target);
@@ -34,6 +34,9 @@ fn user_main() {
     }
     println!("--- {} ping statistics ---", target);
     println!("{} packets transmitted, {} received, 0% packet loss", count, count);
+
+    0
+    0
 }
 
 sarga_main!(user_main);

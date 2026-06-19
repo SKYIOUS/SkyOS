@@ -35,7 +35,7 @@ impl Calculator {
             self.display[0..5].copy_from_slice(b"Error");
             self.display_len = 5;
             self.error = true;
-            return;
+            return 0;
         }
         self.error = false;
         let int_part = val.abs() as u64;
@@ -72,7 +72,7 @@ impl Calculator {
     }
 
     fn push_digit(&mut self, d: u8) {
-        if self.error { return; }
+        if self.error { return 0; }
         if self.new_number {
             self.display_len = 0;
             self.new_number = false;
@@ -84,7 +84,7 @@ impl Calculator {
     }
 
     fn push_dot(&mut self) {
-        if self.error { return; }
+        if self.error { return 0; }
         if self.new_number {
             self.display[0] = b'0';
             self.display_len = 1;
@@ -92,7 +92,7 @@ impl Calculator {
         }
         // Check if dot already exists
         for i in 0..self.display_len {
-            if self.display[i] == b'.' { return; }
+            if self.display[i] == b'.' { return 0; }
         }
         self.display[self.display_len] = b'.';
         self.display_len += 1;
@@ -134,7 +134,7 @@ impl Calculator {
     }
 
     fn calculate(&mut self) {
-        if self.error { return; }
+        if self.error { return 0; }
         let b = self.current_value();
         let result = match self.operator {
             b'+' => self.operand + b,
@@ -149,7 +149,7 @@ impl Calculator {
     }
 
     fn op(&mut self, op: u8) {
-        if self.error { return; }
+        if self.error { return 0; }
         if self.operator != b'=' && !self.new_number {
             self.calculate();
         } else {
@@ -171,7 +171,7 @@ impl Calculator {
     }
 
     fn backspace(&mut self) {
-        if self.error || self.new_number { return; }
+        if self.error || self.new_number { return 0; }
         if self.display_len > 1 {
             self.display_len -= 1;
         } else {
@@ -182,7 +182,7 @@ impl Calculator {
     }
 
     fn negate(&mut self) {
-        if self.error { return; }
+        if self.error { return 0; }
         if self.display_len > 0 && self.display[0] == b'-' {
             for i in 1..self.display_len {
                 self.display[i - 1] = self.display[i];
@@ -239,7 +239,7 @@ fn hit_test(mx: u32, my: u32) -> Option<(usize, usize)> {
     None
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
     let mut calc = Calculator::new();
 
@@ -248,7 +248,7 @@ fn user_main() {
 
     let mut win = match Window::create("Calculator", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("calculator: window failed: {}\n", e)); return; }
+        Err(e) => { io::print_str(&alloc::format!("calculator: window failed: {}\n", e)); return 0; }
     };
 
     let mut prev_pressed = false;
@@ -358,6 +358,7 @@ fn user_main() {
         let _ = win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
+    0
 }
 
 sarga_main!(user_main);

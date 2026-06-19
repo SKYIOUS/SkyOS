@@ -29,7 +29,7 @@ fn oct_to_num(s: &str) -> u64 {
     n
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut extract = false;
     let mut list = false;
     let mut create = false;
@@ -52,16 +52,16 @@ fn user_main() {
     }
     if file.is_empty() {
         io::print_str("Usage: tar -xtcf <archive> [files]\n");
-        return;
+        return 0;
     }
     if create {
         io::print_str("tar: create not yet supported\n");
-        return;
+        return 0;
     }
     let data = read_file(file);
     if data.is_empty() {
         io::print_str(&alloc::format!("tar: cannot open '{}'\n", file));
-        return;
+        return 0;
     }
     let mut offset = 0;
     while offset + 512 <= data.len() {
@@ -98,6 +98,8 @@ fn user_main() {
         let blocks = (size + 511) / 512;
         offset += 512 + blocks as usize * 512;
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

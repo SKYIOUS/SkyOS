@@ -14,7 +14,9 @@ fn join_path(base: &str, name: &str) -> String {
 }
 
 fn remove_recursive(path: &str, force: bool) -> i64 {
-    let fd = match io::open(path, 0) {
+    let mut path_c = String::from(path);
+    path_c.push('\0');
+    let fd = match io::open(&path_c, 0) {
         Ok(fd) => fd,
         Err(_) => { if !force { println!("rm: {}: not found", path); } return -1; }
     };
@@ -32,14 +34,20 @@ fn remove_recursive(path: &str, force: bool) -> i64 {
                 if let Ok(name) = core::str::from_utf8(&entries[i+11..i+11+namelen]) {
                     if name == "." || name == ".." { i += reclen; continue; }
                     let entry_path = join_path(path, name);
-                    let mut st = [0u64; 32];
-                    if unsafe { syscall::syscall2(4, entry_path.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0 {
-                        if (st[1] & 0o170000) == 0o040000 {
-                            remove_recursive(&entry_path, force);
-                            unsafe { syscall::syscall1(84, entry_path.as_ptr() as u64); }
-                        } else {
-                            unsafe { syscall::syscall1(87, entry_path.as_ptr() as u64); }
+                    match libsarga::fs::stat(&entry_path) {
+                        Ok(st) => {
+                            if (st.mode & 0o170000) == 0o040000 {
+                                remove_recursive(&entry_path, force);
+                                let mut ep_c = String::from(&entry_path);
+                                ep_c.push('\0');
+                                unsafe { syscall::syscall1(84, ep_c.as_ptr() as u64); }
+                            } else {
+                                let mut ep_c = String::from(&entry_path);
+                                ep_c.push('\0');
+                                unsafe { syscall::syscall1(87, ep_c.as_ptr() as u64); }
+                            }
                         }
+                        Err(_) => {}
                     }
                 }
             }
@@ -50,10 +58,10 @@ fn remove_recursive(path: &str, force: bool) -> i64 {
     0
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 2 {
         println!("Usage: rm [-rf] <path>...");
-        libsarga::process::exit(1);
+        return 1;
     }
     let mut recursive = false;
     let mut force = false;
@@ -66,20 +74,32 @@ fn user_main() {
             else { paths.push(String::from(s)); }
         }
     }
+    let mut exit_code = 0;
     for path in &paths {
-        let mut st = [0u64; 32];
-        let is_dir = unsafe { syscall::syscall2(4, path.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0
-            && (st[1] & 0o170000) == 0o040000;
-        if is_dir && recursive {
-            remove_recursive(path, force);
-            unsafe { syscall::syscall1(84, path.as_ptr() as u64); }
-        } else if is_dir && !recursive {
-            println!("rm: {}: is a directory (use -r)", path);
-        } else {
-            let r = unsafe { syscall::syscall1(87, path.as_ptr() as u64) };
-            if r != 0 && !force { println!("rm: {}: failed", path); }
+        let mut path_c = String::from(path);
+        path_c.push('\0');
+        match libsarga::fs::stat(path) {
+            Ok(st) => {
+                let is_dir = (st.mode & 0o170000) == 0o040000;
+                if is_dir && recursive {
+                    remove_recursive(path, force);
+                    unsafe { syscall::syscall1(84, path_c.as_ptr() as u64); }
+                } else if is_dir && !recursive {
+                    println!("rm: {}: is a directory (use -r)", path);
+                    exit_code = 1;
+                } else {
+                    let r = unsafe { syscall::syscall1(87, path_c.as_ptr() as u64) };
+                    if r != 0 && !force { println!("rm: {}: failed with error {}", path, -r); exit_code = 1; }
+                }
+            }
+            Err(e) => {
+                if !force { println!("rm: {}: stat failed with error {}", path, e); exit_code = 1; }
+            }
         }
     }
+    exit_code
+    0
+    0
 }
 
 sarga_main!(user_main);

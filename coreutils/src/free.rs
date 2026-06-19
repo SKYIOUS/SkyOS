@@ -17,7 +17,7 @@ fn read_ctl(path: &str) -> u64 {
     s.trim().parse().unwrap_or(0)
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let total = read_ctl("/ctl/sys/mem/total");
     let used = read_ctl("/ctl/sys/mem/used");
     let free = read_ctl("/ctl/sys/mem/free");
@@ -32,6 +32,9 @@ fn user_main() {
     print!("{:>10} ", alloc::format!("{} KB", used_kb));
     print!("{:>10} ", alloc::format!("{} KB", free_kb));
     println!("{:>10}", alloc::format!("{} KB", cached_kb));
+
+    0
+    0
 }
 
 sarga_main!(user_main);

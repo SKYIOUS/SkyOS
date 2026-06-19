@@ -3,7 +3,7 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
 
-fn user_main() {
+fn user_main() -> i32 {
     let fd = io::open("/sys/net", 0);
     if fd.is_ok() {
         let fd = fd.unwrap();
@@ -44,6 +44,7 @@ fn user_main() {
             }
         }
     }
+    0
 }
 
 sarga_main!(user_main);

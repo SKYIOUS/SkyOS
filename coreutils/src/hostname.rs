@@ -3,7 +3,7 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, args, io, syscall};
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() > 1 {
         let name = args::get(1).unwrap_or("");
         let fd = unsafe { syscall::syscall2(2, "/ctl/kernel/hostname\0".as_ptr() as u64, 0x42) };
@@ -14,7 +14,7 @@ fn user_main() {
     } else {
         let fd = match io::open("/ctl/kernel/hostname", 0) {
             Ok(fd) => fd,
-            Err(_) => { println!("hostname: failed to read hostname"); return; }
+            Err(_) => { println!("hostname: failed to read hostname"); return 0; }
         };
         let mut buf = [0u8; 256];
         if let Ok(n) = io::read(fd, &mut buf) {
@@ -24,6 +24,8 @@ fn user_main() {
         }
         let _ = io::close(fd);
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

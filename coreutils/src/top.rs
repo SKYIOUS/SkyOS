@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
 use alloc::string::String;
 
-fn user_main() {
+fn user_main() -> i32 {
     let interval: u64 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(2);
     let mut _iteration = 0u64;
     loop {
@@ -16,7 +16,7 @@ fn user_main() {
         let mem_total = read_ctl_file("sys/mem/total").unwrap_or_else(|_| String::from("?"));
         let mem_free = read_ctl_file("sys/mem/free").unwrap_or_else(|_| String::from("?"));
 
-        println!("SkyOS top - uptime: {}s  cpu: {}%  mem total: {} free: {}",
+        println!("SARGA OS top - uptime: {}s  cpu: {}%  mem total: {} free: {}",
             uptime_str.trim(), cpu_load.trim(), mem_total.trim(), mem_free.trim());
         println!("PID  PPID STATE CMD");
 
@@ -46,6 +46,8 @@ fn read_ctl_file(path: &str) -> Result<String, i64> {
     let n = io::read(fd, &mut buf)?;
     let _ = io::close(fd);
     Ok(core::str::from_utf8(&buf[..n]).unwrap_or("").into())
+    0
+    0
 }
 
 sarga_main!(user_main);

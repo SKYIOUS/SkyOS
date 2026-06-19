@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
 use alloc::string::String;
 
-fn user_main() {
+fn user_main() -> i32 {
     let show_all = args::argc() > 1 && args::get(1) == Some("-a") || args::argc() > 1 && args::get(1) == Some("aux");
 
     // Try reading from ctlFS /proc/list
@@ -24,7 +24,7 @@ fn user_main() {
                 println!("1    0    S     init");
                 println!("--   --   R     sash");
             }
-            return;
+            return 0;
         }
     };
 
@@ -35,6 +35,7 @@ fn user_main() {
             println!("{}", trimmed);
         }
     }
+    0
 }
 
 fn read_ctl_file(path: &str) -> Result<String, i64> {
@@ -45,6 +46,8 @@ fn read_ctl_file(path: &str) -> Result<String, i64> {
     let n = io::read(fd, &mut buf)?;
     let _ = io::close(fd);
     Ok(core::str::from_utf8(&buf[..n]).unwrap_or("").into())
+    0
+    0
 }
 
 sarga_main!(user_main);

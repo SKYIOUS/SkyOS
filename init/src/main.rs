@@ -53,7 +53,7 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, i64> {
 // ── config parser (simple /etc/init.toml) ───────────────────────────────────
 
 fn parse_config(data: &[u8]) -> (String, Vec<(String, String, bool)>) {
-    let mut hostname = String::from("sargathos");
+    let mut hostname = String::from("sarga");
     let mut services: Vec<(String, String, bool)> = Vec::new();
     let mut in_service = false;
     let mut current_name = String::new();
@@ -201,8 +201,8 @@ fn shutdown_all(services: &mut BTreeMap<String, Service>, do_reboot: bool) {
 
 // ── main ────────────────────────────────────────────────────────────────────
 
-fn user_main() {
-    write_all(1, b"[init] Vahi init v0.1 starting\n").ok();
+fn user_main() -> i32 {
+    write_all(1, b"[init] SARGA init v0.1 starting\n").ok();
 
     // Mount filesystems
     mount_fs("devfs", "/dev");
@@ -282,6 +282,8 @@ fn user_main() {
     }
 
     shutdown_all(&mut services, REBOOT.load(Ordering::SeqCst));
+
+    0
 }
 
 sarga_main!(user_main);

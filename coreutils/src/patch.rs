@@ -42,7 +42,7 @@ fn write_file(path: &str, content: &str) -> bool {
     (n as i64) == content.len() as i64
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut file = "";
     let mut i = 1;
     while i < args::argc() {
@@ -96,6 +96,8 @@ fn user_main() {
             io::print_str(&alloc::format!("Failed to write {}\n", current_file));
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

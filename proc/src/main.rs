@@ -12,7 +12,7 @@ fn copy_ctl_to_proc(ctl_path: &str, proc_path: &str) {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     println!("Sarga /proc daemon (procd) started");
 
     loop {
@@ -31,6 +31,7 @@ fn user_main() {
             syscall2(35, req.as_ptr() as u64, 0);
         }
     }
+    0
 }
 
 sarga_main!(user_main);

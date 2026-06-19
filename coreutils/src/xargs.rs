@@ -5,8 +5,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::{sarga_main, println, args, io, syscall};
 
-fn user_main() {
-    if args::argc() < 2 { println!("Usage: xargs <command> [args...]"); return; }
+fn user_main() -> i32 {
+    if args::argc() < 2 { println!("Usage: xargs <command> [args...]"); return 0; }
     let mut cmd_args = Vec::new();
     for i in 1..args::argc() {
         if let Some(s) = args::get(i as usize) {
@@ -43,6 +43,8 @@ fn user_main() {
             unsafe { syscall::syscall2(61, pid as u64, 0u64); }
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

@@ -78,7 +78,7 @@ fn delete_file(path: &str) {
     let _ = io::unlink(path);
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     io::print_str("[skyd] notification daemon started\n");
 
     // Ensure inbox directory exists
@@ -114,6 +114,7 @@ fn user_main() {
         // Sleep 500ms
         unsafe { libsarga::syscall::syscall1(35, 500_000_000u64); }
     }
+    0
 }
 
 sarga_main!(user_main);

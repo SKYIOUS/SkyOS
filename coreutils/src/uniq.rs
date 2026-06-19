@@ -5,7 +5,7 @@ use libsarga::sarga_main;
 use libsarga::io;
 use libsarga::args;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut count = false;
     let mut i = 1;
     while i < args::argc() {
@@ -48,6 +48,8 @@ fn user_main() {
             io::print_str(&alloc::format!("{}\n", prev));
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

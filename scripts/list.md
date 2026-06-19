@@ -1,27 +1,27 @@
-# SkyOS Scripts Master List
+# SARGA OS Scripts Master List
 
 ## Build Scripts
 
-### `SkyOS/Makefile`
+### `SARGA OS/Makefile`
 Top-level GNU Makefile. Targets: `all` (build), `clean`, `run` (QEMU).
 ```
 make [all|clean|run]
 ```
 
-### `SkyOS/build.sh`
-Builds SkyOS workspace (Linux/WSL). Compiles all workspace members for `x86_64-unknown-none`, then creates disk image.
+### `SARGA OS/build.sh`
+Builds SARGA OS workspace (Linux/WSL). Compiles all workspace members for `x86_64-unknown-none`, then creates disk image.
 ```
 ./build.sh [all | component_name]
 ```
 
-### `SkyOS/build.ps1`
+### `SARGA OS/build.ps1`
 PowerShell equivalent of `build.sh` (Windows). Calls WSL for `disk/create_disk.sh`.
 ```
 .\build.ps1 [all | component_name]
 ```
 
 ### `SKYIOUS KERNEL/build_userspace.ps1`
-Builds all userspace binaries (init, sargash, svc, vahid, sarga-disp, skypkg, login, passwd, skybuild, setup, coreutils, etc.) for the `x86_64-skyos` target. Copies to `SkyOS/bin/`, then creates `initrd.tar`.
+Builds all userspace binaries (init, sargash, svc, vahid, sarga-disp, skypkg, login, passwd, skybuild, setup, coreutils, etc.) for the `x86_64-sarga` target. Copies to `SARGA OS/bin/`, then creates `initrd.tar`.
 ```
 .\build_userspace.ps1
 ```
@@ -56,8 +56,8 @@ _(Automatic — run via `cargo run --manifest-path builder/Cargo.toml`.)_
 
 ## Disk / Initrd Image Scripts
 
-### `SkyOS/disk/create_disk.sh`
-Creates 128 MB ext2 disk image (`aethos.img`), mounts via loopback, copies binaries and config. Requires root.
+### `SARGA OS/disk/create_disk.sh`
+Creates 128 MB ext2 disk image (`sarga.img`), mounts via loopback, copies binaries and config. Requires root.
 ```
 ./disk/create_disk.sh
 ```
@@ -65,23 +65,23 @@ Creates 128 MB ext2 disk image (`aethos.img`), mounts via loopback, copies binar
 ### `SKYIOUS KERNEL/build_initrd.py`
 Creates `initrd.tar` with full FHS: ~40 userspace binaries, symlinks, config files, empty directories.
 ```
-python build_initrd.py [SkyOS_directory]
+python build_initrd.py [SARGA OS_directory]
 ```
 
-### `SkyOS/scripts/make_sarga_image.py`
+### `SARGA OS/scripts/make_sarga_image.py`
 End-to-end image creator: stages binaries from `target/x86_64-sarga/release/`, packs initrd, embeds into kernel, converts to VDI.
 ```
 python scripts/make_sarga_image.py
 ```
 
-### `SkyOS/scripts/make_initrd.py`
+### `SARGA OS/scripts/make_initrd.py`
 Simple initrd packer from `staging/` directory.
 ```
 python scripts/make_initrd.py
 ```
 
 ### `SKYIOUS KERNEL/rebuild_initrd.ps1`
-Finds newly built `init` binary by size (18632 bytes), copies to `SkyOS/bin/init`, rebuilds initrd.
+Finds newly built `init` binary by size (18632 bytes), copies to `SARGA OS/bin/init`, rebuilds initrd.
 ```
 .\rebuild_initrd.ps1
 ```
@@ -90,20 +90,20 @@ Finds newly built `init` binary by size (18632 bytes), copies to `SkyOS/bin/init
 
 ## Run / QEMU Scripts
 
-### `SkyOS/run.sh`
-Launches SkyOS in QEMU (Linux/WSL). IDE drive, 512 MB, 2 CPUs, serial stdio, VGA.
+### `SARGA OS/run.sh`
+Launches SARGA OS in QEMU (Linux/WSL). IDE drive, 512 MB, 2 CPUs, serial stdio, VGA.
 ```
 ./run.sh
 ```
 
-### `SkyOS/run.ps1`
-Launches SkyOS in QEMU (Windows). IDE drive, OVMF UEFI, 512 MB, 2 CPUs, serial stdio, VGA.
+### `SARGA OS/run.ps1`
+Launches SARGA OS in QEMU (Windows). IDE drive, OVMF UEFI, 512 MB, 2 CPUs, serial stdio, VGA.
 ```
 .\run.ps1
 ```
 
 ### `SKYIOUS KERNEL/run_qemu_display.ps1`
-Launches SkyOS with SDL graphical display. Serial output logged to `qemu_display.log`. Uses 1 CPU, US keyboard, VGA std.
+Launches SARGA OS with SDL graphical display. Serial output logged to `qemu_display.log`. Uses 1 CPU, US keyboard, VGA std.
 ```
 .\run_qemu_display.ps1
 ```
@@ -140,50 +140,50 @@ Login automation test — uses Expect to send username/password (`root`/`root`),
 
 ## Debug / Analysis Scripts
 
-### `SkyOS/scripts/debug/check_elf.py`
+### `SARGA OS/scripts/debug/check_elf.py`
 Dumps ELF header and program headers of `target/x86_64-sarga/release/init`.
 ```
 python scripts/debug/check_elf.py
 ```
 
-### `SkyOS/scripts/debug/check_init.py`
+### `SARGA OS/scripts/debug/check_init.py`
 Extracts all printable ASCII strings (≥6 chars) from the `init` binary with file offsets.
 ```
 python scripts/debug/check_init.py
 ```
 
-### `SkyOS/scripts/debug/check_str.py`
-Searches segment 2 of `init` binary for strings `/etc/init.cfg`, `SkyOS`, `Starting`.
+### `SARGA OS/scripts/debug/check_str.py`
+Searches segment 2 of `init` binary for strings `/etc/init.cfg`, `SARGA OS`, `Starting`.
 ```
 python scripts/debug/check_str.py
 ```
 
-### `SkyOS/scripts/debug/check_str2.py`
+### `SARGA OS/scripts/debug/check_str2.py`
 Iterates LOAD segments, reports which contain key strings and virtual addresses.
 ```
 python scripts/debug/check_str2.py
 ```
 
-### `SkyOS/scripts/debug/check_str3.py`
+### `SARGA OS/scripts/debug/check_str3.py`
 Full binary scan for `/etc/init.cfg`, `ABCDEFGHIJKLMNOPQRSTUVWXYZ`, `OK`, `FAIL` — reports all file offsets.
 ```
 python scripts/debug/check_str3.py
 ```
 
-### `SkyOS/scripts/debug/check_str4.py`
+### `SARGA OS/scripts/debug/check_str4.py`
 Byte-level search for `/etc/init.cfg` variants in `init` binary. Hex dumps of `.rodata`.
 ```
 python scripts/debug/check_str4.py
 ```
 
-### `SkyOS/scripts/debug/check_str5.py`
+### `SARGA OS/scripts/debug/check_str5.py`
 Segment-aware search for `/etc/init` patterns. Hex dump of `.data` section.
 ```
 python scripts/debug/check_str5.py
 ```
 
 ### `SKYIOUS KERNEL/check_init.py`
-Extracts strings from `bin/init` and `bin/echo` inside `SkyOS/initrd.tar`.
+Extracts strings from `bin/init` and `bin/echo` inside `SARGA OS/initrd.tar`.
 ```
 python check_init.py
 ```
@@ -215,7 +215,7 @@ Fast iterative development loop: builds userspace → kernel → bootimage → r
 ## Cleanup Scripts
 
 ### `scripts/clean_all.ps1`
-Removes ALL build artifacts from both SkyOS and SKYIOUS KERNEL repos: target dirs, images, logs, binaries, initrd.
+Removes ALL build artifacts from both SARGA OS and SKYIOUS KERNEL repos: target dirs, images, logs, binaries, initrd.
 ```
 .\scripts\clean_all.ps1
 ```
@@ -273,7 +273,7 @@ Launches QEMU with GDB server on port 1234, halts at boot, and attaches GDB/LLDB
 ## Utility Scripts
 
 ### `scripts/update_binaries.ps1`
-Syncs a single binary to `SkyOS/bin/` and rebuilds `initrd.tar`. Useful when iterating on one userspace component.
+Syncs a single binary to `SARGA OS/bin/` and rebuilds `initrd.tar`. Useful when iterating on one userspace component.
 ```
 .\scripts\update_binaries.ps1 -Binary init
 .\scripts\update_binaries.ps1 -Binary ls
@@ -284,7 +284,7 @@ Syncs a single binary to `SkyOS/bin/` and rebuilds `initrd.tar`. Useful when ite
 ## Installer ISO Scripts
 
 ### `scripts/build_installer_iso.py`
-Creates a bootable SkyOS installer ISO (`skyos-installer.iso`) or disk image (`skyos-installer.img`). Builds the full bootimage, creates installer initrd with packages, and produces ISO using xorriso (preferred), mkisofs, or a raw disk image fallback.
+Creates a bootable SARGA OS installer ISO (`sarga-installer.iso`) or disk image (`sarga-installer.img`). Builds the full bootimage, creates installer initrd with packages, and produces ISO using xorriso (preferred), mkisofs, or a raw disk image fallback.
 ```
 python scripts/build_installer_iso.py           # Use existing bootimage
 python scripts/build_installer_iso.py --full    # Full rebuild + ISO

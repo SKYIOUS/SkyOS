@@ -3,10 +3,10 @@
 extern crate alloc;
 use libsarga::{sarga_main, println, args, syscall::*};
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 2 {
         println!("Usage: kill [-signal] <pid>");
-        libsarga::process::exit(1);
+        return 1;
     }
     let mut sig = 15u64;
     let mut start = 1;
@@ -24,6 +24,8 @@ fn user_main() {
             }
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

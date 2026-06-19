@@ -1,10 +1,10 @@
 [package]
-name = "skyfiles"
+name = "sargaview"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "skyfiles"
+name = "sargaview"
 path = "src/main.rs"
 
 [dependencies]

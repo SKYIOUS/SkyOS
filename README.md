@@ -1,6 +1,6 @@
-# SKYIOUS + SARGA OS
+# SARGIUOUS + SARGA OS
 
-> A modern, GPL-free operating system userland built on the Vahi kernel.
+> A modern, GPL-free operating system userland built on the SARGA kernel.
 > Fast, lightweight, self-hosted, and extensible.
 
 <div align="center">
@@ -33,17 +33,17 @@
 
 ## Overview
 
-**SkyOS** is the userspace environment of SARGA OS -- a complete operating system userland built entirely in Rust, targeting the custom `x86_64-sarga` and `aarch64-sarga` targets. It provides:
+**SARGA OS** is the userspace environment of SARGA OS -- a complete operating system userland built entirely in Rust, targeting the custom `x86_64-sarga` and `aarch64-sarga` targets. It provides:
 
 - A full **GUI desktop environment** with window manager, compositing, and widget toolkit
 - **62+ core utilities** covering all standard Unix command-line operations
 - A **shell** (`sash`) with scripting, job control, readline, and pipeline support
 - A **package manager** (`spkg`) with dependency resolution
 - **Networking tools**: HTTP client, DNS resolver, netcat, echo server
-- **AI integration** via the VahiAI kernel subsystem
+- **AI integration** via the SARGAAI kernel subsystem
 - **Multi-architecture**: x86_64 and aarch64 userspace targets
 
-SkyOS runs on top of the **Vahi kernel** -- a monolithic Rust kernel with 90+ syscalls, 7 filesystems, 12+ drivers, networking, eBPF, and GUI compositor.
+SARGA OS runs on top of the **SARGA kernel** -- a monolithic Rust kernel with 90+ syscalls, 7 filesystems, 12+ drivers, networking, eBPF, and GUI compositor.
 
 ## How This Project Was Built
 >
@@ -70,7 +70,7 @@ SkyOS runs on top of the **Vahi kernel** -- a monolithic Rust kernel with 90+ sy
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Userspace (SkyOS)                     │
+│                    Userspace (SARGA OS)                     │
 │                                                         │
 │  ┌─────────────┐ ┌──────────┐ ┌────────────────────┐   │
 │  │  sash (sh)  │ │ coreutils│ │  ADE Desktop       │   │
@@ -89,7 +89,7 @@ SkyOS runs on top of the **Vahi kernel** -- a monolithic Rust kernel with 90+ sy
 │                     System Calls                         │
 │         (90+ Linux-compatible syscalls via `syscall`)    │
 ├─────────────────────────────────────────────────────────┤
-│                   Vahi Kernel                            │
+│                   SARGA Kernel                            │
 │  scheduler | VFS | drivers | network | SkyFS | eBPF     │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -101,7 +101,7 @@ SkyOS runs on top of the **Vahi kernel** -- a monolithic Rust kernel with 90+ sy
 | **Applications** | Desktop apps, utilities, tools |
 | **libsarga** | Core no_std library: syscall wrappers, GUI toolkit, I/O, networking, threading, POSIX compat |
 | **Syscall ABI** | Frozen v1.0 ABI with Linux-compatible numbering |
-| **Vahi Kernel** | Monolithic Rust kernel providing all OS services |
+| **SARGA Kernel** | Monolithic Rust kernel providing all OS services |
 
 All userspace binaries are compiled with `-C panic=abort`, custom linker scripts, and position-independent code with full RELRO.
 
@@ -297,18 +297,18 @@ target/x86_64-sarga/release/
 
 ## Running in QEMU
 
-SkyOS runs on top of the Vahi kernel. The typical workflow:
+SARGA OS runs on top of the SARGA kernel. The typical workflow:
 
 ```bash
 # 1. Build userspace (this repo)
 ./build.sh all
 
 # 2. Build kernel + bootimage (in the kernel repo)
-cd ../SKYIOUS\ KERNEL
+cd ../SARGIUOUS\ KERNEL
 ./make_bootimage.sh
 
 # 3. Run in QEMU
-cd SkyOS
+cd SARGA OS
 make run
 ```
 
@@ -335,7 +335,7 @@ QEMU configuration (from `Makefile`):
 ## Project Structure
 
 ```
-SkyOS/
+SARGA OS/
 ├── .cargo/                 # Cargo configuration (build-std, rustflags)
 ├── libsarga/               # Core standard library (no_std)
 │   └── src/
@@ -503,7 +503,7 @@ Same structure targeting `aarch64-unknown-none` with the `aarch64-sarga.ld` link
 
 ## Contributing
 
-Contributions are welcome under the **SKYIOUS Software License (SSL)** terms.
+Contributions are welcome under the **SARGIUOUS Software License (SSL)** terms.
 
 ### Development Workflow
 
@@ -527,7 +527,7 @@ Contributions are welcome under the **SKYIOUS Software License (SSL)** terms.
 
 ## License
 
-**SKYIOUS Software License (SSL) v1.0**
+**SARGIUOUS Software License (SSL) v1.0**
 
 Copyright (c) 2026 SARGA OS Contributors
 

@@ -2,6 +2,9 @@
 #![no_main]
 use libsarga::sarga_main;
 
-fn user_main() { libsarga::process::exit(1); }
+fn user_main() -> i32 { return 1;
+    0
+    0
+}
 
 sarga_main!(user_main);

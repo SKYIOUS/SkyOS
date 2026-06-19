@@ -12,7 +12,7 @@ impl core::fmt::Write for StdoutWriter {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
         io::open(&path, 0).unwrap_or(0)
@@ -42,6 +42,7 @@ fn user_main() {
         offset += n;
     }
     if fd != 0 { let _ = io::close(fd); }
+    0
 }
 
 sarga_main!(user_main);

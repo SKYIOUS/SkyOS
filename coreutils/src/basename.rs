@@ -4,8 +4,8 @@ extern crate alloc;
 use alloc::string::String;
 use libsarga::{sarga_main, println, args};
 
-fn user_main() {
-    if args::argc() < 2 { println!("Usage: basename <path> [suffix]"); return; }
+fn user_main() -> i32 {
+    if args::argc() < 2 { println!("Usage: basename <path> [suffix]"); return 0; }
     let path = args::get(1).unwrap_or("");
     let base = path.rsplit('/').filter(|s| !s.is_empty()).next().unwrap_or(path);
     let mut result = String::from(base);
@@ -18,6 +18,9 @@ fn user_main() {
         }
     }
     println!("{}", result);
+
+    0
+    0
 }
 
 sarga_main!(user_main);

@@ -1,14 +1,14 @@
 #!/bin/bash
-# build_installer_iso.sh — Build a bootable SkyOS installer ISO (Linux/WSL)
+# build_installer_iso.sh — Build a bootable SARGA OS installer ISO (Linux/WSL)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 KERNEL_DIR="$REPO_DIR/../SKYIOUS KERNEL"
-OUTPUT_ISO="$REPO_DIR/skyos-installer.iso"
-OUTPUT_IMG="$REPO_DIR/skyos-installer.img"
+OUTPUT_ISO="$REPO_DIR/sarga-installer.iso"
+OUTPUT_IMG="$REPO_DIR/sarga-installer.img"
 
-echo "=== SkyOS Installer ISO Builder ==="
+echo "=== SARGA OS Installer ISO Builder ==="
 
 # Build bootimage
 if [ "$1" = "--full" ]; then
@@ -30,14 +30,14 @@ echo "[OK] Bootimage: $BOOTIMG ($(stat -f%z "$BOOTIMG" 2>/dev/null || wc -c < "$
 # Create ISO
 echo "[3/3] Creating ISO..."
 EXTRA_DIR=$(mktemp -d)
-echo "SkyOS Installation Media" > "$EXTRA_DIR/README.TXT"
+echo "SARGA OS Installation Media" > "$EXTRA_DIR/README.TXT"
 
 if command -v xorriso &> /dev/null; then
-    xorriso -as mkisofs -o "$OUTPUT_ISO" -V "SKYOS_INSTALL" \
+    xorriso -as mkisofs -o "$OUTPUT_ISO" -V "SARGA_INSTALL" \
         -e "$BOOTIMG" -no-emul-boot -boot-load-size 4 -isohybrid-gpt-basdat "$EXTRA_DIR"
     echo "[OK] ISO: $OUTPUT_ISO"
 elif command -v mkisofs &> /dev/null; then
-    mkisofs -o "$OUTPUT_ISO" -V "SKYOS_INSTALL" -e "$BOOTIMG" -no-emul-boot "$EXTRA_DIR"
+    mkisofs -o "$OUTPUT_ISO" -V "SARGA_INSTALL" -e "$BOOTIMG" -no-emul-boot "$EXTRA_DIR"
     echo "[OK] ISO: $OUTPUT_ISO"
 else
     echo "No ISO tool found. Creating raw disk image..."

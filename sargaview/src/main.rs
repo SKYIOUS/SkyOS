@@ -223,7 +223,7 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
     Some(Image { width, height, pixels })
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
 
     let path = if args::argc() > 1 {
@@ -231,20 +231,20 @@ fn user_main() {
     } else {
         io::print_str("Usage: skyview <image.bmp|image.ppm>\n");
         io::print_str("Supported formats: PNG, BMP (24/32-bit), PPM (P3/P6)\n");
-        return;
+        return 0;
     };
 
     let data = read_file(path);
     if data.is_empty() {
         io::print_str(&alloc::format!("skyview: cannot read '{}'\n", path));
-        return;
+        return 0;
     }
 
     let image = match parse_image(&data) {
         Some(img) => img,
         None => {
             io::print_str(&alloc::format!("skyview: unsupported format '{}'\n", path));
-            return;
+            return 0;
         }
     };
 
@@ -253,11 +253,11 @@ fn user_main() {
     let win_w = (image.width + 16).min(1024);
     let win_h = (image.height + 40).min(768);
 
-    let mut win = match Window::create("SkyView", win_w, win_h) {
+    let mut win = match Window::create("SARGA View", win_w, win_h) {
         Ok(w) => w,
         Err(e) => {
             io::print_str(&alloc::format!("skyview: window failed: {}\n", e));
-            return;
+            return 0;
         }
     };
 
@@ -276,7 +276,7 @@ fn user_main() {
         // Keyboard
         while let Some(key) = win.get_key() {
             match key {
-                b'q' | b'Q' => return,
+                b'q' | b'Q' => return 0,
                 b'+' | b'=' => { zoom = (zoom * 1.2).min(8.0); }
                 b'-' => { zoom = (zoom / 1.2).max(0.1); }
                 b'0' => { zoom = 1.0; scroll_x = 0; scroll_y = 0; }
@@ -343,6 +343,7 @@ fn user_main() {
         let _ = win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
+    0
 }
 
 sarga_main!(user_main);

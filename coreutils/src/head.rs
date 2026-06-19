@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, args, io};
 use alloc::string::String;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut count: usize = 10;
     if args::argc() > 1 {
         if let Some(s) = args::get(1) {
@@ -37,6 +37,8 @@ fn user_main() {
     if printed < count && !leftover.is_empty() {
         io::write_all(1, leftover.as_bytes()).ok();
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

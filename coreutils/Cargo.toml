@@ -119,8 +119,8 @@ name = "ping"
 path = "src/ping.rs"
 
 [[bin]]
-name = "mkfs_skyfs"
-path = "src/mkfs_skyfs.rs"
+name = "mkfs_sargafs"
+path = "src/mkfs_sargafs.rs"
 
 [[bin]]
 name = "login"

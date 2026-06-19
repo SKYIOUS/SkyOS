@@ -5,7 +5,7 @@
 KERNEL_PATH="../SKYIOUS KERNEL/target/x86_64-vahi/debug/bootimage-vahi_kernel.bin"
 
 if [ ! -f "$KERNEL_PATH" ]; then
-    echo "Error: Vahi Kernel bootimage not found at $KERNEL_PATH"
+    echo "Error: SARGA Kernel bootimage not found at $KERNEL_PATH"
     echo "Run: python scripts/make_sarga_image.py"
     exit 1
 fi

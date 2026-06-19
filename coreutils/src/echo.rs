@@ -1,31 +1,20 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, print, println, args};
+use libsarga::{sarga_main, print, args};
 
-fn user_main() {
-    let mut first = true;
-    let mut newline = true;
-    let mut start = 1usize;
+fn user_main() -> i32 {
+    let newline = !args::get(1).map_or(false, |a| a == "-n");
+    let start = if !newline && args::argc() > 1 { 2 } else { 1 };
 
-    if args::argc() > 1 {
-        if let Some(flag) = args::get(1) {
-            if flag == "-n" {
-                newline = false;
-                start = 2;
-            }
+    for i in start..args::argc() {
+        if let Some(a) = args::get(i as usize) {
+            if i > start { print!(" "); }
+            print!("{}", a);
         }
     }
-
-    for i in start..(args::argc() as usize) {
-        if let Some(s) = args::get(i as usize) {
-            if !first { print!(" "); }
-            print!("{}", s);
-            first = false;
-        }
-    }
-    if newline {
-        println!();
-    }
+    if newline { print!("\n"); }
+    0
+    0
 }
 sarga_main!(user_main);

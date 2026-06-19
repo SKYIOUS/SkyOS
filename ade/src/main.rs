@@ -130,7 +130,7 @@ impl Desktop {
                                 w.content.clear();
                                 w.content.push(alloc::string::String::from("  SARGA OS v0.4.0"));
                                 w.content.push(alloc::string::String::new());
-                                w.content.push(alloc::string::String::from("  Kernel: Vahi"));
+                                w.content.push(alloc::string::String::from("  Kernel: SARGA"));
                                 w.content.push(alloc::string::String::from("  Arch: x86_64"));
                                 w.content.push(alloc::string::String::from("  Shell: SargaSH"));
                                 w.content.push(alloc::string::String::from("  Desktop: ADE"));
@@ -144,16 +144,16 @@ impl Desktop {
                         _ => { self.spawn_app(path, name); }
                     }
                 }
-                return;
+                return 0;
             }
             self.start_menu = false;
-            return;
+            return 0;
         }
 
         if my >= taskbar_y {
             if mx >= 5 && mx < 65 {
                 self.start_menu = true;
-                return;
+                return 0;
             }
             let btn_x = 75i32;
             for (i, _) in self.windows.iter().enumerate() {
@@ -168,10 +168,10 @@ impl Desktop {
                     self.windows[i].focused = true;
                     let w = self.windows.remove(i);
                     self.windows.push(w);
-                    return;
+                    return 0;
                 }
             }
-            return;
+            return 0;
         }
 
         for i in (0..self.windows.len()).rev() {
@@ -187,19 +187,19 @@ impl Desktop {
                 last.dragging = true;
                 last.drag_ox = drag_ox;
                 last.drag_oy = drag_oy;
-                return;
+                return 0;
             }
 
             if mx >= w.x + w.w as i32 - 24 && mx < w.x + w.w as i32 - 4
                 && my >= w.y + 3 && my < w.y + 19 {
                 self.windows.remove(i);
-                return;
+                return 0;
             }
             if mx >= w.x + w.w as i32 - 48 && mx < w.x + w.w as i32 - 28
                 && my >= w.y + 3 && my < w.y + 19 {
                 self.windows[i].x = -9999;
                 self.windows[i].y = -9999;
-                return;
+                return 0;
             }
 
             if mx >= w.x && mx < w.x + w.w as i32
@@ -208,7 +208,7 @@ impl Desktop {
                 self.windows[i].focused = true;
                 let win = self.windows.remove(i);
                 self.windows.push(win);
-                return;
+                return 0;
             }
         }
 
@@ -224,7 +224,7 @@ impl Desktop {
                     "Calc" => self.spawn_app("/bin/calculator", "Calculator"),
                     _ => {}
                 }
-                return;
+                return 0;
             }
         }
     }
@@ -335,7 +335,7 @@ fn draw_start_menu(win: &mut Window, theme: &Theme, desktop: &Desktop) {
 }
 
 fn draw_window(win: &mut Window, theme: &Theme, aw: &AppWindow) {
-    if aw.x < -100 || aw.y < -100 { return; }
+    if aw.x < -100 || aw.y < -100 { return 0; }
 
     let border_color = if aw.focused { theme.accent } else { theme.border };
 
@@ -378,14 +378,14 @@ fn draw_window(win: &mut Window, theme: &Theme, aw: &AppWindow) {
     }
 }
 
-fn user_main() {
+fn user_main() -> i32 {
     io::print_str("[ade] starting desktop environment\n");
 
     let mut desktop_win = match Window::create("SARGA OS Desktop", 1024, 768) {
         Ok(w) => w,
         Err(e) => {
             io::print_str(&alloc::format!("[ade] failed to create window: {}\n", e));
-            return;
+            return 0;
         }
     };
 
@@ -398,7 +398,7 @@ fn user_main() {
 
         while let Some(key) = desktop_win.get_key() {
             if key == b'q' && desktop.windows.is_empty() {
-                return;
+                return 0;
             }
             if let Some(last) = desktop.windows.last_mut() {
                 if last.focused && last.x > -100 {
@@ -443,6 +443,7 @@ fn user_main() {
         let _ = desktop_win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
     }
+    0
 }
 
 sarga_main!(user_main);

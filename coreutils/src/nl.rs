@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::sarga_main;
 use libsarga::io;
 
-fn user_main() {
+fn user_main() -> i32 {
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
     loop {
@@ -20,6 +20,8 @@ fn user_main() {
         io::print_str(&alloc::format!("{:>6}\t{}\n", line_num, line));
         line_num += 1;
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

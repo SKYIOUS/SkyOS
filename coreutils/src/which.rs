@@ -5,8 +5,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::{sarga_main, println, args, syscall};
 
-fn user_main() {
-    if args::argc() < 2 { println!("Usage: which <command>..."); return; }
+fn user_main() -> i32 {
+    if args::argc() < 2 { println!("Usage: which <command>..."); return 0; }
     let path_str = String::from("/bin");
     let dirs: Vec<&str> = path_str.split(':').collect();
     for i in 1..args::argc() {
@@ -28,6 +28,8 @@ fn user_main() {
             if !found { println!("{} not found", cmd); }
         }
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

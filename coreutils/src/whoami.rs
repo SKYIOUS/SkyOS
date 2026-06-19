@@ -6,6 +6,7 @@ extern crate libsarga;
 
 use libsarga::io::{self, open, read, close};
 use libsarga::process::geteuid;
+use libsarga::sarga_main;
 use alloc::string::ToString;
 
 fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, i64> {
@@ -39,11 +40,13 @@ fn lookup_name_by_uid(uid: u32) -> alloc::string::String {
     alloc::format!("uid{}", uid)
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let euid = geteuid() as u32;
     let name = lookup_name_by_uid(euid);
     io::print_str(&name);
     io::print_str("\n");
-    libsarga::process::exit(0);
+    return 0;
+    0
 }
+
+sarga_main!(user_main);

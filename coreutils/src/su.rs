@@ -84,12 +84,12 @@ fn verify_password(username: &str, password: &str) -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
     if argc < 2 {
         io::print_str("Usage: su [username]\n");
-        libsarga::process::exit(0);
+        return 0;
     }
 
     let target_user = libsarga::args::get(1).unwrap_or("root");
@@ -97,7 +97,7 @@ pub extern "C" fn _start() -> ! {
         Some(v) => v,
         None => {
             io::print_str(&alloc::format!("su: unknown user: {}\n", target_user));
-            libsarga::process::exit(1);
+            return 1;
         }
     };
 
@@ -111,7 +111,7 @@ pub extern "C" fn _start() -> ! {
         let password = core::str::from_utf8(&pw_bytes).unwrap_or("");
         if !verify_password(target_user, password) {
             io::print_str("\nsu: incorrect password\n");
-            libsarga::process::exit(1);
+            return 1;
         }
         io::print_str("\n");
     }
@@ -132,5 +132,5 @@ pub extern "C" fn _start() -> ! {
     let env_refs: alloc::vec::Vec<&str> = env.iter().map(|s: &alloc::string::String| s.as_str()).collect();
 
     execve(shell_name, &[], &env_refs);
-    libsarga::process::exit(1);
+    return 1;
 }

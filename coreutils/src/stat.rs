@@ -6,10 +6,10 @@ use libsarga::io;
 use libsarga::fs;
 use libsarga::args;
 
-fn user_main() {
+fn user_main() -> i32 {
     if args::argc() < 2 {
         io::print_str("Usage: stat <file>\n");
-        return;
+        return 0;
     }
     let mut i = 1;
     while i < args::argc() {
@@ -36,6 +36,8 @@ fn user_main() {
         }
         i += 1;
     }
+    0
+    0
 }
 
 sarga_main!(user_main);

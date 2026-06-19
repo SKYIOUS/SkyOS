@@ -57,7 +57,7 @@ impl FileManager {
             Ok(f) => f,
             Err(e) => {
                 self.status = alloc::format!("open failed: {}", e);
-                return;
+                return 0;
             }
         };
 
@@ -134,16 +134,16 @@ const HEADER_H: u32 = 28;
 const PATH_BAR_H: u32 = 28;
 const SIDEBAR_W: u32 = 140;
 
-fn user_main() {
+fn user_main() -> i32 {
     let theme = Theme::dark();
     let mut fm = FileManager::new();
 
     let win_w = 520u32;
     let win_h = 380u32;
 
-    let mut win = match Window::create("SkyFiles", win_w, win_h) {
+    let mut win = match Window::create("SARGA Files", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("skyfiles: window failed: {}\n", e)); return; }
+        Err(e) => { io::print_str(&alloc::format!("skyfiles: window failed: {}\n", e)); return 0; }
     };
 
     let mut prev_pressed = false;
@@ -341,6 +341,7 @@ fn user_main() {
         prev_pressed = pressed;
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
+    0
 }
 
 sarga_main!(user_main);
