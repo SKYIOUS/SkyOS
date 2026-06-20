@@ -1,0 +1,88 @@
+name: Build Release ISO (UEFI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 0.6.0)'
+        required: true
+        default: '0.6.0'
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout SkyOS (userspace + build scripts)
+        uses: actions/checkout@v4
+
+      - name: Checkout SKYIOUS KERNEL
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          path: SKYIOUS-KERNEL
+
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
+
+      - name: Install Rust nightly (kernel + builder + userspace)
+        run: |
+          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly
+
+      - name: Build kernel
+        working-directory: SKYIOUS-KERNEL/kernel
+        run: cargo build --release --target x86_64-unknown-none
+
+      - name: Build userspace
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+      - name: Build initrd
+        run: python3 build_initrd.py
+
+      - name: Copy initrd to builder fallback path
+        run: |
+          mkdir -p SKYIOUS-KERNEL/SkyOS
+          cp initrd.tar SKYIOUS-KERNEL/SkyOS/
+
+      - name: Run builder (creates UEFI bootimage)
+        working-directory: SKYIOUS-KERNEL
+        run: cargo run --release --manifest-path builder/Cargo.toml
+
+      - name: Extract EFI System Partition from bootimage
+        run: |
+          BOOTIMAGE="SKYIOUS-KERNEL/target/x86_64-vahi/release/bootimage-vahi_kernel.bin"
+          echo "Bootimage size: $(stat -c%s "$BOOTIMAGE") bytes"
+
+          # GPT layout: LBA 0=MBR, LBA 1=GPT header, LBA 2-33=entry array, LBA 34+=first partition
+          START_SECTOR=34
+          dd if="$BOOTIMAGE" of=esp.img bs=512 skip="$START_SECTOR" 2>/dev/null
+          echo "ESP image size: $(stat -c%s esp.img) bytes"
+          file esp.img
+
+      - name: Create hybrid ISO with UEFI boot
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          mkdir -p release iso_root
+          echo "SARGA OS $VERSION" > iso_root/README.txt
+
+          xorriso -as mkisofs \
+            -V "SARGA_OS_$VERSION" \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -eltorito-alt-boot \
+            -e --interval:appended_partition_2:all:: \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -append_partition 2 0xef esp.img \
+            -o "release/skyos-$VERSION.iso" \
+            iso_root/
+
+          echo "ISO created:"
+          ls -lh "release/skyos-$VERSION.iso"
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyos-${{ github.event.inputs.version }}-iso
+          path: release/

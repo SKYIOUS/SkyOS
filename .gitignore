@@ -2,6 +2,7 @@ target/
 .obsidian/
 
 # Build artifacts
+release/
 *.iso
 *.img
 *.vdi
