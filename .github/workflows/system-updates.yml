@@ -24,13 +24,49 @@ jobs:
       
       - name: Build All Components
         run: |
-          chmod +x build.sh
-          ./build.sh all
+          cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
       
-      - name: Prepare Update Manifest
+      - name: Prepare Staging Directory
         run: |
-          echo "version = \"${{ github.event.inputs.version }}\"" > staging/update.toml
-          echo "release_date = \"$(date +%Y-%m-%d)\"" >> staging/update.toml
+          mkdir -p staging/bin staging/libs
+      
+      - name: Collect Binaries with Hashes
+        id: collect
+        run: |
+          SRC="target/x86_64-sarga/release"
+          MANIFEST="staging/update.toml"
+          VERSION="${{ github.event.inputs.version }}"
+          DATE="$(date +%Y-%m-%d)"
+          
+          # Write manifest header
+          echo "version = \"$VERSION\"" > "$MANIFEST"
+          echo "release_date = \"$DATE\"" >> "$MANIFEST"
+          echo "" >> "$MANIFEST"
+          
+          # List of binaries to include in the update
+          BINARIES=(
+            init sash sargash login-manager login passwd svc vahid
+            coreutils/skyos-coreutils
+          )
+          
+          for bin in "${BINARIES[@]}"; do
+            name=$(basename "$bin")
+            src="$SRC/$name"
+            if [ -f "$src" ]; then
+              # Copy to staging
+              cp "$src" "staging/bin/$name"
+              # Compute SHA256
+              HASH=$(sha256sum "staging/bin/$name" | cut -d' ' -f1)
+              echo "[[files]]" >> "$MANIFEST"
+              echo "path = \"/bin/$name\"" >> "$MANIFEST"
+              echo "source = \"bin/$name\"" >> "$MANIFEST"
+              echo "hash = \"sha256:$HASH\"" >> "$MANIFEST"
+              echo "" >> "$MANIFEST"
+            fi
+          done
+          
+          echo "Manifest:"
+          cat "$MANIFEST"
       
       - name: Deploy to Update Repository
         uses: peaceiris/actions-gh-pages@v3
