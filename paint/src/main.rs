@@ -20,7 +20,7 @@ fn user_main() -> i32 {
                 // Toolbar click
                 for i in 0..8 {
                     let cx = 10 + i as u32 * 50;
-                    if mouse.x >= cx as i32 && mouse.x < (cx + 40) as i32 && mouse.y >= 10 && mouse.y < 50 {
+                    if mouse.x >= cx as u64 && mouse.x < (cx + 40) as u64 && mouse.y >= 10 && mouse.y < 50 {
                         selected_color = i;
                     }
                 }

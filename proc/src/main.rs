@@ -31,7 +31,6 @@ fn user_main() -> i32 {
             syscall2(35, req.as_ptr() as u64, 0);
         }
     }
-    0
 }
 
 sarga_main!(user_main);

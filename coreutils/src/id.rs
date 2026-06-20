@@ -69,7 +69,6 @@ fn user_main() -> i32 {
         uid, uname, euid, lookup_name_by_uid(euid),
         gid, gname, egid, lookup_name_by_gid(egid)));
     return 0;
-    0
 }
 
 sarga_main!(user_main);

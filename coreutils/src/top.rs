@@ -46,8 +46,6 @@ fn read_ctl_file(path: &str) -> Result<String, i64> {
     let n = io::read(fd, &mut buf)?;
     let _ = io::close(fd);
     Ok(core::str::from_utf8(&buf[..n]).unwrap_or("").into())
-    0
-    0
 }
 
 sarga_main!(user_main);

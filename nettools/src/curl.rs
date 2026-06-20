@@ -60,14 +60,13 @@ fn user_main() -> i32 {
                         }
                     }
                     let _ = net::close(fd);
-                    0
+                    return 0;
                 }
-                Err(e) => { println!("curl: connect failed: {}", e); 1 }
+                Err(e) => { println!("curl: connect failed: {}", e); return 1; }
             }
         }
-        Err(e) => { println!("curl: socket failed: {}", e); 1 }
+        Err(e) => { println!("curl: socket failed: {}", e); return 1; }
     }
-    0
 }
 
 sarga_main!(user_main);

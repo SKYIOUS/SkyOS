@@ -121,10 +121,10 @@ fn draw_button(
     text: &str,
     mouse: io::MouseState,
 ) -> bool {
-    let hover = mouse.x >= x as i32
-        && mouse.x < (x + w) as i32
-        && mouse.y >= y as i32
-        && mouse.y < (y + h) as i32;
+    let hover = mouse.x >= x as u64
+        && mouse.x < (x + w) as u64
+        && mouse.y >= y as u64
+        && mouse.y < (y + h) as u64;
     let bg = if hover { theme.hover } else { theme.accent };
     win.draw_rounded_rect(x, y, w, h, 8, bg);
     win.draw_string_centered(y + (h - 14) / 2, text, 0xFFFFFFFF, 0);

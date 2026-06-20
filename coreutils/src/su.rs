@@ -4,6 +4,7 @@
 extern crate alloc;
 extern crate libsarga;
 
+use libsarga::sarga_main;
 use libsarga::io::{self, open, read, close};
 use libsarga::process::{geteuid, setuid, setgid, execve};
 use alloc::string::ToString;
@@ -83,7 +84,6 @@ fn verify_password(username: &str, password: &str) -> bool {
     false
 }
 
-#[no_mangle]
 fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
@@ -134,3 +134,5 @@ fn user_main() -> i32 {
     execve(shell_name, &[], &env_refs);
     return 1;
 }
+
+sarga_main!(user_main);

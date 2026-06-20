@@ -161,7 +161,7 @@ fn user_main() -> i32 {
                                     if manifest.contains("version = \"0.6.0\"") {
                                         notify("New version v0.6.0 found! Downloading...", 5000);
                                         // Trigger download and update daemon
-                                        let _ = libsarga::fs::write("/tmp/update.toml", &data);
+                                        let _ = libsarga::fs::write_file("/tmp/update.toml", core::str::from_utf8(&data).unwrap_or(""));
                                         notify("Update downloaded. Restart to apply.", 5000);
                                     } else {
                                         notify("System is up to date!", 3000);
@@ -386,7 +386,7 @@ fn user_main() -> i32 {
         // Keyboard
         while let Some(key) = win.get_key() {
             match key {
-                b'q' | b'Q' => return,
+                b'q' | b'Q' => return 0,
                 b'1' => settings.active_tab = 0,
                 b'2' => settings.active_tab = 1,
                 b'3' => settings.active_tab = 2,
@@ -401,7 +401,6 @@ fn user_main() -> i32 {
             libsarga::syscall::syscall1(35, 16_666_000);
         }
     }
-    0
 }
 
 sarga_main!(user_main);

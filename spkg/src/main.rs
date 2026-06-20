@@ -48,14 +48,14 @@ fn parse_manifest(data: &str) -> Option<PackageManifest> {
 }
 
 fn cmd_install(pkg_file: &str) {
-    if pkg_file.is_empty() { return 0; }
+    if pkg_file.is_empty() { return; }
     print_str(&alloc::format!("spkg: installing {}...\n", pkg_file));
     // ... installation logic ...
     print_str("spkg: installation complete\n");
 }
 
 fn cmd_remove(pkg_name: &str) {
-    if pkg_name.is_empty() { return 0; }
+    if pkg_name.is_empty() { return; }
     print_str(&alloc::format!("spkg: removing {}...\n", pkg_name));
     // ... removal logic ...
 }

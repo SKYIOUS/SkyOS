@@ -87,6 +87,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "libskyaudio"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]
+
+[[package]]
+name = "libskyos"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]
+
+[[package]]
+name = "login"
+version = "0.1.0"
+dependencies = [
+ "libskyos",
+ "skyos-libc",
+]
+
+[[package]]
 name = "login-manager"
 version = "0.1.0"
 dependencies = [
@@ -121,6 +143,14 @@ name = "paint"
 version = "0.1.0"
 dependencies = [
  "libsarga",
+]
+
+[[package]]
+name = "passwd"
+version = "0.1.0"
+dependencies = [
+ "libskyos",
+ "skyos-libc",
 ]
 
 [[package]]
@@ -166,6 +196,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sargash"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]
+
+[[package]]
 name = "sargaview"
 version = "0.1.0"
 dependencies = [
@@ -187,6 +224,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "setup"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]
+
+[[package]]
+name = "skybuild"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]
+
+[[package]]
+name = "skyd-update"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "skyos-libc"
+version = "0.1.0"
+
+[[package]]
+name = "skypkg"
+version = "0.1.0"
+dependencies = [
+ "libskyos",
+ "skyos-libc",
+]
+
+[[package]]
 name = "skystore"
 version = "0.1.0"
 dependencies = [
@@ -198,6 +268,13 @@ name = "spkg"
 version = "0.1.0"
 dependencies = [
  "libsarga",
+]
+
+[[package]]
+name = "svc"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
 ]
 
 [[package]]
@@ -226,3 +303,10 @@ name = "ttf-parser"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17f77d76d837a7830fe1d4f12b7b4ba4192c1888001c7164257e4bc6d21d96b4"
+
+[[package]]
+name = "vahid"
+version = "0.1.0"
+dependencies = [
+ "skyos-libc",
+]

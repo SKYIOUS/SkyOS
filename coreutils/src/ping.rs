@@ -36,7 +36,6 @@ fn user_main() -> i32 {
     println!("{} packets transmitted, {} received, 0% packet loss", count, count);
 
     0
-    0
 }
 
 sarga_main!(user_main);

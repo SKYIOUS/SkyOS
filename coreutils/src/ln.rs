@@ -24,7 +24,7 @@ fn user_main() -> i32 {
     } else {
         unsafe { syscall::syscall2(86, target.as_ptr() as u64, link_name.as_ptr() as u64) }
     };
-    if r != 0 { println!("ln: failed to create link"); return 1; } 0
+    if r != 0 { println!("ln: failed to create link"); return 1; }
     0
 }
 

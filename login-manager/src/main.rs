@@ -216,10 +216,10 @@ fn user_main() -> i32 {
             0,
         );
         if m_pressed
-            && mx >= eye_x as i32
-            && mx < (eye_x + 20) as i32
-            && my >= eye_y as i32
-            && my < (eye_y + 20) as i32
+            && mx >= eye_x as u64
+            && mx < (eye_x + 20) as u64
+            && my >= eye_y as u64
+            && my < (eye_y + 20) as u64
         {
             show_password = !show_password;
             unsafe {
@@ -252,7 +252,7 @@ fn user_main() -> i32 {
         let pwr_y = 560u32;
         win.draw_rounded_rect(pwr_x, pwr_y, 30, 30, 15, theme.bg_elevated);
         win.draw_string(pwr_x + 10, pwr_y + 7, "P", 0xFFFFFFFF, 0);
-        if m_pressed && mx >= pwr_x as i32 && my >= pwr_y as i32 {
+        if m_pressed && mx >= pwr_x as u64 && my >= pwr_y as u64 {
             power_menu = !power_menu;
             unsafe {
                 libsarga::syscall::syscall1(35, 100_000_000u64);
@@ -269,11 +269,11 @@ fn user_main() -> i32 {
             win.draw_string(mx_pos + 10, my_pos + 15, "Reboot", theme.text, 0);
             win.draw_string(mx_pos + 10, my_pos + 45, "Shutdown", theme.text, 0);
 
-            if m_pressed && mx >= mx_pos as i32 && mx < (mx_pos + menu_w) as i32 {
-                if my >= (my_pos + 10) as i32 && my < (my_pos + 40) as i32 {
+            if m_pressed && mx >= mx_pos as u64 && mx < (mx_pos + menu_w) as u64 {
+                if my >= (my_pos + 10) as u64 && my < (my_pos + 40) as u64 {
                     // Reboot syscall or exit
                     process::exit(0);
-                } else if my >= (my_pos + 40) as i32 && my < (my_pos + 70) as i32 {
+                } else if my >= (my_pos + 40) as u64 && my < (my_pos + 70) as u64 {
                     // Shutdown syscall
                     process::exit(0);
                 }
@@ -285,7 +285,6 @@ fn user_main() -> i32 {
             libsarga::syscall::syscall1(35, 16_000_000u64);
         }
     }
-    0
 }
 
 sarga_main!(user_main);

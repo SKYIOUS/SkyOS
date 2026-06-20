@@ -140,7 +140,6 @@ fn user_main() -> i32 {
         Err(e) => { io::print_str(&alloc::format!("passwd: update failed: {}\n", e)); return 1; }
     }
     return 0;
-    0
 }
 
 sarga_main!(user_main);

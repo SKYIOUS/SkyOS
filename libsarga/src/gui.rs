@@ -429,8 +429,8 @@ impl Window {
     }
 
     pub fn draw_rounded_rect(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
-        let sw = self.width as usize;
-        let sh = self.height as usize;
+        let _sw = self.width as usize;
+        let _sh = self.height as usize;
         let r = radius.min(w / 2).min(h / 2) as i32;
         if r <= 0 {
             self.draw_rect(x, y, w, h, color);
@@ -642,8 +642,8 @@ impl Window {
             if let Some((gw, gh, bx, by, _advance, data)) = font.render_glyph(c, size) {
                 let ox = x.wrapping_add(bx.max(0) as u32);
                 let oy = y.wrapping_add((font.ascender(size) - by).max(0) as u32);
-                let sw = self.width as usize;
-                let sh = self.height as usize;
+        let sw = self.width as usize;
+        let sh = self.height as usize;
                 for row in 0..gh as usize {
                     if oy as usize + row >= sh { break; }
                     for col in 0..gw as usize {

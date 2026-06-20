@@ -13,7 +13,6 @@ fn user_main() -> i32 {
     let _ = unsafe { syscall1(35, ns_spec) };
 
     0
-    0
 }
 
 sarga_main!(user_main);

@@ -46,7 +46,6 @@ fn user_main() -> i32 {
     io::print_str(&name);
     io::print_str("\n");
     return 0;
-    0
 }
 
 sarga_main!(user_main);

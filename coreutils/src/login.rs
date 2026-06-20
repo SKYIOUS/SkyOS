@@ -191,7 +191,6 @@ fn user_main() -> i32 {
 
     execve(shell_name, &[], &env_refs);
     return 1;
-    0
 }
 
 sarga_main!(user_main);

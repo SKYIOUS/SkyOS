@@ -102,8 +102,6 @@ struct SkyfsInode {
     mode: u16, uid: u32, gid: u32, size: u64,
     atime: u64, mtime: u64, ctime: u64, links: u32, flags: u32,
     block_count: u64, extent_count: u32, data: [u8; 256],
-    0
-    0
 }
 
 sarga_main!(user_main);

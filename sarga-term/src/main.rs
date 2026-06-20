@@ -169,7 +169,7 @@ impl Terminal {
     }
 
     fn put_char(&mut self, c: u8) {
-        if self.cursor >= ROWS * COLS { return 0; }
+        if self.cursor >= ROWS * COLS { return; }
         self.chars[self.cursor] = c;
         self.fg[self.cursor] = self.effective_fg();
         self.bg[self.cursor] = self.effective_bg();
@@ -598,7 +598,6 @@ fn user_main() -> i32 {
 
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
-    0
 }
 
 sarga_main!(user_main);

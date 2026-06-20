@@ -98,8 +98,6 @@ fn user_main() -> i32 {
         }
     }
     exit_code
-    0
-    0
 }
 
 sarga_main!(user_main);

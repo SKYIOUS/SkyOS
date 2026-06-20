@@ -20,8 +20,8 @@ impl History {
 
     pub fn add(&mut self, line: &str) {
         let trimmed = line.trim();
-        if trimmed.is_empty() { return 0; }
-        if self.entries.last().map_or(false, |e| e == trimmed) { return 0; }
+        if trimmed.is_empty() { return; }
+        if self.entries.last().map_or(false, |e| e == trimmed) { return; }
         self.entries.push(trimmed.to_string());
         if self.entries.len() > self.max {
             self.entries.remove(0);
@@ -62,9 +62,9 @@ impl History {
         let home = crate::get_env("HOME").unwrap_or_else(|| String::from("/"));
         let path = format!("{}/.sash_history", home);
         let c_str = CString::new(path.as_bytes()).ok();
-        if c_str.is_none() { return 0; }
+        if c_str.is_none() { return; }
         let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0u64) };
-        if fd < 0 { return 0; }
+        if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         let mut content = String::new();
         loop {
@@ -86,9 +86,9 @@ impl History {
         let home = crate::get_env("HOME").unwrap_or_else(|| String::from("/"));
         let path = format!("{}/.sash_history", home);
         let c_str = CString::new(path.as_bytes()).ok();
-        if c_str.is_none() { return 0; }
+        if c_str.is_none() { return; }
         let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0x241u64) };
-        if fd < 0 { return 0; }
+        if fd < 0 { return; }
         for entry in &self.entries {
             let mut line = entry.clone();
             line.push('\n');
@@ -123,9 +123,9 @@ impl Completer {
 
     fn list_dir(&self, dir: &str, prefix: &str, matches: &mut Vec<String>) {
         let c_str = CString::new(dir.as_bytes()).ok();
-        if c_str.is_none() { return 0; }
+        if c_str.is_none() { return; }
         let fd = unsafe { libsarga::syscall::syscall2(257, c_str.unwrap().as_ptr() as u64, 0x100000u64) };
-        if fd < 0 { return 0; }
+        if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         loop {
             let n = unsafe { libsarga::syscall::syscall3(217, fd as u64, buf.as_mut_ptr() as u64, 4096u64) };

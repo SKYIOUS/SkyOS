@@ -51,7 +51,6 @@ fn user_main() -> i32 {
         }
     }
     return 0;
-    0
 }
 
 sarga_main!(user_main);

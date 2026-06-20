@@ -205,16 +205,16 @@ impl Desktop {
                         }
                     }
                 }
-                return 0;
+                return;
             }
             self.start_menu = false;
-            return 0;
+            return;
         }
 
         if my >= taskbar_y {
             if mx >= 5 && mx < 65 {
                 self.start_menu = true;
-                return 0;
+                return;
             }
             let btn_x = 75i32;
             for (i, _) in self.windows.iter().enumerate() {
@@ -231,10 +231,10 @@ impl Desktop {
                     self.windows[i].focused = true;
                     let w = self.windows.remove(i);
                     self.windows.push(w);
-                    return 0;
+                    return;
                 }
             }
-            return 0;
+            return;
         }
 
         for i in (0..self.windows.len()).rev() {
@@ -252,7 +252,7 @@ impl Desktop {
                 last.dragging = true;
                 last.drag_ox = drag_ox;
                 last.drag_oy = drag_oy;
-                return 0;
+                return;
             }
 
             if mx >= w.x + w.w as i32 - 24
@@ -261,7 +261,7 @@ impl Desktop {
                 && my < w.y + 19
             {
                 self.windows.remove(i);
-                return 0;
+                return;
             }
             if mx >= w.x + w.w as i32 - 48
                 && mx < w.x + w.w as i32 - 28
@@ -270,7 +270,7 @@ impl Desktop {
             {
                 self.windows[i].x = -9999;
                 self.windows[i].y = -9999;
-                return 0;
+                return;
             }
 
             if mx >= w.x && mx < w.x + w.w as i32 && my >= w.y && my < w.y + w.h as i32 {
@@ -280,7 +280,7 @@ impl Desktop {
                 self.windows[i].focused = true;
                 let win = self.windows.remove(i);
                 self.windows.push(win);
-                return 0;
+                return;
             }
         }
 
@@ -296,7 +296,7 @@ impl Desktop {
                     "Calc" => self.spawn_app("/bin/calculator", "Calculator"),
                     _ => {}
                 }
-                return 0;
+                return;
             }
         }
     }
@@ -624,7 +624,6 @@ fn user_main() -> i32 {
             libsarga::syscall::syscall1(35, 16_000_000u64);
         }
     }
-    0
 }
 
 sarga_main!(user_main);
