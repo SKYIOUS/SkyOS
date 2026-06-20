@@ -1,102 +1,67 @@
-"""Check ESP FAT BPB."""
+"""Check ESP contents for bootloader."""
 import struct
 
-path = "C:\\Users\\nanda\\Desktop\\Github\\SKYIOUS KERNEL\\target\\x86_64-vahi\\debug\\bootimage-vahi_kernel.bin"
-with open(path, "rb") as f:
-    d = f.read()
+with open(r'C:\Users\nanda\Desktop\Github\SkyOS\build\esp.img', 'rb') as f:
+    esp = f.read()
 
-esp = d[17408:17408+512]
-print("ESP first 64 bytes:")
-for i in range(0, 64, 16):
-    h = " ".join(f"{b:02x}" for b in esp[i:i+16])
-    print(f"  [{i:3d}] {h}")
+sec_per_cluster = 4
+bytes_per_sec = 512
+cluster_size = sec_per_cluster * bytes_per_sec
 
-print()
-print(f"Bytes per sector:     {struct.unpack('<H', esp[11:13])[0]}")
-print(f"Sectors per cluster:  {esp[13]}")
-print(f"Reserved sectors:     {struct.unpack('<H', esp[14:16])[0]}")
-print(f"Number of FATs:       {esp[16]}")
-print(f"Root entries (FAT16): {struct.unpack('<H', esp[17:19])[0]}")
-print(f"Total sectors (16):   {struct.unpack('<H', esp[19:21])[0]}")
-print(f"Media descriptor:     {esp[21]:#x}")
-print(f"FAT size (16):        {struct.unpack('<H', esp[22:24])[0]}")
+data_start_sector = 1 + (2 * 64) + (512 * 32 // 512)
+data_start = data_start_sector * 512
 
-# FAT32 extended fields
-fat32_fat = struct.unpack('<I', esp[36:40])[0]
-fat32_root = struct.unpack('<I', esp[44:48])[0]
-fat32_total = struct.unpack('<I', esp[32:36])[0]
-fs_ver = struct.unpack('<H', esp[42:44])[0]
-print(f"FAT32: FAT sectors    {fat32_fat}")
-print(f"FAT32: Root cluster   {fat32_root}")
-print(f"FAT32: Total sectors  {fat32_total}")
-print(f"FAT32: FS version     {fs_ver}")
-print(f"Boot sig: {esp[510]:#x} {esp[511]:#x}")
-print(f"OEM: {esp[3:11]}")
+cluster_offset = data_start + (2 - 2) * cluster_size
 
-# This is FAT16.
-bps = struct.unpack('<H', esp[11:13])[0]
-spc = esp[13]
-reserved = struct.unpack('<H', esp[14:16])[0]
-num_fats = esp[16]
-root_entries = struct.unpack('<H', esp[17:19])[0]
-fat_size = struct.unpack('<H', esp[22:24])[0]
-
-root_dir_sectors = (root_entries * 32 + bps - 1) // bps
-data_start = (reserved + num_fats * fat_size + root_dir_sectors) * bps
-root_start = (reserved + num_fats * fat_size) * bps  # absolute byte offset in ESP
-
-print(f"FAT16: reserved={reserved} fats={num_fats} fat_secs={fat_size}")
-print(f"FAT16: root_entries={root_entries} root_dir_secs={root_dir_sectors}")
-print(f"Root dir byte offset in ESP: {root_start}")
-print(f"Data region byte offset in ESP: {data_start}")
-
-# Scan root dir
-esp_all = d[17408:17408+16776704]
-print()
-print("Root directory entries:")
-for off in range(root_start, min(root_start + root_dir_sectors * bps, len(esp_all)), 32):
-    entry = esp_all[off:off+32]
-    if entry[0] == 0: break
-    if entry[0] == 0xE5: continue
+print('=== EFI Directory ===')
+for i in range(0, cluster_size, 32):
+    entry = esp[cluster_offset + i : cluster_offset + i + 32]
+    name = entry[0:11]
     attr = entry[11]
-    if attr & 0x0F == 0x0F: continue
-    name = entry[0:11].decode("latin-1", errors="replace")
-    is_dir = "DIR" if attr & 0x10 else "FILE"
-    cluster = struct.unpack('<H', entry[26:28])[0]  # FAT16: low 16 bits only
-    size = struct.unpack('<I', entry[28:32])[0]
-    if name.strip():
-        print(f"  {is_dir} '{name}' cluster={cluster} size={size}")
-    if name.strip().upper() == "EFI":
-        # Follow subdirectory
-        sub_cluster = cluster
-        sub_start = data_start + (sub_cluster - 2) * spc * bps
-        print(f"    Subdir at offset {sub_start}:")
-        for sub_off in range(sub_start, min(sub_start + spc * bps, len(esp_all)), 32):
-            sub_entry = esp_all[sub_off:sub_off+32]
-            if sub_entry[0] == 0: break
-            if sub_entry[0] == 0xE5: continue
-            sub_attr = sub_entry[11]
-            if sub_attr & 0x0F == 0x0F: continue
-            sub_name = sub_entry[0:11].decode("latin-1", errors="replace")
-            sub_clust = struct.unpack('<H', sub_entry[26:28])[0]
-            sub_sz = struct.unpack('<I', sub_entry[28:32])[0]
-            sd = "DIR" if sub_attr & 0x10 else "FILE"
-            if sub_name.strip():
-                print(f"    {sd} '{sub_name}' cluster={sub_clust} size={sub_sz}")
-            # Follow BOOT subdir (note: FAT short name is uppercase, padded)
-            if sub_name.strip().upper().startswith("BOOT"):
-                boot_cluster = sub_clust
-                boot_start = data_start + (boot_cluster - 2) * spc * bps
-                print(f"      Subdir at offset {boot_start}:")
-                for b_off in range(boot_start, min(boot_start + spc * bps, len(esp_all)), 32):
-                    b_entry = esp_all[b_off:b_off+32]
-                    if b_entry[0] == 0: break
-                    if b_entry[0] == 0xE5: continue
-                    b_attr = b_entry[11]
-                    if b_attr & 0x0F == 0x0F: continue
-                    b_name = b_entry[0:11].decode("latin-1", errors="replace")
-                    b_clust = struct.unpack('<H', b_entry[26:28])[0]
-                    b_sz = struct.unpack('<I', b_entry[28:32])[0]
-                    bd = "DIR" if b_attr & 0x10 else "FILE"
-                    if b_name.strip():
-                        print(f"      {bd} '{b_name}' cluster={b_clust} size={b_sz}")
+    if name[0:1] == b'\x00':
+        break
+    if name[0:1] == b'\xE5':
+        continue
+    if attr == 0x0F:
+        continue
+    name_str = name.decode('ascii', errors='replace').strip()
+    first_cluster = struct.unpack_from('<H', entry, 26)[0]
+    file_size = struct.unpack_from('<I', entry, 28)[0]
+    if file_size > 0 or attr == 0x10:
+        print(f'  {name_str:15s} attr={attr:02x} cluster={first_cluster} size={file_size}')
+
+# Search for BOOT in the ESP
+print('\n=== Searching for BOOT ===')
+idx = esp.find(b'BOOT')
+while idx >= 0:
+    name = esp[idx:idx+20]
+    print(f'  offset {idx}: {name}')
+    idx = esp.find(b'BOOT', idx + 1)
+
+# Also check if there's a BOOT directory under EFI
+# EFI dir cluster = 2, let's check subdirs
+# BOOT subdirectory should be inside EFI
+for i in range(0, cluster_size, 32):
+    entry = esp[cluster_offset + i : cluster_offset + i + 32]
+    name = entry[0:11]
+    attr = entry[11]
+    if attr == 0x10 and name[0:1] not in (b'\x00', b'\xE5') and name.strip() not in (b'.', b'..'):
+        name_str = name.decode('ascii', errors='replace').strip()
+        cluster = struct.unpack_from('<H', entry, 26)[0]
+        if cluster > 1:
+            sub_offset = data_start + (cluster - 2) * cluster_size
+            print(f'\n=== {name_str} subdirectory (cluster {cluster}) ===')
+            for j in range(0, cluster_size, 32):
+                sub_entry = esp[sub_offset + j : sub_offset + j + 32]
+                sub_name = sub_entry[0:11]
+                sub_attr = sub_entry[11]
+                if sub_name[0:1] == b'\x00':
+                    break
+                if sub_name[0:1] == b'\xE5':
+                    continue
+                if sub_attr == 0x0F:
+                    continue
+                sn = sub_name.decode('ascii', errors='replace').strip()
+                sc = struct.unpack_from('<H', sub_entry, 26)[0]
+                sz = struct.unpack_from('<I', sub_entry, 28)[0]
+                print(f'    {sn:15s} cluster={sc} size={sz}')
