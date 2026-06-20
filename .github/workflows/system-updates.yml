@@ -31,7 +31,6 @@ jobs:
         run: |
           echo "version = \"${{ github.event.inputs.version }}\"" > staging/update.toml
           echo "release_date = \"$(date +%Y-%m-%d)\"" >> staging/update.toml
-          # Add file hashes and list here
       
       - name: Deploy to Update Repository
         uses: peaceiris/actions-gh-pages@v3
