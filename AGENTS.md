@@ -5,7 +5,9 @@
 ```powershell
 python build_disk.py                          # full build (kernel → UEFI image → VDI)
 .\make_bootimage.ps1                          # kernel + UEFI image only
+python scripts/make_iso.py [version]          # create bootable .iso from bootimage (requires WSL + xorriso)
 qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
+qemu-system-x86_64 -bios OVMF.fd -cdrom release\skyos-<version>.iso -m 512M -smp 2 -nographic
 ```
 
 - Requires **nightly** Rust with `rust-src` + `llvm-tools-preview` components
@@ -22,6 +24,7 @@ qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -
 | `kernel/` | Kernel crate (`vahi_kernel`), entrypoint `kernel/src/main.rs` via `bootloader_api::entry_point!` |
 | `builder/` | Standalone crate that creates UEFI disk image from kernel ELF via `bootloader::UefiBoot` |
 | `build_disk.py` | Orchestrates build + image creation + VDI conversion (requires `VBoxManage`) |
+| `scripts/make_iso.py` | Creates UEFI-bootable ISOHybrid ISO (file-based El Torito + MBR + GPT) |
 | `docs/` | Architecture, memory map, scheduler, VFS, syscall ABI, driver model, changelog |
 
 ## Feature Flags (in `kernel/Cargo.toml`)
