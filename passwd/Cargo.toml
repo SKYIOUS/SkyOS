@@ -4,5 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-skyos-libc = { path = "../libc" }
-libskyos = { path = "../libskyos" }
+libsarga = { path = "../libsarga" }

@@ -2,108 +2,138 @@
 #![no_main]
 
 extern crate alloc;
+extern crate libsarga;
 
-#[global_allocator]
-static ALLOCATOR: skyos_libc::heap::Heap = skyos_libc::heap::Heap::new();
-
-use alloc::string::String;
+use libsarga::io::{self, open, read, close};
+use libsarga::process::geteuid;
+use libsarga::errno::Error;
+use libsarga::sarga_main;
+use alloc::string::ToString;
 use alloc::vec::Vec;
-use skyos_libc::syscall;
 
-fn read_file(path: &str) -> String {
-    let cpath = alloc::ffi::CString::new(path).ok();
-    if cpath.is_none() { return String::new(); }
-    let fd = syscall::open(cpath.unwrap().as_ptr() as *const u8, 0);
-    if (fd as i64) < 0 { return String::new(); }
-    let mut buf = [0u8; 4096];
-    let n = syscall::read(fd, &mut buf);
-    syscall::close(fd);
-    if (n as i64) > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { String::new() }
-}
-
-fn write_file(path: &str, data: &str) -> bool {
-    let cpath = alloc::ffi::CString::new(path).ok();
-    if cpath.is_none() { return false; }
-    let fd = syscall::open(cpath.unwrap().as_ptr() as *const u8, 0x42);
-    if (fd as i64) < 0 { return false; }
-    let written = syscall::write(fd, data.as_bytes());
-    syscall::close(fd);
-    (written as i64) >= 0
-}
-
-fn puts(s: &str) { syscall::write(1, s.as_bytes()); }
-fn eputs(s: &str) { syscall::write(2, s.as_bytes()); }
-
-fn read_pass() -> String {
-    let mut s = String::new();
-    let mut buf = [0u8; 1];
+fn read_line(fd: i64) -> Result<Vec<u8>, Error> {
+    let mut buf = Vec::new();
+    let mut byte = [0u8; 1];
     loop {
-        let n = syscall::read(0, &mut buf);
-        if (n as i64) <= 0 { break; }
-        if buf[0] == b'\n' { break; }
-        if buf[0] == b'\r' { continue; }
-        s.push(buf[0] as char);
+        let n = read(fd, &mut byte)?;
+        if n == 0 { break; }
+        if byte[0] == b'\n' || byte[0] == b'\r' { break; }
+        buf.push(byte[0]);
     }
-    s
+    Ok(buf)
 }
 
-fn simple_hash(pass: &str) -> String {
-    let mut h: u32 = 5381;
-    for b in pass.bytes() {
-        h = h.wrapping_mul(33).wrapping_add(b as u32);
+fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
+    let fd = open(path, 0)?;
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 512];
+    loop {
+        let n = read(fd, &mut tmp)?;
+        if n == 0 { break; }
+        buf.extend_from_slice(&tmp[..n]);
     }
-    alloc::format!("$sky${:08x}", h)
+    let _ = close(fd);
+    Ok(buf)
 }
 
-#[no_mangle]
-pub extern "C" fn main(_argc: u64, argv: *const *const u8) -> i32 {
-    let mut new_user = false;
-    if !argv.is_null() {
-        let ptr = unsafe { argv.offset(1) };
-        if !unsafe { *ptr }.is_null() {
-            let arg = unsafe { core::ffi::CStr::from_ptr(*ptr as *const i8) }.to_str().unwrap_or("");
-            if !arg.is_empty() { new_user = true; }
-        }
+fn hex_nibble(v: u8) -> u8 {
+    if v < 10 { b'0' + v } else { b'a' + v - 10 }
+}
+
+fn hex_encode(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(hex_nibble(b >> 4));
+        out.push(hex_nibble(b & 0xf));
     }
-    puts("Current password: ");
-    let _old = read_pass();
-    puts("\nNew password: ");
-    let p1 = read_pass();
-    puts("\nConfirm: ");
-    let p2 = read_pass();
-    puts("\n");
-    if p1 != p2 {
-        eputs("passwd: passwords do not match\n");
-        return 1;
-    }
-    if p1.len() < 3 {
-        eputs("passwd: password too short\n");
-        return 1;
-    }
-    let hash = simple_hash(&p1);
-    let shadow = read_file("/etc/shadow");
-    let mut new_shadow = String::new();
-    let mut found = false;
-    for line in shadow.lines() {
-        let parts: Vec<&str> = line.split(':').collect();
-        if parts.is_empty() { continue; }
-        if parts[0] == "root" || (new_user && parts[0] == "root") {
-            new_shadow.push_str(&alloc::format!("{}:{}:18000:0:99999:7:::\n", parts[0], hash));
-            found = true;
+    out
+}
+
+fn generate_salt() -> [u8; 16] {
+    let mut salt = [0u8; 16];
+    let tick_bytes = 0x9E3779B97F4A7C15u64.to_le_bytes();
+    salt[..8].copy_from_slice(&tick_bytes);
+    salt[8..16].copy_from_slice(&tick_bytes);
+    salt
+}
+
+fn set_password(username: &str, new_password: &str) -> Result<(), Error> {
+    let data = read_whole_file("/etc/shadow")?;
+
+    let salt = generate_salt();
+    let pw = new_password.as_bytes();
+    let mut dk = [0u8; 32];
+    libsarga::hash::pbkdf2_sha256(pw, &salt, &mut dk, 10000)?;
+
+    let salt_enc = hex_encode(&salt);
+    let dk_enc = hex_encode(&dk);
+    let salt_hex = core::str::from_utf8(&salt_enc).unwrap_or("");
+    let dk_hex = core::str::from_utf8(&dk_enc).unwrap_or("");
+    let new_line = alloc::format!("{}:PBKDF2-{}:{}:10000:0:99999:7:::\n", username, salt_hex, dk_hex);
+
+    let mut out = Vec::new();
+    for line in data.split(|&b| b == b'\n') {
+        if line.is_empty() { continue; }
+        let mut parts = line.splitn(2, |&b| b == b':');
+        let name = parts.next().unwrap_or(b"");
+        if name == username.as_bytes() {
+            out.extend_from_slice(new_line.as_bytes());
         } else {
-            new_shadow.push_str(line);
-            new_shadow.push('\n');
+            out.extend_from_slice(line);
+            out.push(b'\n');
         }
     }
-    if !found {
-        new_shadow.push_str(&alloc::format!("root:{}:18000:0:99999:7:::\n", hash));
+
+    let fd = open("/etc/shadow", 0x41)?;
+    libsarga::io::write_all(fd, &out)?;
+    let _ = close(fd);
+    Ok(())
+}
+
+fn user_main() -> i32 {
+    let argc = libsarga::args::argc();
+    let euid = geteuid();
+
+    let target_user = if argc > 1 {
+        libsarga::args::get(1).unwrap_or("").to_string()
+    } else {
+        "root".to_string()
+    };
+
+    if target_user.is_empty() || target_user == "-h" || target_user == "--help" {
+        io::print_str("Usage: passwd [username]\n");
+        return 0;
     }
-    write_file("/etc/shadow", &new_shadow);
-    puts("Password updated.\n");
+
+    if euid != 0 {
+        io::print_str("passwd: only root can change passwords\n");
+        return 1;
+    }
+
+    io::print_str("New password: ");
+    let pw1 = match read_line(0) {
+        Ok(b) => core::str::from_utf8(&b).unwrap_or("").to_string(),
+        Err(_) => libsarga::process::exit(1),
+    };
+    io::print_str("Retype new password: ");
+    let pw2 = match read_line(0) {
+        Ok(b) => core::str::from_utf8(&b).unwrap_or("").to_string(),
+        Err(_) => libsarga::process::exit(1),
+    };
+    if pw1 != pw2 {
+        io::print_str("\npasswd: passwords do not match\n");
+        return 1;
+    }
+    if pw1.is_empty() {
+        io::print_str("\npasswd: password cannot be empty\n");
+        return 1;
+    }
+
+    match set_password(&target_user, &pw1) {
+        Ok(_) => io::print_str("passwd: password updated successfully\n"),
+        Err(e) => { io::print_str(&alloc::format!("passwd: update failed: {}\n", e)); return 1; }
+    }
     0
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
+sarga_main!(user_main);

@@ -29,7 +29,6 @@ members = [
     "search",
     "installer",
     "skyd-update",
-    "libc",
     "sargash",
     "svc",
     "vahid",

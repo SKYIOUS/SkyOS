@@ -45,7 +45,7 @@ fn user_main() -> i32 {
         };
         let ret = fchown(fd as u64, uid, gid);
         close(fd).ok();
-        if ret < 0 {
+        if ret.is_err() {
             io::print_str(&alloc::format!("chown: {}: failed\n", file));
         }
     }

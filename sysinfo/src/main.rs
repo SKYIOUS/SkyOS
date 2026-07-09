@@ -2,10 +2,9 @@
 #![no_main]
 extern crate alloc;
 use libsarga::{sarga_main, gui::Window, theme::Theme};
-use alloc::format;
 
 fn user_main() -> i32 {
-    let mut win = Window::create("System Info", 500, 400).unwrap();
+    let mut win = Window::create("System Info", 500, 400).expect("failed to create window");
     let theme = Theme::dark();
 
     loop {

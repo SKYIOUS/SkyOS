@@ -9,7 +9,7 @@ use libsarga::io::{self, open, read, close};
 use libsarga::process::{geteuid, setuid, setgid, execve};
 use alloc::string::ToString;
 
-fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, i64> {
+fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let fd = open(path, 0)?;
     let mut buf = alloc::vec::Vec::new();
     let mut tmp = [0u8; 512];
@@ -22,7 +22,7 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, i64> {
     Ok(buf)
 }
 
-fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, i64> {
+fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let mut buf = alloc::vec::Vec::new();
     let mut byte = [0u8; 1];
     loop {

@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use libsarga::{fs, gui::Window, io, process, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
-    let mut win = Window::create("SARGA OS Installer", 640, 480).unwrap();
+    let mut win = Window::create("SARGA OS Installer", 640, 480).expect("failed to create window");
     let theme = Theme::dark();
     let mut step = 0;
     let mut username = String::new();

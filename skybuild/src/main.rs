@@ -2,47 +2,31 @@
 #![no_main]
 
 extern crate alloc;
-
-#[global_allocator]
-static ALLOCATOR: skyos_libc::heap::Heap = skyos_libc::heap::Heap::new();
+extern crate libsarga;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use skyos_libc::syscall;
+use libsarga::sarga_main;
+use libsarga::io;
+use libsarga::process;
 
-fn puts(s: &str) { syscall::write(1, s.as_bytes()); syscall::write(1, b"\n"); }
+fn puts(s: &str) { io::print_str(s); io::print_str("\n"); }
+
 fn read_file(path: &str) -> String {
-    let cpath = alloc::ffi::CString::new(path).ok();
-    if cpath.is_none() { return String::new(); }
-    let fd = syscall::open(cpath.unwrap().as_ptr() as *const u8, 0);
-    if (fd as i64) < 0 { return String::new(); }
-    let mut buf = [0u8; 4096];
-    let n = syscall::read(fd, &mut buf);
-    syscall::close(fd);
-    if (n as i64) > 0 { String::from_utf8_lossy(&buf[..n as usize]).into_owned() } else { String::new() }
+    io::read_to_string(path).unwrap_or_default()
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> i64 {
-    let cpath = alloc::ffi::CString::new(cmd).ok();
-    if cpath.is_none() { return -1; }
-    let path_ptr = cpath.unwrap().into_raw() as *const u8;
-    let mut argv = Vec::new();
-    argv.push(path_ptr);
-    for a in args {
-        if let Ok(cs) = alloc::ffi::CString::new(*a) {
-            argv.push(cs.into_raw() as *const u8);
+    match process::fork() {
+        Ok(0) => {
+            let _ = process::execve(cmd, args, &[]);
+            0
         }
+        Ok(pid) => {
+            process::wait(pid).unwrap_or(-1) as i64
+        }
+        Err(_) => -1,
     }
-    argv.push(core::ptr::null());
-    let pid = syscall::fork();
-    if pid == 0 {
-        unsafe { syscall::execve(path_ptr, argv.as_ptr() as *const *const u8, core::ptr::null()); }
-        0
-    } else if (pid as i64) > 0 {
-        let mut status: i32 = 0;
-        syscall::wait4(pid as i64, &mut status, 0, core::ptr::null_mut());
-        (status as u64 & 0xFF) as i64
-    } else { -1 }
 }
 
 fn cmd_build(args: &[&str]) {
@@ -65,13 +49,14 @@ fn cmd_new(args: &[&str]) {
         "name=\"{}\"\nversion=\"1.0.0\"\ndescription=\"A SkyOS application\"\narch=\"x86_64\"\nlicense=\"MIT\"\ndeps=\"\"\nmaintainer=\"developer\"\nsize=0\nsha256=\"\"\npayload:\n",
         name
     );
-    let cpath = alloc::ffi::CString::new(name).ok();
-    if cpath.is_none() { puts("Invalid name"); return; }
-    let fd = syscall::open(cpath.unwrap().as_ptr() as *const u8, 0x42);
-    if (fd as i64) < 0 { puts("Cannot create recipe"); return; }
-    syscall::write(fd, recipe.as_bytes());
-    syscall::close(fd);
-    puts(&alloc::format!("Created recipe: {}", name));
+    match io::open(name, 0x42) {
+        Ok(fd) => {
+            let _ = io::write_all(fd, recipe.as_bytes());
+            let _ = io::close(fd);
+            puts(&alloc::format!("Created recipe: {}", name));
+        }
+        Err(_) => puts("Cannot create recipe"),
+    }
 }
 
 fn cmd_init(_args: &[&str]) {
@@ -97,21 +82,15 @@ fn cmd_sysroot(_args: &[&str]) {
 fn cmd_info(_args: &[&str]) {
     puts("SkyOS Developer Toolchain");
     puts("Target: x86_64-skyos");
-    puts("C Library: skyos-libc (Rust, no_std)");
+    puts("C Library: libsarga (Rust, no_std)");
     puts("Package format: .skp (skypkg)");
     puts("Build system: Cargo + custom target JSON");
 }
 
-#[no_mangle]
-pub extern "C" fn main(_argc: u64, argv: *const *const u8) -> i32 {
+fn user_main() -> i32 {
     let mut args = Vec::new();
-    if !argv.is_null() {
-        for i in 1.. {
-            let ptr = unsafe { argv.offset(i as isize) };
-            if unsafe { *ptr }.is_null() { break; }
-            let s = unsafe { core::ffi::CStr::from_ptr(*ptr as *const i8) }.to_str().unwrap_or("").to_string();
-            args.push(s);
-        }
+    for i in 1..libsarga::args::argc() {
+        args.push(libsarga::args::get(i as usize).unwrap_or_default().to_string());
     }
     let args_str: Vec<&str> = args.iter().map(|s: &String| s.as_str()).collect();
     let cmd = args_str.first().copied().unwrap_or("");
@@ -125,7 +104,4 @@ pub extern "C" fn main(_argc: u64, argv: *const *const u8) -> i32 {
     0
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
+sarga_main!(user_main);

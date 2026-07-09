@@ -2,70 +2,53 @@
 #![no_main]
 
 extern crate alloc;
-
-#[global_allocator]
-static ALLOCATOR: skyos_libc::heap::Heap = skyos_libc::heap::Heap::new();
+extern crate libsarga;
 
 use alloc::vec::Vec;
 use alloc::vec;
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::ffi::CString;
-use skyos_libc::syscall::{write, exit, fork, execve, open, close, read, wait4, kill, getdents64};
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    exit(1);
-}
-
-const PROC_DIR: &[u8] = b"/proc/\0";
+use libsarga::sarga_main;
+use libsarga::io::{self, open, close, getdents64};
+use libsarga::process::{fork, execve, wait, kill, exit};
+use libsarga::args;
 
 fn eprint(s: &str) {
-    let _ = write(2, s.as_bytes());
+    io::print_str(s);
 }
 
-fn format_pid_list() -> Vec<(i64, String)> {
-    let dir_fd = open(PROC_DIR.as_ptr(), 0);
-    if dir_fd >= 0xFFFF_FFFF_FFFF_FF00 {
-        return vec![];
-    }
+fn format_pid_list() -> Vec<(u64, String)> {
+    let dir_fd = match open("/proc", 0) {
+        Ok(fd) => fd,
+        Err(_) => return vec![],
+    };
+
     let mut buf = [0u8; 4096];
-    let n = getdents64(dir_fd, buf.as_mut_ptr(), buf.len());
-    close(dir_fd);
-    if n >= 0xFFFF_FFFF_FFFF_FF00 {
-        return vec![];
-    }
+    let n = match getdents64(dir_fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => { let _ = close(dir_fd); return vec![]; }
+    };
+    let _ = close(dir_fd);
+
     let mut result = vec![];
     let mut off = 0;
-    let n = n as usize;
-    while off + 18 < n {
-        let _d_ino = u64::from_ne_bytes(buf[off..off+8].try_into().unwrap());
-        let _d_off = u64::from_ne_bytes(buf[off+8..off+16].try_into().unwrap());
-        let d_reclen = u16::from_ne_bytes(buf[off+16..off+18].try_into().unwrap()) as usize;
-        if d_reclen < 19 || off + d_reclen > n {
-            break;
-        }
-        let name_end = off + 18 + buf[off+18..off+d_reclen].iter().position(|&b| b == 0).unwrap_or(d_reclen - 19);
-        let name = core::str::from_utf8(&buf[off+18..name_end]).unwrap_or("");
-        let _d_type = buf[off + d_reclen - 1];
-        if let Ok(pid) = name.parse::<i64>() {
-            let mut cmdline = [0u8; 256];
-            let cmd_path_str = alloc::format!("/proc/{}/cmdline\0", pid);
-            let cmd_bytes = cmd_path_str.as_bytes();
-            let fd = open(cmd_bytes.as_ptr(), 0);
-            if fd < 0xFFFF_FFFF_FFFF_FF00 {
-                let n2 = read(fd, &mut cmdline);
-                close(fd);
-                if n2 > 0 {
-                    let cmd = core::str::from_utf8(&cmdline[..n2 as usize]).unwrap_or("").trim_end_matches('\0');
-                    result.push((pid, cmd.to_string()));
+    while off < n {
+        let d_ino = u64::from_ne_bytes(buf[off..off+8].try_into().unwrap_or([0;8]));
+        let d_reclen = u16::from_ne_bytes(buf[off+16..off+18].try_into().unwrap_or([0;2])) as usize;
+        let name_start = off + 19;
+        let name_end = buf[name_start..].iter().position(|&b| b == 0).map(|p| name_start + p).unwrap_or(off + d_reclen);
+
+        if d_ino != 0 && name_start < buf.len() {
+            let name = core::str::from_utf8(&buf[name_start..name_end.min(buf.len())]).unwrap_or("");
+            if let Ok(pid) = name.parse::<u64>() {
+                let cmd_path = alloc::format!("/proc/{}/cmdline", pid);
+                if let Ok(cmd) = io::read_to_string(&cmd_path) {
+                    result.push((pid, cmd.trim_end_matches('\0').to_string()));
                 }
             }
         }
+        if d_reclen == 0 { break; }
         off += d_reclen;
-        if _d_off == 0 {
-            break;
-        }
     }
     result
 }
@@ -80,17 +63,16 @@ fn cmd_status() {
 }
 
 fn cmd_start(path: &str) {
-    let pid = fork();
-    if pid == 0 {
-        let c = CString::new(path).unwrap();
-        let argv: [u64; 2] = [c.as_ptr() as u64, 0];
-        let envp: [u64; 1] = [0];
-        let _ = execve(c.as_ptr() as *const u8, argv.as_ptr() as *const *const u8, envp.as_ptr() as *const *const u8);
-        exit(1);
-    } else if pid > 0 && pid < 0xFFFF_FFFF_FFFF_FF00 {
-        let mut status: i32 = 0;
-        wait4(pid as i64, &mut status, 0, core::ptr::null_mut());
-        eprint("[svc] started\n");
+    match fork() {
+        Ok(0) => {
+            let _ = execve(path, &[], &[]);
+            exit(1);
+        }
+        Ok(pid) => {
+            let _ = wait(pid);
+            eprint("[svc] started\n");
+        }
+        Err(_) => eprint("[svc] fork failed\n"),
     }
 }
 
@@ -98,9 +80,8 @@ fn cmd_stop(path: &str) {
     let procs = format_pid_list();
     for (pid, cmd) in &procs {
         if cmd == path {
-            kill(*pid, 15);
-            let mut status: i32 = 0;
-            wait4(*pid, &mut status, 0, core::ptr::null_mut());
+            let _ = kill(*pid as i64, 15);
+            let _ = wait(*pid);
             eprint("[svc] stopped\n");
             return;
         }
@@ -108,41 +89,29 @@ fn cmd_stop(path: &str) {
     eprint("[svc] not found\n");
 }
 
-#[no_mangle]
-pub extern "C" fn main(_argc: u64, _argv: *const *const u8) -> i32 {
-    let argv = unsafe {
-        if _argv.is_null() {
-            return 1;
-        }
-        let mut i = 0;
-        let mut args = vec![];
-        while !(*_argv.add(i)).is_null() {
-            let cstr = core::ffi::CStr::from_ptr(*_argv.add(i) as *const i8);
-            args.push(cstr.to_str().unwrap_or(""));
-            i += 1;
-        }
-        args
-    };
-
-    if argv.len() < 2 {
+fn user_main() -> i32 {
+    let argc = args::argc();
+    if argc < 2 {
         eprint("Usage: svc <status|start|stop|restart> [path]\n");
         return 1;
     }
 
-    match argv[1] {
+    let cmd = args::get(1).unwrap_or("");
+    match cmd {
         "status" | "list" | "ls" => cmd_status(),
         "start" => {
-            if argv.len() < 3 { eprint("missing path\n"); return 1; }
-            cmd_start(argv[2]);
+            if argc < 3 { eprint("missing path\n"); return 1; }
+            cmd_start(args::get(2).unwrap_or(""));
         }
         "stop" => {
-            if argv.len() < 3 { eprint("missing path\n"); return 1; }
-            cmd_stop(argv[2]);
+            if argc < 3 { eprint("missing path\n"); return 1; }
+            cmd_stop(args::get(2).unwrap_or(""));
         }
         "restart" => {
-            if argv.len() < 3 { eprint("missing path\n"); return 1; }
-            cmd_stop(argv[2]);
-            cmd_start(argv[2]);
+            if argc < 3 { eprint("missing path\n"); return 1; }
+            let p = args::get(2).unwrap_or("");
+            cmd_stop(p);
+            cmd_start(p);
         }
         _ => {
             eprint("unknown command\n");
@@ -151,3 +120,5 @@ pub extern "C" fn main(_argc: u64, _argv: *const *const u8) -> i32 {
     }
     0
 }
+
+sarga_main!(user_main);

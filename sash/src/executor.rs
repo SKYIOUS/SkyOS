@@ -75,7 +75,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
         let env_strings = crate::get_env_refs();
         let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
         let r = libsarga::process::execve(cmd_name, &args, &env_refs);
-        if r < 0 {
+        if r.is_err() {
             println!("sash: command not found: {}", cmd_name);
         }
         return 127;
@@ -244,7 +244,7 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
             let env_strings = crate::get_env_refs();
             let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
             let r = libsarga::process::execve(&expanded_name, &args, &env_refs);
-            if r < 0 {
+            if r.is_err() {
                 println!("sash: command not found: {}", expanded_name);
             }
             return 127;

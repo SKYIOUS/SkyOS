@@ -63,7 +63,7 @@ impl History {
         let path = format!("{}/.sash_history", home);
         let c_str = CString::new(path.as_bytes()).ok();
         if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0u64) };
+        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.expect("invalid path").as_ptr() as u64, 0u64) };
         if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         let mut content = String::new();
@@ -87,7 +87,7 @@ impl History {
         let path = format!("{}/.sash_history", home);
         let c_str = CString::new(path.as_bytes()).ok();
         if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0x241u64) };
+        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.expect("invalid path").as_ptr() as u64, 0x241u64) };
         if fd < 0 { return; }
         for entry in &self.entries {
             let mut line = entry.clone();
@@ -124,7 +124,7 @@ impl Completer {
     fn list_dir(&self, dir: &str, prefix: &str, matches: &mut Vec<String>) {
         let c_str = CString::new(dir.as_bytes()).ok();
         if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(257, c_str.unwrap().as_ptr() as u64, 0x100000u64) };
+        let fd = unsafe { libsarga::syscall::syscall2(257, c_str.expect("invalid path").as_ptr() as u64, 0x100000u64) };
         if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         loop {

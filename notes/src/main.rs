@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Notes", 500, 400).unwrap();
+    let mut win = Window::create("Notes", 500, 400).expect("failed to create window");
     let theme = Theme::dark();
     let mut notes = Vec::new();
     notes.push(String::from("Welcome to SARGA OS!"));

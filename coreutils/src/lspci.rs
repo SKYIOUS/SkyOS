@@ -13,7 +13,7 @@ fn user_main() -> i32 {
         println!("  00:02.0 Ethernet controller (e1000)");
         return 0;
     }
-    let fd = fd.unwrap();
+    let fd = fd.expect("failed to open pci devices");
     let mut buf = [0u8; 4096];
     let mut offset = 0;
     loop {

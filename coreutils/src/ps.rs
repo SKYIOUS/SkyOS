@@ -38,7 +38,7 @@ fn user_main() -> i32 {
     0
 }
 
-fn read_ctl_file(path: &str) -> Result<String, i64> {
+fn read_ctl_file(path: &str) -> Result<String, libsarga::errno::Error> {
     let mut full = String::from("/ctl/");
     full.push_str(path);
     let fd = io::open(&full, 0)?;

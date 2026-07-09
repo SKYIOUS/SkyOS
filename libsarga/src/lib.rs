@@ -21,6 +21,7 @@ pub mod hash;
 pub mod fs;
 pub mod thread;
 pub mod posix;
+pub mod libskyos;
 
 // Widget toolkit
 pub mod theme;
@@ -51,6 +52,6 @@ macro_rules! sarga_main {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    crate::println!("SARGA OS PANIC: {}", info);
+    println!("SARGA OS PANIC: {}", info);
     process::exit(1);
 }
