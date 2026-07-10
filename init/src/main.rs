@@ -28,7 +28,7 @@ impl Service {
         match process::fork() {
             Ok(0) => {
                 // Child
-                if let Err(e) = process::execve(&self.exec, &[], &[]) {
+                if let Err(_e) = process::execve(&self.exec, &[], &[]) {
                     let _ = io::write_all(1, b"[init] exec failed for ");
                     let _ = io::write_all(1, self.name.as_bytes());
                     let _ = io::write_all(1, b": ");

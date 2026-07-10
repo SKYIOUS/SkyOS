@@ -5,7 +5,7 @@ use libsarga::{sarga_main, gui::Window, theme::Theme};
 use alloc::format;
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Calendar", 400, 350).expect("failed to create window");
+    let mut win = Window::create("Calendar", 400, 350).unwrap();
     let theme = Theme::dark();
     let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

@@ -5,7 +5,7 @@ use libsarga::{sarga_main, gui::Window, theme::Theme};
 use alloc::string::String;
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Search", 400, 300).expect("failed to create window");
+    let mut win = Window::create("Search", 400, 300).unwrap();
     let theme = Theme::dark();
     let mut query = String::from("sky");
     let results = ["skyfiles", "skyedit", "skysettings", "skystore"];

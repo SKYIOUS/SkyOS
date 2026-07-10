@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, net, io, args, errno::Error};
+use libsarga::{sarga_main, println, net, io, args};
 
 fn user_main() -> i32 {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
@@ -49,7 +49,7 @@ fn user_main() -> i32 {
                 let _ = io::close(client_fd);
             }
             Err(e) => {
-                if e != Error::EAGAIN { // EAGAIN
+                if e != libsarga::errno::Error::EAGAIN { // EAGAIN
                     println!("echod: accept error: {}", e);
                 }
             }

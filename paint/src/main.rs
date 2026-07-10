@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, gui::Window, theme::Theme};
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Paint", 800, 600).expect("failed to create window");
+    let mut win = Window::create("Paint", 800, 600).unwrap();
     let theme = Theme::dark();
     let mut colors = [0xFFFFFFFF, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF, 0xFF000000];
     let mut selected_color = 0;

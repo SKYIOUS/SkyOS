@@ -189,7 +189,7 @@ pub fn nanosleep(ns: u64) -> Result<(), Error> {
 /// Flushes filesystem buffers to disk.
 pub fn sync() -> i64 {
     // SAFETY: sync syscall is safe here
-    unsafe { crate::syscall::syscall0(SYS_SCHED_YIELD) } // Correct sys number needed, yield used as filler
+    unsafe { crate::syscall::syscall0(36) }
 }
 
 /// Reboots or powers off the system.
@@ -380,4 +380,21 @@ pub fn select(nfds: i32, readfds: Option<&mut FdSet>, writefds: Option<&mut FdSe
         )
     };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        let s = $crate::alloc::format!($($arg)*);
+        $crate::io::print_str(&s);
+    }}
+}
+#[macro_export]
+macro_rules! println {
+    () => { $crate::io::print_str("\n") };
+    ($($arg:tt)*) => {{
+        let s = $crate::alloc::format!($($arg)*);
+        $crate::io::print_str(&s);
+        $crate::io::print_str("\n");
+    }}
 }

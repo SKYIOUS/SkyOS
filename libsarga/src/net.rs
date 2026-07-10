@@ -11,8 +11,6 @@ pub enum SocketDomain {
     Inet = 2,
     /// IPv6 internet protocols.
     Inet6 = 10,
-    /// Low level packet interface.
-    Packet = 17,
 }
 
 /// Socket type.
@@ -44,7 +42,7 @@ pub struct PollFd {
 /// Waits for events on multiple file descriptors.
 pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> Result<i32, Error> {
     // SAFETY: poll syscall is safe here
-    let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_POLL, fds.as_mut_ptr() as u64, fds.len() as u64, timeout_ms as u64) };
+    let r = unsafe { crate::syscall::syscall3(7, fds.as_mut_ptr() as u64, fds.len() as u64, timeout_ms as u64) };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
 }
 
@@ -81,7 +79,7 @@ pub fn resolve(name: &str, out_ip: &mut [u8; 4]) -> Result<(), Error> {
     buf[..len].copy_from_slice(&bytes[..len]);
     buf[len] = 0;
     // SAFETY: resolve syscall is safe here
-    let r = unsafe { crate::syscall::syscall2(crate::syscall::SYS_RESOLVE, buf.as_ptr() as u64, out_ip.as_mut_ptr() as u64) };
+    let r = unsafe { crate::syscall::syscall2(200, buf.as_ptr() as u64, out_ip.as_mut_ptr() as u64) };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
 }
 
@@ -94,14 +92,14 @@ impl Socket {
     /// Creates a new socket.
     pub fn new(domain: SocketDomain, stype: SocketType, protocol: i32) -> Result<Self, Error> {
         // SAFETY: socket syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_SOCKET, domain as u64, stype as u64, protocol as u64) };
+        let r = unsafe { crate::syscall::syscall3(41, domain as u64, stype as u64, protocol as u64) };
         if r < 0 { Err(Error::from_i64(r)) } else { Ok(Socket { fd: r }) }
     }
 
     /// Binds the socket to a local address.
-    pub fn bind(&self, addr: &SockAddrIn) -> Result<(), Error> {
+    pub fn bind(&self, addr: &[u8]) -> Result<(), Error> {
         // SAFETY: bind syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_BIND, self.fd as u64, addr as *const _ as u64, core::mem::size_of::<SockAddrIn>() as u64) };
+        let r = unsafe { crate::syscall::syscall3(49, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
         if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
     }
 
@@ -113,18 +111,16 @@ impl Socket {
     }
 
     /// Accepts a new connection on the socket.
-    pub fn accept(&self) -> Result<(Socket, SockAddrIn), Error> {
-        let mut addr = SockAddrIn::new([0; 4], 0);
-        let mut len = core::mem::size_of::<SockAddrIn>() as u32;
+    pub fn accept(&self, addr: &mut [u8], addrlen: &mut u32) -> Result<Socket, Error> {
         // SAFETY: accept syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(43, self.fd as u64, &mut addr as *mut _ as u64, &mut len as *mut _ as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok((Socket { fd: r }, addr)) }
+        let r = unsafe { crate::syscall::syscall3(43, self.fd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
+        if r < 0 { Err(Error::from_i64(r)) } else { Ok(Socket { fd: r }) }
     }
 
     /// Connects the socket to a remote address.
-    pub fn connect(&self, addr: &SockAddrIn) -> Result<(), Error> {
+    pub fn connect(&self, addr: &[u8]) -> Result<(), Error> {
         // SAFETY: connect syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_CONNECT, self.fd as u64, addr as *const _ as u64, core::mem::size_of::<SockAddrIn>() as u64) };
+        let r = unsafe { crate::syscall::syscall3(42, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
         if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
     }
 
@@ -152,13 +148,13 @@ impl Drop for Socket {
 
 /// Convenience functions for sockets.
 pub fn socket(domain: u64, stype: u64, protocol: i32) -> Result<i64, Error> {
-    let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_SOCKET, domain, stype, protocol as u64) };
+    let r = unsafe { crate::syscall::syscall3(41, domain, stype, protocol as u64) };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
 }
 
 /// Binds a raw file descriptor to an address.
 pub fn bind(fd: i64, addr: &[u8]) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(crate::syscall::SYS_BIND, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
+    let r = unsafe { crate::syscall::syscall3(49, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
 }
 

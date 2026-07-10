@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, gui::Window, theme::Theme};
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Tasks", 400, 500).expect("failed to create window");
+    let mut win = Window::create("Tasks", 400, 500).unwrap();
     let theme = Theme::dark();
     let tasks = [
         ("Improve UI/UX", true),

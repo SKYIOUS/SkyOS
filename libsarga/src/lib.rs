@@ -52,6 +52,6 @@ macro_rules! sarga_main {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!("SARGA OS PANIC: {}", info);
+    crate::println!("SARGA OS PANIC: {}", info);
     process::exit(1);
 }

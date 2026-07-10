@@ -12,7 +12,7 @@ struct App {
 }
 
 fn user_main() -> i32 {
-    let mut win = Window::create("SkyStore", 600, 450).expect("failed to create window");
+    let mut win = Window::create("SkyStore", 600, 450).unwrap();
     let theme = Theme::dark();
     let apps = [
         App { name: "System Monitor", desc: "View CPU and Memory usage", installed: false },

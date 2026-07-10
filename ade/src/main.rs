@@ -248,7 +248,7 @@ impl Desktop {
                 let drag_ox = mx - win.x;
                 let drag_oy = my - win.y;
                 self.windows.push(win);
-                let last = self.windows.last_mut().expect("no windows present");
+                let last = self.windows.last_mut().unwrap();
                 last.dragging = true;
                 last.drag_ox = drag_ox;
                 last.drag_oy = drag_oy;
@@ -460,7 +460,7 @@ fn draw_window(win: &mut Window, theme: &Theme, aw: &AppWindow) {
 
     // Fade-in effect via background fill if not fully opaque
     if aw.opacity < 255 {
-        // Handled by alpha blending if supported
+        // Just skip rendering or draw with lower contrast
     }
 
     // Window body
