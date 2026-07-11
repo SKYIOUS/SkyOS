@@ -21,6 +21,7 @@ pub mod hash;
 pub mod fs;
 pub mod thread;
 pub mod posix;
+pub mod libskyos;
 
 // Widget toolkit
 pub mod theme;

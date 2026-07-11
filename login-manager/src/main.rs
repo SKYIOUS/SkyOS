@@ -106,7 +106,7 @@ fn user_main() -> i32 {
                     let user = core::str::from_utf8(&username_buf).unwrap_or("");
                     let pass = core::str::from_utf8(&password_buf).unwrap_or("");
                     if verify_password(user, pass) {
-                        process::execve("/bin/ade", &["/bin/ade"], &[]);
+                        let _ = process::execve("/bin/ade", &["/bin/ade"], &[]);
                         return 0;
                     } else {
                         error_msg = String::from("Invalid username or password");

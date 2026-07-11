@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-use alloc::string::String;
 
 pub const AF_INET: u64 = 2;
 pub const SOCK_DGRAM: u64 = 2;
@@ -33,17 +31,17 @@ pub struct SocketAddrV4 {
 pub fn resolve(name: &str) -> Option<Ipv4Addr> {
     let cname = alloc::ffi::CString::new(name).ok()?;
     let mut ip_bytes = [0u8; 4];
-    let ret = skyos_libc::syscall::syscall2(
-        skyos_libc::SYS_RESOLVE,
+    let ret = unsafe { crate::syscall::syscall2(
+        crate::syscall::SYS_RESOLVE,
         cname.as_ptr() as u64,
         ip_bytes.as_mut_ptr() as u64,
-    );
+    ) };
     if ret == 0 { Some(Ipv4Addr(ip_bytes)) } else { None }
 }
 
 /// Create a socket. Returns fd or negative error.
 pub fn socket(domain: u64, type_: u64, protocol: u64) -> i64 {
-    let ret = skyos_libc::syscall::syscall3(skyos_libc::SYS_SOCKET, domain, type_, protocol);
+    let ret = unsafe { crate::syscall::syscall3(crate::syscall::SYS_SOCKET, domain, type_, protocol) };
     if (ret as i64) >= 0 { ret as i64 } else { -(ret as i64) }
 }
 
@@ -53,10 +51,10 @@ pub fn sendto(fd: i64, buf: &[u8], addr: &SocketAddrV4) -> i64 {
     raw[..2].copy_from_slice(&(AF_INET as u16).to_be_bytes());
     raw[2..4].copy_from_slice(&addr.port.to_be_bytes());
     raw[4..8].copy_from_slice(&addr.ip.0);
-    let ret = skyos_libc::syscall::syscall5(
-        skyos_libc::SYS_SENDTO, fd as u64, buf.as_ptr() as u64,
+    let ret = unsafe { crate::syscall::syscall5(
+        crate::syscall::SYS_SENDTO, fd as u64, buf.as_ptr() as u64,
         buf.len() as u64, raw.as_ptr() as u64, 8,
-    );
+    ) };
     if (ret as i64) >= 0 { ret as i64 } else { -(ret as i64) }
 }
 
@@ -64,10 +62,10 @@ pub fn sendto(fd: i64, buf: &[u8], addr: &SocketAddrV4) -> i64 {
 pub fn recvfrom(fd: i64, buf: &mut [u8]) -> (i64, Option<SocketAddrV4>) {
     let mut raw = [0u8; 16];
     let mut addrlen: u32 = 16;
-    let ret = skyos_libc::syscall::syscall5(
-        skyos_libc::SYS_RECVFROM, fd as u64, buf.as_mut_ptr() as u64,
+    let ret = unsafe { crate::syscall::syscall5(
+        crate::syscall::SYS_RECVFROM, fd as u64, buf.as_mut_ptr() as u64,
         buf.len() as u64, raw.as_mut_ptr() as u64, &mut addrlen as *mut u32 as u64,
-    );
+    ) };
     if (ret as i64) < 0 { return (ret as i64, None); }
     let ip = Ipv4Addr([raw[4], raw[5], raw[6], raw[7]]);
     let port = u16::from_be_bytes([raw[2], raw[3]]);
@@ -80,6 +78,6 @@ pub fn connect(fd: i64, addr: &SocketAddrV4) -> i64 {
     raw[..2].copy_from_slice(&(AF_INET as u16).to_be_bytes());
     raw[2..4].copy_from_slice(&addr.port.to_be_bytes());
     raw[4..8].copy_from_slice(&addr.ip.0);
-    let ret = skyos_libc::syscall::syscall3(skyos_libc::SYS_CONNECT, fd as u64, raw.as_ptr() as u64, 8);
+    let ret = unsafe { crate::syscall::syscall3(crate::syscall::SYS_CONNECT, fd as u64, raw.as_ptr() as u64, 8) };
     if (ret as i64) >= 0 { 0 } else { -(ret as i64) }
 }

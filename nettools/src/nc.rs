@@ -44,7 +44,7 @@ fn user_main() -> i32 {
                             Err(_) => break,
                         }
                     }
-                    let _ = net::close(fd);
+                    let _ = io::close(fd);
                     return 0;
                 }
                 Err(e) => { println!("nc: connect failed: {}", e); return 1; }

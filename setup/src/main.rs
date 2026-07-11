@@ -2,59 +2,39 @@
 #![no_main]
 
 extern crate alloc;
+extern crate libsarga;
 
-#[global_allocator]
-static ALLOCATOR: skyos_libc::heap::Heap = skyos_libc::heap::Heap::new();
+use libsarga::{sarga_main, io, process, args};
 
-use alloc::string::String;
-use skyos_libc::syscall;
+fn user_main() -> i32 {
+    io::print_str("========================================\n");
+    io::print_str("  SARGA OS Installer v1.1\n");
+    io::print_str("========================================\n\n");
 
-fn puts(s: &str) { syscall::write(1, s.as_bytes()); }
+    io::print_str("This will prepare SARGA OS for first use.\n");
 
-fn readln() -> String {
-    let mut buf = [0u8; 256];
-    let mut out = String::new();
-    loop {
-        let n = syscall::read(0, &mut buf);
-        if n <= 0 { break; }
-        for &b in &buf[..n as usize] {
-            if b == b'\n' { return out; }
-            if b >= 32 { out.push(b as char); }
-        }
+    if process::getuid() != 0 {
+        io::print_str("Error: Setup must be run as root.\n");
+        return 1;
     }
-    out
-}
 
-fn detect_disk() -> Option<&'static str> {
-    let cpath = alloc::ffi::CString::new("/dev/hda").ok()?;
-    let fd = syscall::open(cpath.as_ptr() as *const u8, 0);
-    if fd as i64 >= 0 { syscall::close(fd); return Some("/dev/hda"); }
-    let cpath = alloc::ffi::CString::new("/dev/sda").ok()?;
-    let fd = syscall::open(cpath.as_ptr() as *const u8, 0);
-    if fd as i64 >= 0 { syscall::close(fd); return Some("/dev/sda"); }
-    None
-}
+    io::print_str("Creating system directories...\n");
+    let dirs = ["/etc", "/bin", "/tmp", "/var", "/home", "/root", "/usr", "/usr/bin", "/usr/lib"];
+    for d in &dirs {
+        let _ = io::mkdir(d, 0o755);
+    }
 
-#[no_mangle]
-pub extern "C" fn main() -> i32 {
-    puts("========================================\n");
-    puts("  SkyOS Installer v1.0\n");
-    puts("========================================\n\n");
-    puts("This will install SkyOS to your system.\n");
-    puts("WARNING: This will overwrite the target disk.\n\n");
-    puts("Continue? [y/N] ");
-    let ans = readln();
-    if ans != "y" && ans != "Y" { puts("Aborted.\n"); return 0; }
-    let disk = detect_disk();
-    if disk.is_none() { puts("No disk found.\n"); return 1; }
-    let disk = disk.unwrap();
-    puts(&alloc::format!("Detected: {}\n", disk));
-    puts("Creating GPT partition table...\n");
-    puts("Creating ext2 filesystem...\n");
-    puts("Installing kernel and initrd...\n");
-    puts("Installation complete! Reboot to start SkyOS.\n");
+    io::print_str("Setting up basic configuration...\n");
+    if let Err(e) = libsarga::fs::write_file("/etc/hostname", "sarga-os\n") {
+        io::print_str(&alloc::format!("Warning: Failed to write /etc/hostname: {}\n", e));
+    }
+
+    if let Err(e) = libsarga::fs::write_file("/etc/passwd", "root:x:0:0:root:/root:/bin/sash\n") {
+        io::print_str(&alloc::format!("Warning: Failed to write /etc/passwd: {}\n", e));
+    }
+
+    io::print_str("\nSetup complete. Welcome to SARGA OS!\n");
     0
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
+sarga_main!(user_main);

@@ -82,7 +82,7 @@ fn user_main() -> i32 {
     io::print_str("[skyd] notification daemon started\n");
 
     // Ensure inbox directory exists
-    io::mkdir(NOTIFY_DIR, 0o755);
+    let _ = io::mkdir(NOTIFY_DIR, 0o755);
 
     // Write initial log entry
     write_log("[skyd] daemon started\n");

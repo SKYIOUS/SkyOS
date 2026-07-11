@@ -1,6 +1,11 @@
-use crate::syscall::*;
+//! Cryptographic hashing and PBKDF2.
 
+use crate::syscall::*;
+use crate::errno::Error;
+
+/// System call number for hashing operations.
 pub const SYS_HASH: u64 = 401;
+/// Command for PBKDF2-HMAC-SHA256.
 pub const HASH_PBKDF2_SHA256: u64 = 0;
 
 /// Compute PBKDF2-HMAC-SHA256.
@@ -13,9 +18,10 @@ pub fn pbkdf2_sha256(
     salt: &[u8; 16],
     dk_out: &mut [u8; 32],
     iterations: u32,
-) -> Result<u32, i64> {
+) -> Result<u32, Error> {
     let mut buf = [0u8; 48];
     buf[..16].copy_from_slice(salt);
+    // SAFETY: hash syscall is safe here
     let r = unsafe {
         syscall5(
             SYS_HASH,
@@ -27,7 +33,7 @@ pub fn pbkdf2_sha256(
         )
     };
     if r < 0 {
-        Err(-r)
+        Err(Error::from_i64(r))
     } else {
         dk_out.copy_from_slice(&buf[16..48]);
         Ok(r as u32)

@@ -376,13 +376,13 @@ struct TabPage {
 }
 
 fn spawn_shell(slave_fd: i64) -> ! {
-    io::dup2(slave_fd, 0);
-    io::dup2(slave_fd, 1);
-    io::dup2(slave_fd, 2);
+    let _ = io::dup2(slave_fd, 0);
+    let _ = io::dup2(slave_fd, 1);
+    let _ = io::dup2(slave_fd, 2);
     if slave_fd > 2 { let _ = close(slave_fd); }
     let args = ["/bin/sash"];
     let env = ["TERM=xterm-256color"];
-    execve("/bin/sash", &args, &env);
+    let _ = execve("/bin/sash", &args, &env);
     exit(1);
 }
 
