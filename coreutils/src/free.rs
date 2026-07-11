@@ -34,7 +34,6 @@ fn user_main() -> i32 {
     println!("{:>10}", alloc::format!("{} KB", cached_kb));
 
     0
-    0
 }
 
 sarga_main!(user_main);

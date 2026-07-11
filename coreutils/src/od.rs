@@ -36,7 +36,6 @@ fn user_main() -> i32 {
     }
     if fd != 0 { let _ = io::close(fd); }
     0
-    0
 }
 
 sarga_main!(user_main);

@@ -9,7 +9,6 @@ fn user_main() -> i32 {
     println!("SHELL=/bin/sash");
 
     0
-    0
 }
 
 sarga_main!(user_main);

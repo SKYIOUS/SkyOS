@@ -57,7 +57,7 @@ impl FileManager {
             Ok(f) => f,
             Err(e) => {
                 self.status = alloc::format!("open failed: {}", e);
-                return 0;
+                return;
             }
         };
 
@@ -302,7 +302,7 @@ fn user_main() -> i32 {
         // Keyboard shortcuts
         while let Some(key) = win.get_key() {
             match key {
-                b'q' | b'Q' => return,
+                b'q' | b'Q' => return 0,
                 b'r' | b'R' => fm.refresh(),
                 b'/' => { fm.current_path = String::from("/"); fm.refresh(); }
                 0x08 => { // Backspace = parent dir
@@ -341,7 +341,6 @@ fn user_main() -> i32 {
         prev_pressed = pressed;
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
-    0
 }
 
 sarga_main!(user_main);

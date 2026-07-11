@@ -2,6 +2,9 @@ target/
 .obsidian/
 
 # Build artifacts
+build/
+release/
+scripts/debug/
 *.iso
 *.img
 *.vdi

@@ -21,7 +21,6 @@ fn user_main() -> i32 {
         i += 1;
     }
     0
-    0
 }
 
 sarga_main!(user_main);

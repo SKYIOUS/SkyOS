@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
 use alloc::string::String;
 use alloc::vec::Vec;
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Notes", 500, 400).unwrap();
@@ -30,7 +30,9 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 33_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall1(35, 33_000_000u64);
+        }
     }
 }
 

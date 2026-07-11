@@ -31,7 +31,6 @@ fn user_main() -> i32 {
     lines.sort();
     for line in &lines { println!("{}", line); }
     0
-    0
 }
 
 sarga_main!(user_main);

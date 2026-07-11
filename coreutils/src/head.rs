@@ -38,7 +38,6 @@ fn user_main() -> i32 {
         io::write_all(1, leftover.as_bytes()).ok();
     }
     0
-    0
 }
 
 sarga_main!(user_main);

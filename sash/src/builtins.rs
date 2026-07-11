@@ -143,7 +143,7 @@ fn builtin_exec(args: &[String]) -> i64 {
     let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
     let r = libsarga::process::execve(&args[1], &args_refs, &env_refs);
     println!("exec: {}: failed", args[1]);
-    r as i64
+    match r { Ok(_) => 0, Err(e) => e as i32 as i64 }
 }
 
 fn builtin_echo(args: &[String]) -> i64 {
@@ -406,5 +406,3 @@ fn format_errno(r: i64) -> &'static str {
         _ => "error",
     }
 }
-
-

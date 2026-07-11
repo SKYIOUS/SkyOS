@@ -15,6 +15,5 @@ fn user_main() -> i32 {
     }
     if newline { print!("\n"); }
     0
-    0
 }
 sarga_main!(user_main);

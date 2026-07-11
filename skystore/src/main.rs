@@ -34,7 +34,7 @@ fn user_main() -> i32 {
 
         for (i, app) in apps.iter().enumerate() {
             let ay = 60 + i as u32 * 45;
-            let hover = mouse.y >= ay as i32 && mouse.y < (ay + 40) as i32;
+            let hover = mouse.y >= ay as u64 && mouse.y < (ay + 40) as u64;
             let bg = if hover { theme.bg_elevated } else { theme.bg_surface };
 
             win.draw_rounded_rect(10, ay, 580, 40, 8, bg);

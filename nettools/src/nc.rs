@@ -44,15 +44,14 @@ fn user_main() -> i32 {
                             Err(_) => break,
                         }
                     }
-                    let _ = net::close(fd);
-                    0
+                    let _ = io::close(fd);
+                    return 0;
                 }
-                Err(e) => { println!("nc: connect failed: {}", e); 1 }
+                Err(e) => { println!("nc: connect failed: {}", e); return 1; }
             }
         }
-        Err(e) => { println!("nc: socket failed: {}", e); 1 }
+        Err(e) => { println!("nc: socket failed: {}", e); return 1; }
     }
-    0
 }
 
 sarga_main!(user_main);

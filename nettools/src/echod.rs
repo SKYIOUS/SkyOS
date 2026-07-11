@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, net, args};
+use libsarga::{sarga_main, println, net, io, args};
 
 fn user_main() -> i32 {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
@@ -15,13 +15,13 @@ fn user_main() -> i32 {
     let addr = net::SockAddrIn::new(ip, port);
     if net::bind(fd, addr.as_bytes()).is_err() {
         println!("echod: bind failed");
-        let _ = net::close(fd);
+        let _ = io::close(fd);
         return 0;
     }
 
     if net::listen(fd, 5).is_err() {
         println!("echod: listen failed");
-        let _ = net::close(fd);
+        let _ = io::close(fd);
         return 0;
     }
 
@@ -46,16 +46,15 @@ fn user_main() -> i32 {
                         }
                     }
                 }
-                let _ = net::close(client_fd);
+                let _ = io::close(client_fd);
             }
             Err(e) => {
-                if e != 11 { // EAGAIN
+                if e != libsarga::errno::Error::EAGAIN { // EAGAIN
                     println!("echod: accept error: {}", e);
                 }
             }
         }
     }
-    0
 }
 
 sarga_main!(user_main);

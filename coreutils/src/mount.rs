@@ -40,6 +40,5 @@ fn user_main() -> i32 {
         Err(e) => println!("mount: {}: error {}", target, e),
     }
     0
-    0
 }
 sarga_main!(user_main);

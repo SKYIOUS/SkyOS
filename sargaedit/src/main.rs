@@ -61,7 +61,7 @@ impl Editor {
     fn save(&mut self) {
         if self.filename.is_empty() {
             self.status = alloc::string::String::from("No filename!");
-            return 0;
+            return;
         }
         let mut content = alloc::string::String::new();
         for (i, line) in self.lines.iter().enumerate() {
@@ -290,7 +290,7 @@ fn draw_syntax_highlighted(win: &mut Window, x: u32, y: u32, line: &str) {
         let cmt = &line[cs..];
         draw_tokens(win, x, y, code);
         win.draw_string(x + cs as u32 * 8, y, cmt, C_CMT, C_BG);
-        return 0;
+        return;
     }
     draw_tokens(win, x, y, line);
 }
@@ -458,7 +458,6 @@ fn user_main() -> i32 {
         let _ = win.flush();
         unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
     }
-    0
 }
 
 sarga_main!(user_main);

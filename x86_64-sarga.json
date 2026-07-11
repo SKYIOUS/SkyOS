@@ -26,14 +26,11 @@
   "dynamic-linking": true,
   "position-independent-executables": true,
   "relro-level": "full",
-  "rustc-abi": "x86-softfloat",
+  "rustc-abi": "softfloat",
   "stack-probes": {
     "kind": "inline"
   },
   "static-position-independent-executables": true,
-  "supported-sanitizers": [
-    "kcfi",
-    "kernel-address"
-  ],
+  "supported-sanitizers": ["kcfi", "kernel-address"],
   "target-pointer-width": 64
 }

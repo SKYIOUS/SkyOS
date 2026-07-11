@@ -29,9 +29,6 @@
     "kind": "inline"
   },
   "static-position-independent-executables": true,
-  "supported-sanitizers": [
-    "kcfi",
-    "kernel-address"
-  ],
+  "supported-sanitizers": ["kcfi", "kernel-address"],
   "target-pointer-width": 64
 }

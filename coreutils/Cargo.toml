@@ -123,14 +123,6 @@ name = "mkfs_sargafs"
 path = "src/mkfs_sargafs.rs"
 
 [[bin]]
-name = "login"
-path = "src/login.rs"
-
-[[bin]]
-name = "passwd"
-path = "src/passwd.rs"
-
-[[bin]]
 name = "chmod"
 path = "src/chmod.rs"
 

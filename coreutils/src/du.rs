@@ -53,7 +53,6 @@ fn user_main() -> i32 {
     println!("{}\t{}", size, s);
 
     0
-    0
 }
 
 sarga_main!(user_main);

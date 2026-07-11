@@ -43,11 +43,6 @@ fn user_main() -> i32 {
         println!("  00:02.0 Ethernet controller (e1000)");
         return 0;
     }
-        println!("  00:00.0 Host bridge (emulated)");
-        println!("  00:01.0 VGA compatible controller (BOCHS)");
-        println!("  00:02.0 Ethernet controller (e1000)");
-    }
-    0
     0
 }
 

@@ -34,7 +34,6 @@ fn user_main() -> i32 {
         unsafe { syscall::syscall1(87, src.as_ptr() as u64); }
     }
     0
-    0
 }
 
 sarga_main!(user_main);

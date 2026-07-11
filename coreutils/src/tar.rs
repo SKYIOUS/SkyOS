@@ -99,7 +99,6 @@ fn user_main() -> i32 {
         offset += 512 + blocks as usize * 512;
     }
     0
-    0
 }
 
 sarga_main!(user_main);

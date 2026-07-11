@@ -15,7 +15,6 @@ fn user_main() -> i32 {
     println!("{}", dir);
 
     0
-    0
 }
 
 sarga_main!(user_main);

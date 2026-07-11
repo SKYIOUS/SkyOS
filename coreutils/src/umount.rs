@@ -12,11 +12,10 @@ fn user_main() -> i32 {
         Some(s) => s,
         None => { println!("umount: missing operand"); return 0; }
     };
-    match fs::umount(target) {
-        Ok(_) => 0,
-        Err(e) => { println!("umount: {}: error {}", target, e); 1 },
+    if let Err(e) = fs::umount(target) {
+        println!("umount: {}: error {}", target, e);
+        return 1;
     }
-    0
     0
 }
 sarga_main!(user_main);

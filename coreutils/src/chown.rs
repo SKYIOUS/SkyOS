@@ -4,6 +4,7 @@
 extern crate alloc;
 extern crate libsarga;
 
+use libsarga::sarga_main;
 use libsarga::io::{self, open, close, fchown};
 use libsarga::process::getegid;
 
@@ -11,7 +12,6 @@ fn parse_num(s: &str) -> Option<u32> {
     s.parse::<u32>().ok()
 }
 
-#[no_mangle]
 fn user_main() -> i32 {
     let argc = libsarga::args::argc();
 
@@ -45,9 +45,11 @@ fn user_main() -> i32 {
         };
         let ret = fchown(fd as u64, uid, gid);
         close(fd).ok();
-        if ret < 0 {
+        if ret.is_err() {
             io::print_str(&alloc::format!("chown: {}: failed\n", file));
         }
     }
     return 0;
 }
+
+sarga_main!(user_main);

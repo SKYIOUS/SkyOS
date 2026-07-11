@@ -169,7 +169,7 @@ impl Terminal {
     }
 
     fn put_char(&mut self, c: u8) {
-        if self.cursor >= ROWS * COLS { return 0; }
+        if self.cursor >= ROWS * COLS { return; }
         self.chars[self.cursor] = c;
         self.fg[self.cursor] = self.effective_fg();
         self.bg[self.cursor] = self.effective_bg();
@@ -376,13 +376,13 @@ struct TabPage {
 }
 
 fn spawn_shell(slave_fd: i64) -> ! {
-    io::dup2(slave_fd, 0);
-    io::dup2(slave_fd, 1);
-    io::dup2(slave_fd, 2);
+    let _ = io::dup2(slave_fd, 0);
+    let _ = io::dup2(slave_fd, 1);
+    let _ = io::dup2(slave_fd, 2);
     if slave_fd > 2 { let _ = close(slave_fd); }
     let args = ["/bin/sash"];
     let env = ["TERM=xterm-256color"];
-    execve("/bin/sash", &args, &env);
+    let _ = execve("/bin/sash", &args, &env);
     exit(1);
 }
 
@@ -598,7 +598,6 @@ fn user_main() -> i32 {
 
         unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
     }
-    0
 }
 
 sarga_main!(user_main);

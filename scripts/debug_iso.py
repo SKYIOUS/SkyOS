@@ -1,42 +1,50 @@
-"""Detailed ISO debug check."""
-import struct
+"""Debug standard ISO structure."""
+import struct, sys
 
-path = "C:\\Users\\nanda\\Desktop\\Github\\SkyOS\\skyos-installer.iso"
-with open(path, "rb") as f:
+path = sys.argv[1] if len(sys.argv) > 1 else 'release/skyos-0.6.0.iso'
+
+with open(path, 'rb') as f:
     data = f.read()
 
-# Boot catalog is at sector 19
-bc = data[19*2048:20*2048]
-print("Boot catalog sector 19 first 64 bytes:")
-for i in range(0, 64, 16):
-    hexs = ' '.join(f'{b:02x}' for b in bc[i:i+16])
-    print(f"  [{i:3d}] {hexs}")
+total = len(data)
+print(f'File: {total:,} bytes ({total//2048} sectors of 2048)')
 
-ie = bc[32:64]
-sect_count = struct.unpack("<H", ie[6:8])[0]
-load_rba = struct.unpack("<I", ie[8:12])[0]
-print(f"\nSector count: {sect_count}")
-print(f"Load RBA: {load_rba}")
+# Find catalog from root directory
+root_loc = struct.unpack_from('<I', data[16*2048:17*2048], 158)[0]
+rd = data[root_loc * 2048:root_loc * 2048 + 4096]
+cat_lbn = None
+off = 0
+while off < len(rd) - 32:
+    rec_len = rd[off]
+    if rec_len == 0: break
+    name_len = rd[off + 32]
+    name = rd[off + 33:off + 33 + name_len].decode('ascii', errors='replace').split(';')[0].rstrip('.')
+    flba = struct.unpack_from('<I', rd, off + 2)[0]
+    fsz = struct.unpack_from('<I', rd, off + 10)[0]
+    print(f'  {name}: LBA={flba} size={fsz:,}')
+    if 'CATALOG' in name.upper(): cat_lbn = flba
+    off += rec_len
 
-# Check boot image at load_rba
-boot_off = load_rba * 2048
-print(f"\nBoot image at offset {boot_off} (sector {load_rba})")
-print(f"First 32 bytes: {data[boot_off:boot_off+32].hex()}")
+# Catalog
+cat = data[cat_lbn * 2048:cat_lbn * 2048 + 2048]
+val = cat[0:32]
+init = cat[32:64]
+print(f'\nValidation entry: {val.hex()}')
+print(f'Init entry: {init.hex()}')
+print(f'RBA at off8 = {struct.unpack_from("<I", init, 8)[0]}')
+print(f'RBA at off16 = {struct.unpack_from("<I", init, 16)[0]}')
+print(f'Sec count = {struct.unpack_from("<H", init, 6)[0]}')
+print(f'Platform = {val[0]}')
+s = sum(val) & 0xFFFF
+print(f'Validation sum = {s:#06x} valid={s==0}')
 
-# Check boot image contents
-# First 512 bytes should be MBR (GPT protective)
-import struct
-mbr_sig = struct.unpack("<H", data[boot_off+510:boot_off+512])[0]
-print(f"MBR signature at boot offset+510: 0x{mbr_sig:04X}")
-
-# Check for GPT header at boot offset + 512
-if data[boot_off+512:boot_off+520] == b'EFI PART':
-    print("GPT header found at boot offset+512")
-else:
-    print("No GPT header at boot offset+512")
-
-# Check second boot entry in catalog (bytes 64-95)
-bc = data[19*2048:20*2048]
-entry2_rba = struct.unpack("<I", bc[72:76])[0]
-entry2_count = struct.unpack("<H", bc[70:72])[0]
-print(f"\nSecond entry (BIOS): rba={entry2_rba} count={entry2_count}")
+# Check what's at RBA 35
+for rba in [struct.unpack_from("<I", init, 8)[0], struct.unpack_from("<I", init, 16)[0], 35]:
+    if rba <= 0 or rba * 2048 >= total: continue
+    chunk = data[rba * 2048:rba * 2048 + 512]
+    ok = chunk[510:512] == b'\x55\xAA'
+    oem = chunk[3:11]
+    print(f'\nRBA {rba}: sig=55aa?{ok} OEM={oem} start={chunk[0:3].hex()}')
+    if ok:
+        bps = struct.unpack_from('<H', chunk, 11)[0]
+        print(f'  bytes_per_sector={bps} media={chunk[21]:#04x}')

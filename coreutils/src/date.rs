@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, args, syscall};
+use libsarga::{sarga_main, args, syscall};
 
 #[repr(C)]
 struct TimeSpec {
@@ -54,7 +54,6 @@ fn user_main() -> i32 {
         libsarga::println!("date: unable to read clock");
         return 1;
     }
-    0
     0
 }
 sarga_main!(user_main);

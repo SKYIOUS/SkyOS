@@ -46,12 +46,11 @@ fn user_main() -> i32 {
         };
         let ret = fchmod(fd as u64, mode);
         close(fd).ok();
-        if ret < 0 {
+        if ret.is_err() {
             io::print_str(&alloc::format!("chmod: {}: failed\n", file));
         }
     }
     return 0;
-    0
 }
 
 sarga_main!(user_main);

@@ -40,7 +40,6 @@ fn user_main() -> i32 {
     println!("{} bytes copied", total);
 
     0
-    0
 }
 
 sarga_main!(user_main);
