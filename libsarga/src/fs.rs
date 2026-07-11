@@ -117,7 +117,7 @@ pub fn umount(target: &str) -> Result<(), i64> {
     if bytes.len() > 254 { return Err(crate::errno::EINVAL as i64); }
     buf[..bytes.len()].copy_from_slice(bytes);
     buf[bytes.len()] = 0;
-    let r = unsafe { syscall2(167, buf.as_ptr() as u64, 0) };
+    let r = unsafe { syscall2(SYS_UMOUNT2, buf.as_ptr() as u64, 0) };
     if r < 0 { Err(-r) } else { Ok(()) }
 }
 

@@ -61,9 +61,11 @@ impl History {
     fn load(&mut self) {
         let home = crate::get_env("HOME").unwrap_or_else(|| String::from("/"));
         let path = format!("{}/.sash_history", home);
-        let c_str = CString::new(path.as_bytes()).ok();
-        if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0u64) };
+        let c_str = match CString::new(path.as_bytes()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, 0u64) };
         if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         let mut content = String::new();
@@ -85,9 +87,11 @@ impl History {
     pub fn save(&self) {
         let home = crate::get_env("HOME").unwrap_or_else(|| String::from("/"));
         let path = format!("{}/.sash_history", home);
-        let c_str = CString::new(path.as_bytes()).ok();
-        if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.unwrap().as_ptr() as u64, 0x241u64) };
+        let c_str = match CString::new(path.as_bytes()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, 0x241u64) };
         if fd < 0 { return; }
         for entry in &self.entries {
             let mut line = entry.clone();
@@ -122,9 +126,11 @@ impl Completer {
     }
 
     fn list_dir(&self, dir: &str, prefix: &str, matches: &mut Vec<String>) {
-        let c_str = CString::new(dir.as_bytes()).ok();
-        if c_str.is_none() { return; }
-        let fd = unsafe { libsarga::syscall::syscall2(257, c_str.unwrap().as_ptr() as u64, 0x100000u64) };
+        let c_str = match CString::new(dir.as_bytes()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let fd = unsafe { libsarga::syscall::syscall2(257, c_str.as_ptr() as u64, 0x100000u64) };
         if fd < 0 { return; }
         let mut buf = [0u8; 4096];
         loop {

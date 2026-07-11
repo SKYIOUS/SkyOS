@@ -110,6 +110,12 @@ impl Error {
     }
 }
 
+impl From<Error> for i64 {
+    fn from(e: Error) -> i64 {
+        -(e as i32) as i64
+    }
+}
+
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self)

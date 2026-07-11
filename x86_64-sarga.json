@@ -26,7 +26,7 @@
   "dynamic-linking": true,
   "position-independent-executables": true,
   "relro-level": "full",
-  "rustc-abi": "softfloat",
+  "rustc-abi": "x86-softfloat",
   "stack-probes": {
     "kind": "inline"
   },

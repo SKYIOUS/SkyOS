@@ -1,5 +1,6 @@
 use crate::io;
 use crate::errno;
+use crate::sync::{Mutex, MutexGuard};
 use alloc::boxed::Box;
 
 pub const SEEK_SET: i32 = 0;
@@ -18,13 +19,13 @@ pub struct FILE {
     pub _bufsize: usize,
 }
 
-pub static mut STDIN: FILE = FILE { fd: 0, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 };
-pub static mut STDOUT: FILE = FILE { fd: 1, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 };
-pub static mut STDERR: FILE = FILE { fd: 2, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 };
+pub static STDIN: Mutex<FILE> = Mutex::new(FILE { fd: 0, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
+pub static STDOUT: Mutex<FILE> = Mutex::new(FILE { fd: 1, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
+pub static STDERR: Mutex<FILE> = Mutex::new(FILE { fd: 2, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
 
-pub fn stdin() -> &'static mut FILE { unsafe { &mut *core::ptr::addr_of_mut!(STDIN) } }
-pub fn stdout() -> &'static mut FILE { unsafe { &mut *core::ptr::addr_of_mut!(STDOUT) } }
-pub fn stderr() -> &'static mut FILE { unsafe { &mut *core::ptr::addr_of_mut!(STDERR) } }
+pub fn stdin() -> MutexGuard<'static, FILE> { STDIN.lock() }
+pub fn stdout() -> MutexGuard<'static, FILE> { STDOUT.lock() }
+pub fn stderr() -> MutexGuard<'static, FILE> { STDERR.lock() }
 
 pub fn fopen(path: &str, mode: &str) -> Option<&'static mut FILE> {
     let flags = if mode.contains('w') {
@@ -57,8 +58,12 @@ pub fn fopen(path: &str, mode: &str) -> Option<&'static mut FILE> {
 
 pub fn fclose(file: &mut FILE) -> i32 {
     if file.fd > 2 {
-        match io::close(file.fd) {
-            Ok(_) => { file.fd = -1; 0 }
+        let fd = file.fd;
+        match io::close(fd) {
+            Ok(_) => {
+                unsafe { drop(Box::from_raw(file as *mut FILE)); }
+                0
+            }
             Err(_) => { file.error = true; -1 }
         }
     } else { 0 }

@@ -5,15 +5,16 @@ use libsarga::{sarga_main, println, io};
 
 fn user_main() -> i32 {
     println!("PCI Devices:");
-    let fd = io::open("/sys/bus/pci/devices", 0);
-    if fd.is_err() {
-        println!("  No PCI sysfs available");
-        println!("  00:00.0 Host bridge (emulated)");
-        println!("  00:01.0 VGA compatible controller (BOCHS)");
-        println!("  00:02.0 Ethernet controller (e1000)");
-        return 0;
-    }
-    let fd = fd.unwrap();
+    let fd = match io::open("/sys/bus/pci/devices", 0) {
+        Ok(fd) => fd,
+        Err(_) => {
+            println!("  No PCI sysfs available");
+            println!("  00:00.0 Host bridge (emulated)");
+            println!("  00:01.0 VGA compatible controller (BOCHS)");
+            println!("  00:02.0 Ethernet controller (e1000)");
+            return 0;
+        }
+    };
     let mut buf = [0u8; 4096];
     let mut offset = 0;
     loop {

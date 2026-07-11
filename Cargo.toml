@@ -29,7 +29,6 @@ members = [
     "search",
     "installer",
     "skyd-update",
-    "sargash",
     "svc",
     "vahid",
     "libskyaudio",
@@ -37,7 +36,6 @@ members = [
     "passwd",
     "skybuild",
     "setup",
-    "skypkg",
 ]
 resolver = "2"
 

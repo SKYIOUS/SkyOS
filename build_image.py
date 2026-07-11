@@ -32,8 +32,13 @@ def main():
     kernel_dir = find_kernel_repo(root_dir)
 
     if not kernel_dir:
-        print("ERROR: SKYIOUS KERNEL repo not found (checked siblings and subdirs)")
-        sys.exit(1)
+        print("ERROR: SKYIOUS KERNEL repo not found")
+        print("  Checked:")
+        root_up = os.path.normpath(os.path.join(root_dir, '..'))
+        for name in ['SKYIOUS KERNEL', 'SKYIOUS-KERNEL']:
+            print(f"    {os.path.join(root_up, name)} (sibling)")
+            print(f"    {os.path.join(root_dir, name)} (subdir)")
+        sys.exit(1)  # ponytail: shows which paths were tried
 
     version = sys.argv[1] if len(sys.argv) > 1 else '0.6.0'
     profile = 'release'

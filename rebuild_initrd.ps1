@@ -1,9 +1,13 @@
 $ErrorActionPreference = "Stop"
 
-# The SkyOS directory is at C:\Users\nanda\Desktop\Github\SkyOS
-# The SKYIOUS KERNEL directory is at C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL
-$skyosDir = "C:\Users\nanda\Desktop\Github\SkyOS"
-$kernelDir = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL"
+# ponytail: was hardcoded to user's home path
+$thisDir = $PSScriptRoot
+$skyosDir = $thisDir
+$kernelDir = if (Test-Path "$thisDir\..\SKYIOUS KERNEL") { Resolve-Path "$thisDir\..\SKYIOUS KERNEL" } else { $null }
+if (-not $kernelDir) {
+    Write-Host "ERROR: SKYIOUS KERNEL repo not found at sibling path." -ForegroundColor Red
+    exit 1
+}
 
 # Find the built init binary
 $newInit = Get-ChildItem -Recurse -Filter "init" -Path "$skyosDir" | Where-Object { $_.Length -eq 18632 } | Select-Object -First 1

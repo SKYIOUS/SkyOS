@@ -36,7 +36,9 @@ pub struct Mutex<T> {
 }
 
 unsafe impl<T: Send> Send for Mutex<T> {}
-unsafe impl<T: Send> Sync for Mutex<T> {}
+// SAFETY: Mutex provides mutual exclusion; T: Send allows moving between threads,
+// T: Sync is needed because lock() grants shared &T access via Deref on the guard.
+unsafe impl<T: Send + Sync> Sync for Mutex<T> {}
 
 impl<T> Mutex<T> {
     pub const fn new(val: T) -> Self {

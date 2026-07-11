@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "Building SARGA OS components..."
 
 if ($args.Count -eq 0 -or $args[0] -eq "all") {
-    cargo build --target x86_64-sarga --release
+    cargo build --target x86_64-sarga.json --release  # ponytail: was missing .json suffix
     Write-Host "Build complete."
 
     # Attempt to build the disk image using WSL since mkfs.ext2 requires Linux

@@ -215,7 +215,7 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
                 let b8 = (b.min(255)) as u32;
                 pixels.push(0xFF000000 | (r8 << 16) | (g8 << 8) | b8);
             }
-            _ => unreachable!(),
+            _ => {}
         }
         values_read += 1;
     }

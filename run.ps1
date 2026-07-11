@@ -1,7 +1,9 @@
 # run.ps1 - Run Sarga OS in QEMU (Windows)
 # initrd is embedded into the kernel — only ONE drive needed.
 
-$KERNEL_PATH = "..\SKYIOUS KERNEL\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin"
+# ponytail: was absolute/hardcoded path
+$scriptDir = $PSScriptRoot
+$KERNEL_PATH = "$scriptDir\..\SKYIOUS KERNEL\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin"
 
 if (-not (Test-Path $KERNEL_PATH)) {
     Write-Error "Vahi Kernel bootimage not found at $KERNEL_PATH. Run 'python scripts/make_sarga_image.py' first."

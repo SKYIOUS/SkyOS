@@ -191,16 +191,6 @@ pub const AF_INET: u64 = 2;
 /// Legacy constants.
 pub const SOCK_STREAM: u64 = 1;
 
-/// Basic HTTP/1.1 client.
-pub struct HttpClient;
-
-impl HttpClient {
-    /// Fetches a URL via HTTP GET.
-    pub fn get(_url: &str) -> Result<Vec<u8>, Error> {
-        Err(Error::ENOSYS)
-    }
-}
-
 /// Parses an IPv4 address from a string.
 pub fn parse_ipv4(ip: &str) -> Option<u32> {
     let parts: Vec<&str> = ip.split('.').collect();
@@ -242,7 +232,7 @@ impl HttpClient {
             if n == 0 { break; }
             response.extend_from_slice(&buf[..n]);
         }
-        close(fd)?;
+        io::close(fd)?;
 
         // Find end of headers
         if let Some(pos) = response.windows(4).position(|w| w == b"\r\n\r\n") {

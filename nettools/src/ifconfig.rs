@@ -4,9 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, println, io, args};
 
 fn user_main() -> i32 {
-    let fd = io::open("/sys/net", 0);
-    if fd.is_ok() {
-        let fd = fd.unwrap();
+    if let Ok(fd) = io::open("/sys/net", 0) {
         let mut buf = [0u8; 4096];
         loop {
             let r = unsafe { libsarga::syscall::syscall3(78, fd as u64, buf.as_mut_ptr() as u64, 4096) };

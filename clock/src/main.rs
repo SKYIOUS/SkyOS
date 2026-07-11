@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{sarga_main, gui::Window, theme::Theme};
 
 fn user_main() -> i32 {
-    let mut win = Window::create("Clock", 300, 300).unwrap();
+    let mut win = Window::create("Clock", 300, 300).expect("Window::create failed");
     let theme = Theme::dark();
 
     loop {

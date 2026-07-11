@@ -6,7 +6,7 @@ $rootDir = $PSScriptRoot
 Write-Host "--- Building SkyOS Userspace ---" -ForegroundColor Cyan
 
 # Step 1: Build with cargo
-Set-Location "$rootDir\userspace"
+# ponytail: removed Set-Location to userspace/ — no such subdirectory
 $target = "x86_64-skyos"
 $targetJson = "target\$target.json"
 

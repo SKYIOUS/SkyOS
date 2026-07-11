@@ -1,3 +1,5 @@
+KERNEL_BOOTIMAGE ?= ../SKYIOUS KERNEL/target/x86_64-velox/debug/bootimage-velox_kernel.bin
+
 .PHONY: all clean run
 
 all:
@@ -10,7 +12,7 @@ clean:
 run: all
 	qemu-system-x86_64 \
 		-bios /usr/share/qemu/OVMF.fd \
-		-drive format=raw,file=../SKYIOUS\ KERNEL/target/x86_64-velox/debug/bootimage-velox_kernel.bin \
+		-drive format=raw,file=$(KERNEL_BOOTIMAGE) \
 		-drive id=sarga,file=sarga.img,if=none,format=raw \
 		-device ahci,id=ahci0 \
 		-device ide-hd,drive=sarga,bus=ahci0.0 \

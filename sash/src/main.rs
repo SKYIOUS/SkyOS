@@ -3,7 +3,7 @@
 use libsarga::sarga_main;
 use libsarga::println;
 extern crate alloc;
-use core::cell::UnsafeCell;
+use libsarga::sync::Mutex;
 use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::string::ToString;
@@ -15,48 +15,41 @@ mod builtins;
 mod readline;
 mod scripting;
 
-struct ShellEnv(UnsafeCell<Option<Vec<String>>>);
-unsafe impl Sync for ShellEnv {}
+struct ShellEnv(Mutex<Option<Vec<String>>>);
 
-static SHELL_ENV: ShellEnv = ShellEnv(UnsafeCell::new(None));
+static SHELL_ENV: ShellEnv = ShellEnv(Mutex::new(None));
 
-struct AliasTable(UnsafeCell<Vec<(String, String)>>);
-unsafe impl Sync for AliasTable {}
-static ALIAS_TABLE: AliasTable = AliasTable(UnsafeCell::new(Vec::new()));
+struct AliasTable(Mutex<Vec<(String, String)>>);
+static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 
 struct JobEntry {
     pid: u64,
     cmd: String,
 }
-struct JobTable(UnsafeCell<Vec<JobEntry>>);
-unsafe impl Sync for JobTable {}
-static JOB_TABLE: JobTable = JobTable(UnsafeCell::new(Vec::new()));
+struct JobTable(Mutex<Vec<JobEntry>>);
+static JOB_TABLE: JobTable = JobTable(Mutex::new(Vec::new()));
 
 fn init_env() {
-    unsafe {
-        let env_slot = &mut *SHELL_ENV.0.get();
-        if env_slot.is_none() {
-            *env_slot = Some(Vec::new());
-            if let Some(env) = env_slot.as_mut() {
-                env.push(String::from("PATH=/bin:/usr/bin"));
-                env.push(String::from("HOME=/home/user"));
-                env.push(String::from("PWD=/"));
-                env.push(String::from("SHELL=/bin/sash"));
-                env.push(String::from("TERM=vt100"));
-            }
+    let mut env_slot = SHELL_ENV.0.lock();
+    if env_slot.is_none() {
+        *env_slot = Some(Vec::new());
+        if let Some(env) = env_slot.as_mut() {
+            env.push(String::from("PATH=/bin:/usr/bin"));
+            env.push(String::from("HOME=/home/user"));
+            env.push(String::from("PWD=/"));
+            env.push(String::from("SHELL=/bin/sash"));
+            env.push(String::from("TERM=vt100"));
         }
     }
 }
 
 pub fn get_env(name: &str) -> Option<String> {
-    unsafe {
-        let env_slot = &*SHELL_ENV.0.get();
-        if let Some(ref env) = *env_slot {
-            for entry in env.iter() {
-                if let Some(val) = entry.strip_prefix(name) {
-                    if val.starts_with('=') {
-                        return Some(String::from(&val[1..]));
-                    }
+    let env_slot = SHELL_ENV.0.lock();
+    if let Some(ref env) = *env_slot {
+        for entry in env.iter() {
+            if let Some(val) = entry.strip_prefix(name) {
+                if val.starts_with('=') {
+                    return Some(String::from(&val[1..]));
                 }
             }
         }
@@ -66,37 +59,31 @@ pub fn get_env(name: &str) -> Option<String> {
 
 pub fn set_env(name: &str, val: &str) {
     let entry = alloc::format!("{}={}", name, val);
-    unsafe {
-        let env_slot = &mut *SHELL_ENV.0.get();
-        if let Some(ref mut env) = *env_slot {
-            for i in 0..env.len() {
-                if env[i].starts_with(name) && env[i].len() > name.len() && env[i].as_bytes()[name.len()] == b'=' {
-                    env[i] = entry;
-                    return;
-                }
+    let mut env_slot = SHELL_ENV.0.lock();
+    if let Some(ref mut env) = *env_slot {
+        for i in 0..env.len() {
+            if env[i].starts_with(name) && env[i].len() > name.len() && env[i].as_bytes()[name.len()] == b'=' {
+                env[i] = entry;
+                return;
             }
-            env.push(entry);
         }
+        env.push(entry);
     }
 }
 
 pub fn unset_env(name: &str) {
-    unsafe {
-        let env_slot = &mut *SHELL_ENV.0.get();
-        if let Some(ref mut env) = *env_slot {
-            env.retain(|e| !(e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'='));
-        }
+    let mut env_slot = SHELL_ENV.0.lock();
+    if let Some(ref mut env) = *env_slot {
+        env.retain(|e| !(e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'='));
     }
 }
 
 pub fn get_env_all() -> Vec<(String, String)> {
     let mut out = Vec::new();
-    unsafe {
-        if let Some(ref env) = *SHELL_ENV.0.get() {
-            for e in env.iter() {
-                if let Some(idx) = e.find('=') {
-                    out.push((e[..idx].to_string(), e[idx+1..].to_string()));
-                }
+    if let Some(ref env) = *SHELL_ENV.0.lock() {
+        for e in env.iter() {
+            if let Some(idx) = e.find('=') {
+                out.push((e[..idx].to_string(), e[idx+1..].to_string()));
             }
         }
     }
@@ -104,134 +91,108 @@ pub fn get_env_all() -> Vec<(String, String)> {
 }
 
 pub fn get_env_refs() -> Vec<String> {
-    unsafe {
-        let env_slot = &*SHELL_ENV.0.get();
-        if let Some(ref env) = *env_slot {
-            env.clone()
-        } else {
-            Vec::new()
-        }
+    if let Some(ref env) = *SHELL_ENV.0.lock() {
+        env.clone()
+    } else {
+        Vec::new()
     }
 }
 
 pub fn set_alias(name: &str, val: &str) {
-    unsafe {
-        let tbl = &mut *ALIAS_TABLE.0.get();
-        for (k, v) in tbl.iter_mut() {
-            if k == name { *v = val.to_string(); return; }
-        }
-        tbl.push((name.to_string(), val.to_string()));
+    let mut tbl = ALIAS_TABLE.0.lock();
+    for (k, v) in tbl.iter_mut() {
+        if k == name { *v = val.to_string(); return; }
     }
+    tbl.push((name.to_string(), val.to_string()));
 }
 
 pub fn remove_alias(name: &str) {
-    unsafe {
-        let tbl = &mut *ALIAS_TABLE.0.get();
-        tbl.retain(|(k, _)| k != name);
-    }
+    ALIAS_TABLE.0.lock().retain(|(k, _)| k != name);
 }
 
 pub fn clear_aliases() {
-    unsafe { (&mut *ALIAS_TABLE.0.get()).clear(); }
+    ALIAS_TABLE.0.lock().clear();
 }
 
 pub fn get_aliases() -> Vec<(String, String)> {
-    unsafe { (&*ALIAS_TABLE.0.get()).clone() }
+    ALIAS_TABLE.0.lock().clone()
 }
 
 pub fn get_alias(name: &str) -> Option<String> {
-    unsafe {
-        let tbl = &*ALIAS_TABLE.0.get();
-        for (k, v) in tbl.iter() {
-            if k == name { return Some(v.clone()); }
-        }
+    let tbl = ALIAS_TABLE.0.lock();
+    for (k, v) in tbl.iter() {
+        if k == name { return Some(v.clone()); }
     }
     None
 }
 
 pub fn add_job(pid: u64, cmd: &parser::Command) {
     let cmd_str = cmd.args.join(" ");
-    unsafe {
-        let tbl = &mut *JOB_TABLE.0.get();
-        tbl.push(JobEntry { pid, cmd: cmd_str });
-    }
+    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd_str });
 }
 
 pub fn print_jobs() {
-    unsafe {
-        let tbl = &*JOB_TABLE.0.get();
-        for (i, job) in tbl.iter().enumerate() {
-            println!("[{}] {} {}", i + 1, job.pid, job.cmd);
-        }
+    let tbl = JOB_TABLE.0.lock();
+    for (i, job) in tbl.iter().enumerate() {
+        println!("[{}] {} {}", i + 1, job.pid, job.cmd);
     }
 }
 
 pub fn fg_job(id: usize) -> i64 {
-    unsafe {
-        let tbl = &mut *JOB_TABLE.0.get();
-        if id == 0 || id > tbl.len() { println!("fg: job not found"); return 1; }
-        let job = &tbl[id - 1];
-        let code = libsarga::process::wait(job.pid).unwrap_or(1);
-        tbl.remove(id - 1);
-        code as i64
-    }
+    let mut tbl = JOB_TABLE.0.lock();
+    if id == 0 || id > tbl.len() { println!("fg: job not found"); return 1; }
+    let job = &tbl[id - 1];
+    let code = libsarga::process::wait(job.pid).unwrap_or(1);
+    tbl.remove(id - 1);
+    code as i64
 }
 
 pub fn bg_job(id: usize) -> i64 {
-    unsafe {
-        let tbl = &mut *JOB_TABLE.0.get();
-        if id == 0 || id > tbl.len() { println!("bg: job not found"); return 1; }
-        println!("[{}] {} &", id, tbl[id - 1].pid);
-        0
-    }
+    let tbl = JOB_TABLE.0.lock();
+    if id == 0 || id > tbl.len() { println!("bg: job not found"); return 1; }
+    println!("[{}] {} &", id, tbl[id - 1].pid);
+    0
 }
 
 pub fn print_history(n: usize) {
-    let history = unsafe { &mut *HISTORY.0.get() };
+    let history = HISTORY.0.lock();
     if let Some(ref h) = *history {
         h.print(n);
     }
 }
 
-struct LastExit(UnsafeCell<i64>);
-unsafe impl Sync for LastExit {}
-static LAST_EXIT: LastExit = LastExit(UnsafeCell::new(0));
+struct LastExit(Mutex<i64>);
+static LAST_EXIT: LastExit = LastExit(Mutex::new(0));
 
 pub fn set_last_exit(code: i64) {
-    unsafe { *LAST_EXIT.0.get() = code; }
+    *LAST_EXIT.0.lock() = code;
 }
 
 pub fn get_last_exit() -> i64 {
-    unsafe { *LAST_EXIT.0.get() }
+    *LAST_EXIT.0.lock()
 }
 
-struct FuncTable(UnsafeCell<Vec<(String, Vec<String>)>>);
-unsafe impl Sync for FuncTable {}
-static FUNC_TABLE: FuncTable = FuncTable(UnsafeCell::new(Vec::new()));
+struct FuncTable(Mutex<Vec<(String, Vec<String>)>>);
+static FUNC_TABLE: FuncTable = FuncTable(Mutex::new(Vec::new()));
 
 pub fn define_function(name: &str, body: &[String]) {
-    unsafe {
-        let tbl = &mut *FUNC_TABLE.0.get();
-        for (k, v) in tbl.iter_mut() {
-            if k == name { *v = body.to_vec(); return; }
-        }
-        tbl.push((name.to_string(), body.to_vec()));
+    let mut tbl = FUNC_TABLE.0.lock();
+    for (k, v) in tbl.iter_mut() {
+        if k == name { *v = body.to_vec(); return; }
     }
+    tbl.push((name.to_string(), body.to_vec()));
 }
 
 pub fn get_function(name: &str) -> Option<Vec<String>> {
-    unsafe {
-        let tbl = &*FUNC_TABLE.0.get();
-        for (k, v) in tbl.iter() {
-            if k == name { return Some(v.clone()); }
-        }
+    let tbl = FUNC_TABLE.0.lock();
+    for (k, v) in tbl.iter() {
+        if k == name { return Some(v.clone()); }
     }
     None
 }
 
-struct HistoryCell(UnsafeCell<Option<readline::History>>);
-unsafe impl Sync for HistoryCell {}
-static HISTORY: HistoryCell = HistoryCell(UnsafeCell::new(None));
+struct HistoryCell(Mutex<Option<readline::History>>);
+static HISTORY: HistoryCell = HistoryCell(Mutex::new(None));
 
 #[allow(unused_variables)]
 pub fn shift_positional(n: usize) {
@@ -239,11 +200,8 @@ pub fn shift_positional(n: usize) {
 }
 
 pub fn save_history_on_exit() {
-    unsafe {
-        let h = &mut *HISTORY.0.get();
-        if let Some(ref hist) = *h {
-            hist.save();
-        }
+    if let Some(ref hist) = *HISTORY.0.lock() {
+        hist.save();
     }
 }
 
@@ -314,10 +272,7 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
 fn user_main() -> i32 {
     init_env();
 
-    unsafe {
-        let h = &mut *HISTORY.0.get();
-        *h = Some(readline::History::new(1000));
-    }
+    *HISTORY.0.lock() = Some(readline::History::new(1000));
 
     println!("Sarga Shell (sash) v0.3.0");
     println!("Type help for commands.");
@@ -327,7 +282,7 @@ fn user_main() -> i32 {
 
         let input;
         {
-            let history = unsafe { &mut *HISTORY.0.get() };
+            let mut history = HISTORY.0.lock();
             input = if let Some(ref mut h) = *history {
                 read_with_continuation(h, &prompt)
             } else {

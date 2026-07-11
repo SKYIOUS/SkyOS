@@ -16,6 +16,10 @@ def run_command(command, cwd=None, env=None):
 def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     kernel_dir = os.path.join(root_dir, "kernel")
+    if not os.path.isdir(kernel_dir):
+        print("ERROR: kernel/ directory not found at", kernel_dir)
+        print("The kernel lives in a separate repo. Build it there or copy it here.")
+        sys.exit(1)  # ponytail: graceful message instead of cryptic cargo crash
     
     print("--- Vahi Kernel Build System ---")
     

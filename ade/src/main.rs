@@ -248,10 +248,11 @@ impl Desktop {
                 let drag_ox = mx - win.x;
                 let drag_oy = my - win.y;
                 self.windows.push(win);
-                let last = self.windows.last_mut().unwrap();
-                last.dragging = true;
-                last.drag_ox = drag_ox;
-                last.drag_oy = drag_oy;
+                if let Some(last) = self.windows.last_mut() {
+                    last.dragging = true;
+                    last.drag_ox = drag_ox;
+                    last.drag_oy = drag_oy;
+                }
                 return;
             }
 

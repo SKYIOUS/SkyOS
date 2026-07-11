@@ -88,7 +88,10 @@ fn user_main() -> i32 {
         }
     }
     if files.len() < 2 { println!("cp: missing operand"); return 0; }
-    let dst = files.pop().expect("missing destination operand");
+    let dst = match files.pop() {
+        Some(d) => d,
+        None => { println!("cp: missing destination operand"); return 0; }
+    };
     for src in &files {
         let mut st = [0u64; 32];
         let is_dir = unsafe { syscall::syscall2(4, src.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0

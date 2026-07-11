@@ -193,8 +193,7 @@ fn outline_rasterize(contours: &[OutlineContour], scale: f32, width: u32, height
 // ═════════════════════════════════════════════════════════════════════════════
 
 pub struct TtfFont {
-    #[allow(dead_code)]
-    data: Vec<u8>,
+    data: &'static [u8],
     font: ttf_parser::Face<'static>,
     cache: GlyphCache,
 }
@@ -203,11 +202,8 @@ unsafe impl Send for TtfFont {}
 
 impl TtfFont {
     pub fn from_bytes(data: Vec<u8>) -> Option<Self> {
-        let font = unsafe {
-            core::mem::transmute::<ttf_parser::Face<'_>, ttf_parser::Face<'static>>(
-                ttf_parser::Face::parse(&data, 0).ok()?
-            )
-        };
+        let data: &'static [u8] = data.leak();
+        let font = ttf_parser::Face::parse(data, 0).ok()?;
         Some(TtfFont { data, font, cache: GlyphCache::new(2048) })
     }
 
