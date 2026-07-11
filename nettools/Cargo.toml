@@ -25,3 +25,11 @@ path = "src/echod.rs"
 [[bin]]
 name = "resolve"
 path = "src/resolve.rs"
+
+[[bin]]
+name = "udpechod"
+path = "src/udpechod.rs"
+
+[[bin]]
+name = "udpechoc"
+path = "src/udpechoc.rs"

@@ -91,6 +91,8 @@ pub fn sleep_ms(ms: u64) {
     let _ = io::nanosleep(ms * 1_000_000);
 }
 
+pub mod net_ext;
+
 pub fn hostname() -> Option<String> {
     let mut buf = [0u8; 256 * 6]; // utsname is 6 fields of 65 or 256 bytes
     let ret = unsafe { syscall1(SYS_UNAME, buf.as_mut_ptr() as u64) };
