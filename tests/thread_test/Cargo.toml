@@ -29,3 +29,7 @@ path = "src/sigalrm_test.rs"
 [[bin]]
 name = "pipe_signal_test"
 path = "src/pipe_signal_test.rs"
+
+[[bin]]
+name = "dac_test"
+path = "src/dac_test.rs"

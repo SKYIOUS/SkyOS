@@ -18,9 +18,6 @@ mod raw {
     pub fn kill(pid: u64, sig: u64) -> i64 {
         unsafe { libsarga::syscall::syscall2(62, pid, sig) }
     }
-    pub fn yield_now() {
-        unsafe { libsarga::syscall::syscall0(24); }
-    }
 }
 
 #[repr(C)]
