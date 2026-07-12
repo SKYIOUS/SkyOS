@@ -36,6 +36,7 @@ members = [
     "passwd",
     "skybuild",
     "setup",
+    "tests/thread_test",
 ]
 resolver = "2"
 

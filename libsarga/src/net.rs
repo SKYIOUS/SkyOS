@@ -71,6 +71,112 @@ impl SockAddrIn {
     }
 }
 
+/// IPv6 Socket Address structure (sockaddr_in6).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SockAddrIn6 {
+    pub sin6_family: u16,    // AF_INET6 = 10
+    pub sin6_port: u16,      // port in network byte order
+    pub sin6_flowinfo: u32,  // IPv6 flow information
+    pub sin6_addr: [u8; 16], // IPv6 address
+    pub sin6_scope_id: u32,  // Scope ID
+}
+
+impl SockAddrIn6 {
+    pub fn new(ip: [u8; 16], port: u16) -> Self {
+        Self {
+            sin6_family: 10, // AF_INET6
+            sin6_port: port.to_be(),
+            sin6_flowinfo: 0,
+            sin6_addr: ip,
+            sin6_scope_id: 0,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>()) }
+    }
+}
+
+/// Opace socket address storage large enough for sockaddr_in or sockaddr_in6.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SockAddrStorage {
+    pub bytes: [u8; 32],
+}
+
+impl SockAddrStorage {
+    pub fn as_in(&self) -> Option<&SockAddrIn> {
+        if self.bytes[0..2] == [2, 0] {
+            Some(unsafe { &*(self as *const _ as *const SockAddrIn) })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_in6(&self) -> Option<&SockAddrIn6> {
+        if self.bytes[0..2] == [10, 0] {
+            Some(unsafe { &*(self as *const _ as *const SockAddrIn6) })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_mut_in(&mut self) -> Option<&mut SockAddrIn> {
+        if self.bytes[0..2] == [2, 0] {
+            Some(unsafe { &mut *(self as *mut _ as *mut SockAddrIn) })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_mut_in6(&mut self) -> Option<&mut SockAddrIn6> {
+        if self.bytes[0..2] == [10, 0] {
+            Some(unsafe { &mut *(self as *mut _ as *mut SockAddrIn6) })
+        } else {
+            None
+        }
+    }
+}
+
+/// Parses an IPv6 address from a string (e.g. "fe80::1").
+pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() < 2 || parts.len() > 8 { return None; }
+
+    // prefix before ::
+    let mut idx = 0;
+    let mut prefix = [0u16; 8];
+    while idx < parts.len() && !parts[idx].is_empty() {
+        prefix[idx] = u16::from_str_radix(parts[idx], 16).ok()?;
+        idx += 1;
+    }
+    let p_len = idx;
+    // consume :: empty slots
+    while idx < parts.len() && parts[idx].is_empty() { idx += 1; }
+    let has_dc = idx > p_len;
+    // suffix after ::
+    let mut suffix = [0u16; 8];
+    let mut s_len = 0;
+    while idx < parts.len() {
+        suffix[s_len] = u16::from_str_radix(parts[idx], 16).ok()?;
+        s_len += 1; idx += 1;
+    }
+    if p_len + s_len > 8 || (!has_dc && p_len + s_len != 8) { return None; }
+
+    let mut out = [0u16; 8];
+    for i in 0..p_len { out[i] = prefix[i]; }
+    for i in 0..s_len { out[8 - s_len + i] = suffix[i]; }
+    // ponytail: fixed-endian, no scope-id parsing
+
+    let mut addr = [0u8; 16];
+    for i in 0..8 {
+        addr[i*2] = (out[i] >> 8) as u8;
+        addr[i*2+1] = out[i] as u8;
+    }
+    Some(addr)
+}
+
 /// Resolves a hostname to an IPv4 address.
 pub fn resolve(name: &str, out_ip: &mut [u8; 4]) -> Result<(), Error> {
     let mut buf = [0u8; 256];
@@ -188,6 +294,8 @@ pub fn recv(fd: i64, buf: &mut [u8]) -> Result<usize, Error> {
 
 /// Legacy constants.
 pub const AF_INET: u64 = 2;
+/// Legacy constants.
+pub const AF_INET6: u64 = 10;
 /// Legacy constants.
 pub const SOCK_STREAM: u64 = 1;
 

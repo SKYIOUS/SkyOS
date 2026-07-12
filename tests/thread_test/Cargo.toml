@@ -1,0 +1,19 @@
+[package]
+name = "thread_test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libsarga = { path = "../../libsarga" }
+
+[[bin]]
+name = "futex_test"
+path = "src/futex_test.rs"
+
+[[bin]]
+name = "sigchld_test"
+path = "src/sigchld_test.rs"
+
+[[bin]]
+name = "perm_test"
+path = "src/perm_test.rs"

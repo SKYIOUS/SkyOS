@@ -42,6 +42,11 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/aicli':         'aicli',
         'bin/skystore':      'skystore',
         'bin/spkg':          'spkg',
+        'bin/httpd':         'httpd',
+        'bin/wget':          'wget',
+        'bin/futex_test':    'futex_test',
+        'bin/sigchld_test':  'sigchld_test',
+        'bin/perm_test':     'perm_test',
     }
     for b in coreutils_bins:
         binaries[f'bin/{b}'] = b

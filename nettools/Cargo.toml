@@ -33,3 +33,11 @@ path = "src/udpechod.rs"
 [[bin]]
 name = "udpechoc"
 path = "src/udpechoc.rs"
+
+[[bin]]
+name = "httpd"
+path = "src/httpd.rs"
+
+[[bin]]
+name = "wget"
+path = "src/wget.rs"

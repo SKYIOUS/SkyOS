@@ -49,8 +49,10 @@ fn user_main() -> i32 {
                 let _ = io::close(client_fd);
             }
             Err(e) => {
-                if e != libsarga::errno::Error::EAGAIN { // EAGAIN
+                if e != libsarga::errno::Error::EAGAIN {
                     println!("echod: accept error: {}", e);
+                } else {
+                    libsarga::posix::sched_yield();
                 }
             }
         }

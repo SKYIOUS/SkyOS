@@ -271,6 +271,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_test"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
