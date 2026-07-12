@@ -17,3 +17,7 @@ path = "src/sigchld_test.rs"
 [[bin]]
 name = "perm_test"
 path = "src/perm_test.rs"
+
+[[bin]]
+name = "sigint_test"
+path = "src/sigint_test.rs"

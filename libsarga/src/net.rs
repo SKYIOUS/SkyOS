@@ -311,6 +311,123 @@ pub fn parse_ipv4(ip: &str) -> Option<u32> {
     Some(addr)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ipv4_loopback() {
+        let ip = parse_ipv4("127.0.0.1");
+        assert_eq!(ip, Some(0x0100007f));
+    }
+
+    #[test]
+    fn test_parse_ipv4_google_dns() {
+        let ip = parse_ipv4("8.8.8.8");
+        assert_eq!(ip, Some(0x08080808));
+    }
+
+    #[test]
+    fn test_parse_ipv4_invalid_format() {
+        assert_eq!(parse_ipv4(""), None);
+        assert_eq!(parse_ipv4("not.an.ip"), None);
+        assert_eq!(parse_ipv4("1.2.3.256"), None);
+        assert_eq!(parse_ipv4("1.2.3"), None);
+        assert_eq!(parse_ipv4("1.2.3.4.5"), None);
+        assert_eq!(parse_ipv4("a.b.c.d"), None);
+    }
+
+    #[test]
+    fn test_parse_ipv4_localhost() {
+        let ip = parse_ipv4("0.0.0.0");
+        assert_eq!(ip, Some(0));
+    }
+
+    #[test]
+    fn test_parse_ipv4_broadcast() {
+        let ip = parse_ipv4("255.255.255.255");
+        assert_eq!(ip, Some(0xffffffff));
+    }
+
+    #[test]
+    fn test_sockaddr_in_new() {
+        let addr = SockAddrIn::new([192, 168, 1, 1], 8080);
+        assert_eq!(addr.sin_family, 2);
+        assert_eq!(addr.sin_port, 8080u16.to_be());
+        assert_eq!(addr.sin_addr, [192, 168, 1, 1]);
+        assert_eq!(addr.sin_zero, [0; 8]);
+    }
+
+    #[test]
+    fn test_sockaddr_in6_new() {
+        let addr = SockAddrIn6::new([0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443);
+        assert_eq!(addr.sin6_family, 10);
+        assert_eq!(addr.sin6_port, 443u16.to_be());
+        assert_eq!(addr.sin6_flowinfo, 0);
+        assert_eq!(addr.sin6_scope_id, 0);
+    }
+
+    #[test]
+    fn test_parse_ipv6_loopback() {
+        let ip = parse_ipv6("::1");
+        let mut expected = [0u8; 16];
+        expected[15] = 1;
+        assert_eq!(ip, Some(expected));
+    }
+
+    #[test]
+    fn test_parse_ipv6_full() {
+        let ip = parse_ipv6("2001:db8:85a3:0:0:8a2e:370:7334");
+        assert!(ip.is_some());
+        let a = ip.unwrap();
+        assert_eq!(a[0..2], [0x20, 0x01]);
+        assert_eq!(a[2..4], [0x0d, 0xb8]);
+        assert_eq!(a[14..16], [0x07, 0x34]);
+    }
+
+    #[test]
+    fn test_parse_ipv6_invalid() {
+        assert_eq!(parse_ipv6(""), None);
+        assert_eq!(parse_ipv6("not:valid"), None);
+        assert_eq!(parse_ipv6(":::1"), None);
+    }
+
+    #[test]
+    fn test_parse_ipv6_link_local() {
+        let ip = parse_ipv6("fe80::1");
+        assert!(ip.is_some());
+        let a = ip.unwrap();
+        assert_eq!(a[0], 0xfe);
+        assert_eq!(a[1], 0x80);
+        assert_eq!(a[15], 1);
+    }
+
+    #[test]
+    fn test_sockaddr_storage_as_in() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 2;  // AF_INET
+        bytes[2..4].copy_from_slice(&0x1f90u16.to_be_bytes());
+        bytes[4..8].copy_from_slice(&[192, 168, 1, 1]);
+        let storage = SockAddrStorage { bytes };
+        let addr = storage.as_in();
+        assert!(addr.is_some());
+        assert_eq!(addr.unwrap().sin_addr, [192, 168, 1, 1]);
+    }
+
+    #[test]
+    fn test_sockaddr_storage_as_in6() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 10;
+        bytes[1] = 0;
+        bytes[2] = 0x01;
+        bytes[3] = 0xbb;
+        let storage = SockAddrStorage { bytes };
+        let addr = storage.as_in6();
+        assert!(addr.is_some());
+        assert_eq!(addr.unwrap().sin6_port, 443u16.to_be());
+    }
+}
+
 pub struct HttpClient;
 
 impl HttpClient {

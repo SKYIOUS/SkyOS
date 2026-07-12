@@ -47,6 +47,12 @@ Copy-Item "$releaseDir\skyedit" "$binDir\skyedit" -Force
 Copy-Item "$releaseDir\sarga-disp" "$binDir\sarga-disp" -Force
 # Package Manager
 Copy-Item "$releaseDir\skypkg" "$binDir\skypkg" -Force
+# Test binaries
+Copy-Item "$releaseDir\sigchld_test" "$binDir\sigchld_test" -Force
+Copy-Item "$releaseDir\sigint_test" "$binDir\sigint_test" -Force
+Copy-Item "$releaseDir\perm_test" "$binDir\perm_test" -Force
+Copy-Item "$releaseDir\futex_test" "$binDir\futex_test" -Force
+
 # Security utilities
 Copy-Item "$releaseDir\login" "$binDir\login" -Force
 Copy-Item "$releaseDir\passwd" "$binDir\passwd" -Force

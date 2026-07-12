@@ -7,6 +7,8 @@
 
 [![Rust](https://img.shields.io/badge/Rust-nightly-dea584?logo=rust&logoColor=fff)](https://www.rust-lang.org)
 [![Target](https://img.shields.io/badge/target-x86__64%20%7C%20aarch64-blueviolet)](#)
+[![CI](https://github.com/SKYIOUS/SKYOS/workflows/CI/badge.svg)](https://github.com/SKYIOUS/SKYOS/actions)
+[![Build Userspace](https://github.com/SKYIOUS/SKYOS/workflows/Build%20Userspace/badge.svg)](https://github.com/SKYIOUS/SKYOS/actions)
 [![License: SSL](https://img.shields.io/badge/license-SSL-green)](#)
 [![Custom Target](https://img.shields.io/badge/no__std-custom%20target-critical)](#)
 
@@ -297,38 +299,66 @@ target/x86_64-sarga/release/
 
 ## Running in QEMU
 
-SARGA OS runs on top of the SARGA kernel. The typical workflow:
+SARGA OS runs on top of the SARGA kernel. The kernel lives in a [**separate repository**](https://github.com/SKYIOUS/SKYIOUS-KERNEL) and must be checked out as a sibling directory (`../SKYIOUS KERNEL/`).
+
+### Quick Start (Linux/WSL)
 
 ```bash
-# 1. Build userspace (this repo)
-./build.sh all
+# Clone both repos
+git clone https://github.com/SKYIOUS/SKYOS
+git clone https://github.com/SKYIOUS/SKYIOUS-KERNEL "SKYIOUS KERNEL"
 
-# 2. Build kernel + bootimage (in the kernel repo)
-cd ../SARGIUOUS\ KERNEL
-./make_bootimage.sh
-
-# 3. Run in QEMU
-cd SARGA-OS
-make run
+# Build userspace + kernel + bootimage + ISO, then launch QEMU
+cd SkyOS
+make iso        # builds everything and creates skyos-*.iso
+make run        # boots the ISO in QEMU (UEFI + display)
+make test       # builds + boots in nographic mode, checks for login prompt
 ```
 
-Or use the development loop:
+### Individual Build Steps
+
+```bash
+# Build userspace only
+./build.sh all                           # Linux
+.\build.ps1 all                          # Windows
+
+# Build kernel + bootimage
+cd ../SKYIOUS\ KERNEL
+./make_bootimage.sh                      # Linux
+.\make_bootimage.ps1                     # Windows
+
+# Full pipeline (userspace + initrd + kernel + ISO)
+cd SkyOS
+make iso                                 # Linux/WSL only
+python scripts/make_iso.py "my-version"  # Cross-platform (requires initrd + bootimage)
+```
+
+### Development Loops
 
 ```powershell
-# Windows development loop
+# Windows QEMU dev loop (builds userspace + kernel, boots with -nographic)
 .\scripts\dev_loop.ps1
 ```
 
-QEMU configuration (from `Makefile`):
+### QEMU Configuration
 
 ```
-- UEFI boot (OVMF)
+- UEFI boot (OVMF firmware)
 - 512 MB RAM
 - 2 CPU cores
-- AHCI disk controller
 - Intel E1000 NIC (user-mode networking)
-- VGA display
+- Serial console (-nographic mode) or VGA display
 ```
+
+### CI/CD Pipeline
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| **CI** (`ci.yml`) | Every push/PR | `cargo fmt --check`, `clippy -D warnings`, release build, unit tests, QEMU smoke boot |
+| **Build Userspace** | Push/PR to main | Build all userspace crates |
+| **Build Release ISO** | Manual dispatch | Full ISO with kernel + userspace + initrd, uploaded as artifact |
+
+See `.github/workflows/` for workflow definitions.
 
 ---
 
@@ -398,12 +428,22 @@ SARGA-OS/
 ├── skysettings/            # Settings panel
 ├── skyd/                   # System daemon
 ├── login-manager/          # Login manager
+├── tests/                  # Integration and boot tests
+│   ├── test_boot.ps1       # QEMU boot test (PowerShell)
+│   ├── test_login.ps1      # Login test (PowerShell)
+│   ├── qemu_boot.sh        # Full QEMU boot smoke test (Bash/Linux CI)
+│   └── thread_test/        # Userspace test binaries (sigchld, sigint, perm, futex)
 ├── scripts/                # Build and dev automation
+│   ├── test_all.ps1        # Run all tests
 │   ├── make_sarga_image.py # End-to-end image creator
 │   ├── release_build.ps1   # Production release build
 │   ├── dev_loop.ps1        # Fast development loop
 │   ├── setup_dev.ps1       # Dev environment setup
 │   └── ...
+├── .github/workflows/      # CI pipeline definitions
+│   ├── ci.yml              # Format → Clippy → Build → Unit tests → QEMU smoke test
+│   ├── build-userspace.yml # Build userspace on push/PR
+│   └── build-release-iso.yml # Manual full ISO release build
 ├── staging/                # Initrd staging directory
 │   ├── bin/                # Deployed binaries
 │   ├── etc/                # System configuration

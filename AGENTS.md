@@ -42,6 +42,26 @@ Default: `["smp", "net", "ai_rule"]`
 - Syscall ABI: `syscall` instr, rax=number, args in rdi,rsi,rdx,r10,r8,r9, return in rax
 - `#[feature(abi_x86_interrupt)]` required for interrupt handlers
 
+## Socket API (docs/socket-api.md)
+
+- Backed by smoltcp with IPv4/IPv6/TCP/UDP/ICMP/DHCP
+- Domains: AF_INET=2, AF_INET6=10
+- SockAddrIn: 16 bytes (family LE, port BE, addr[4], zero[8])
+- SockAddrIn6: 28 bytes (family LE, port BE, flowinfo BE, addr[16], scope_id LE)
+- Syscalls: socket(41), bind(49), connect(42), listen(50), accept(43), sendto(44), recvfrom(45), setsockopt(54)
+- setsockopt: SOL_SOCKET SO_RCVTIMEO/SO_SNDTIMEO (accepted, unused — non-blocking), IPPROTO_TCP TCP_NODELAY
+- ICMP ping via smoltcp socket-icmp, DHCP via socket-dhcpv4 on mgmt interface
+
+## Security (docs/security.md)
+
+- Full POSIX credentials: uid, gid, euid, egid, suid, sgid, fsuid, fsgid (default all 0)
+- Capabilities: bitmask, Linux-compatible positions (CAP_NET_RAW=13, CAP_SYS_ADMIN=21, etc.)
+- DAC: `check_file_permission()` in `syscalls/mod.rs` — owner/group/other bits against euid/egid
+- Gate: `mount`→CAP_SYS_ADMIN, `kill`→CAP_KILL, `socket(SOCK_RAW)`→CAP_NET_RAW, `capset`→root/CAP_SETPCAP
+- LSM: rule-based MAC in `security.rs` (hooks in open/mkdir/socket/kill/mount/execve)
+- Signals: per-process pending/blocked bitmask, 32 handlers, sigprocmask(309), delivery in syscall postamble
+- Signal-interruptible: nanosleep (tick wakes on signal), accept/read (pre-check EINTR)
+
 ## Architecture Notes
 
 - Monolithic kernel, higher-half mapped at `0xFFFFFFFF80000000`

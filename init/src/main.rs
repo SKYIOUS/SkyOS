@@ -53,6 +53,7 @@ impl Service {
 
 fn user_main() -> i32 {
     let _ = io::write_all(1, b"[init] SARGA init starting\n");
+    let _ = io::write_all(1, b"Userland init running\n");
 
     // Mount essential filesystems
     let _ = io::mount("none", "/tmp", "tmpfs", 0);

@@ -159,3 +159,44 @@ pub const ERANGE: i32 = 34;
 pub const ENOSYS: i32 = 38;
 pub const EAFNOSUPPORT: i32 = 97;
 pub const EADDRINUSE: i32 = 98;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_i64_standard_errors() {
+        assert_eq!(Error::from_i64(-1), Error::EPERM);
+        assert_eq!(Error::from_i64(-2), Error::ENOENT);
+        assert_eq!(Error::from_i64(-4), Error::EINTR);
+        assert_eq!(Error::from_i64(-9), Error::EBADF);
+        assert_eq!(Error::from_i64(-13), Error::EACCES);
+        assert_eq!(Error::from_i64(-22), Error::EINVAL);
+        assert_eq!(Error::from_i64(-38), Error::ENOSYS);
+        assert_eq!(Error::from_i64(-97), Error::EAFNOSUPPORT);
+        assert_eq!(Error::from_i64(-98), Error::EADDRINUSE);
+    }
+
+    #[test]
+    fn test_from_i64_unknown_error() {
+        assert_eq!(Error::from_i64(-999), Error::EUNKNOWN);
+        assert_eq!(Error::from_i64(0), Error::EUNKNOWN);
+        assert_eq!(Error::from_i64(-100), Error::EUNKNOWN);
+    }
+
+    #[test]
+    fn test_error_to_i64() {
+        assert_eq!(i64::from(Error::EPERM), -1);
+        assert_eq!(i64::from(Error::EINVAL), -22);
+        assert_eq!(i64::from(Error::ENOSYS), -38);
+    }
+
+    #[test]
+    fn test_errno_get_set() {
+        set_errno(0);
+        assert_eq!(get_errno(), 0);
+        set_errno(Error::EACCES as i32);
+        assert_eq!(get_errno(), 13);
+        set_errno(0);
+    }
+}

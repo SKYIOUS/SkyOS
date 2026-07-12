@@ -1,21 +1,91 @@
-KERNEL_BOOTIMAGE ?= ../SKYIOUS KERNEL/target/x86_64-velox/debug/bootimage-velox_kernel.bin
+# SkyOS Build System
+# ==================
+# Targets are designed for WSL/Linux with QEMU and xorriso.
 
-.PHONY: all clean run
+KERNEL_DIR ?= ../SKYIOUS\ KERNEL
+SHELL := /bin/bash
+PYTHON ?= python3
 
-all:
-	./build.sh all
+.PHONY: all clean fmt clippy build build-release \
+        kernel userspace initrd bootimage iso \
+        run test qemu-test run-nographic
+
+# --- Aggregate targets ---
+
+all: fmt clippy build
+
+fmt:
+	cargo fmt --check
+
+clippy:
+	cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
+
+build:
+	cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json
+
+build-release:
+	cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+test: fmt clippy build-release qemu-test
+
+# --- Full ISO build ---
+
+kernel:
+	cd $(KERNEL_DIR)/kernel && cargo build --release -Zbuild-std=core,alloc --features net,smp,ai_rule
+
+userspace: build-release
+
+initrd: userspace
+	$(PYTHON) build_initrd.py
+	mkdir -p $(KERNEL_DIR)/SkyOS
+	cp initrd.tar $(KERNEL_DIR)/SkyOS/
+
+bootimage: kernel initrd
+	cd $(KERNEL_DIR) && cargo run --release --manifest-path builder/Cargo.toml
+
+iso: bootimage
+	$(PYTHON) scripts/make_iso.py "release-$(shell date +%Y%m%d)"
+
+# --- QEMU targets ---
+
+qemu-test: iso
+	ISO=$$(ls release/skyos-*.iso 2>/dev/null | head -1); \
+	if [ -z "$$ISO" ]; then echo "No ISO found"; exit 1; fi; \
+	qemu-system-x86_64 \
+		-bios OVMF.fd \
+		-cdrom "$$ISO" \
+		-m 512M -smp 2 \
+		-nographic -no-reboot \
+		-serial mon:stdio \
+		-device e1000,netdev=net0 -netdev user,id=net0; \
+	if grep -q "login:" /tmp/skyos-boot.log 2>/dev/null; then \
+		echo "PASS: Boot OK"; \
+	else \
+		echo "FAIL: No login prompt"; exit 1; \
+	fi
+
+run: iso
+	ISO=$$(ls release/skyos-*.iso 2>/dev/null | head -1); \
+	qemu-system-x86_64 \
+		-bios OVMF.fd \
+		-cdrom "$$ISO" \
+		-m 512M -smp 2 \
+		-serial stdio \
+		-device e1000,netdev=net0 -netdev user,id=net0 \
+		-vga std -no-reboot
+
+run-nographic: iso
+	ISO=$$(ls release/skyos-*.iso 2>/dev/null | head -1); \
+	qemu-system-x86_64 \
+		-bios OVMF.fd \
+		-cdrom "$$ISO" \
+		-m 512M -smp 2 \
+		-nographic -no-reboot \
+		-serial mon:stdio \
+		-device e1000,netdev=net0 -netdev user,id=net0
+
+# --- Cleanup ---
 
 clean:
 	cargo clean
-	rm -f sarga.img
-
-run: all
-	qemu-system-x86_64 \
-		-bios /usr/share/qemu/OVMF.fd \
-		-drive format=raw,file=$(KERNEL_BOOTIMAGE) \
-		-drive id=sarga,file=sarga.img,if=none,format=raw \
-		-device ahci,id=ahci0 \
-		-device ide-hd,drive=sarga,bus=ahci0.0 \
-		-m 512M -smp 2 -serial stdio \
-		-device e1000,netdev=net0 -netdev user,id=net0 \
-		-vga std -no-reboot
+	rm -rf release/ initrd.tar build/
