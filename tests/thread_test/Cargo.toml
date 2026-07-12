@@ -21,3 +21,11 @@ path = "src/perm_test.rs"
 [[bin]]
 name = "sigint_test"
 path = "src/sigint_test.rs"
+
+[[bin]]
+name = "sigalrm_test"
+path = "src/sigalrm_test.rs"
+
+[[bin]]
+name = "pipe_signal_test"
+path = "src/pipe_signal_test.rs"
