@@ -44,9 +44,13 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/spkg':          'spkg',
         'bin/httpd':         'httpd',
         'bin/wget':          'wget',
-        'bin/futex_test':    'futex_test',
-        'bin/sigchld_test':  'sigchld_test',
-        'bin/perm_test':     'perm_test',
+        'bin/futex_test':          'futex_test',
+        'bin/sigchld_test':        'sigchld_test',
+        'bin/sigint_test':         'sigint_test',
+        'bin/sigalrm_test':        'sigalrm_test',
+        'bin/pipe_signal_test':    'pipe_signal_test',
+        'bin/perm_test':           'perm_test',
+        'bin/dac_test':            'dac_test',
     }
     for b in coreutils_bins:
         binaries[f'bin/{b}'] = b

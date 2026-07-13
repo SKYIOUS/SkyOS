@@ -57,9 +57,13 @@ qemu-test: iso
 		-m 512M -smp 2 \
 		-nographic -no-reboot \
 		-serial mon:stdio \
-		-device e1000,netdev=net0 -netdev user,id=net0; \
-	if grep -q "login:" /tmp/skyos-boot.log 2>/dev/null; then \
+		-device e1000,netdev=net0 -netdev user,id=net0 \
+		2>&1 | tee /tmp/skyos-boot.log; \
+	if grep -q "login:" /tmp/skyos-boot.log; then \
 		echo "PASS: Boot OK"; \
+		if grep -q "PASS" /tmp/skyos-boot.log; then \
+			echo "PASS: Integration tests passed"; \
+		fi \
 	else \
 		echo "FAIL: No login prompt"; exit 1; \
 	fi

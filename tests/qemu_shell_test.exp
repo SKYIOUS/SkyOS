@@ -1,0 +1,99 @@
+#!/usr/bin/expect -f
+# QEMU integration test: boots ISO, logs in, runs commands, checks output.
+# Usage: expect qemu_shell_test.exp <iso_path> [timeout_seconds]
+
+set iso [lindex $argv 0]
+set timeout [lindex $argv 1]
+if {$timeout == ""} { set timeout 120 }
+set logfile "qemu_integration_log.txt"
+
+spawn qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -cdrom "$iso" \
+    -m 512M -smp 2 \
+    -nographic -no-reboot \
+    -serial mon:stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+
+set pass_count 0
+set fail_count 0
+
+proc check {name pattern action} {
+    global pass_count fail_count
+    expect {
+        $pattern {
+            set pass_count [expr {$pass_count + 1}]
+            send_user "PASS: $name\n"
+            eval $action
+        }
+        timeout {
+            set fail_count [expr {$fail_count + 1}]
+            send_user "FAIL: $name (timeout waiting for '$pattern')\n"
+            send_user "=== Last 30 lines of output ===\n"
+            exit 1
+        }
+        eof {
+            set fail_count [expr {$fail_count + 1}]
+            send_user "FAIL: $name (unexpected EOF)\n"
+            exit 1
+        }
+    }
+}
+
+# Wait for login prompt
+send_user "=== Test 1: Boot to login prompt ===\n"
+check "boot_login" "login:" { }
+
+# Login as root
+send "root\r"
+check "password_prompt" "Password:" { }
+send "root\r"
+check "shell_prompt" {[$#] } { }
+
+# Test 2: ls /
+send_user "\n=== Test 2: ls / ===\n"
+send "ls /\r"
+check "ls_output" "bin" { }
+
+# Test 3: uname -a
+send_user "\n=== Test 3: uname -a ===\n"
+send "uname -a\r"
+check "uname_output" "SkyOS|sarga" { }
+
+# Test 4: echo
+send_user "\n=== Test 4: echo ===\n"
+send "echo HELLO_TEST\r"
+check "echo_output" "HELLO_TEST" { }
+
+# Test 5: ls /bin (check binary list)
+send_user "\n=== Test 5: ls /bin ===\n"
+send "ls /bin\r"
+check "binaries" "sash|init|ls|cat|mkdir" { }
+
+# Test 6: /bin/futex_test
+send_user "\n=== Test 6: futex_test ===\n"
+send "timeout 10 /bin/futex_test\r"
+check "futex_test_pass" "PASS|OK" { }
+
+# Test 7: /bin/perm_test
+send_user "\n=== Test 7: perm_test ===\n"
+send "timeout 10 /bin/perm_test\r"
+check "perm_test_pass" "PASS" { }
+
+# Test 8: Check /proc filesystem
+send_user "\n=== Test 8: ls /proc ===\n"
+send "ls /proc\r"
+check "proc_output" "self|uptime" { }
+
+# Test 9: ps
+send_user "\n=== Test 9: ps ===\n"
+send "ps\r"
+check "ps_output" "init|PID" { }
+
+# Summary
+send_user "\n========================================\n"
+send_user "Integration Test Summary: $pass_count passed, $fail_count failed\n"
+if {$fail_count > 0} {
+    exit 1
+}
+exit 0

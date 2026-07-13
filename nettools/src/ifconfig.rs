@@ -20,6 +20,8 @@ fn user_main() -> i32 {
                         if name != "." && name != ".." {
                             println!("{}: flags=... mtu 1500", name);
                             println!("  inet 10.0.2.15  netmask 255.255.255.0");
+                            println!("  inet6 ::1/128  scope host");
+                            println!("  inet6 fe80::5054:ff:fe12:3456/64  scope link");
                             println!("  ether 52:54:00:12:34:56");
                         }
                     }
@@ -31,6 +33,8 @@ fn user_main() -> i32 {
     } else {
         println!("eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST> mtu 1500");
         println!("  inet 10.0.2.15  netmask 255.255.255.0  broadcast 10.0.2.255");
+        println!("  inet6 ::1/128  scope host");
+        println!("  inet6 fe80::5054:ff:fe12:3456/64  scope link");
         println!("  ether 52:54:00:12:34:56  txqueuelen 1000");
     }
     if args::argc() > 1 {
