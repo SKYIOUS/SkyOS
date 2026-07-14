@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 use alloc::ffi::CString;
 use alloc::format;
 use libsarga::println;
+use libsarga::signal::*;
+use libsarga::posix::{WUNTRACED, WNOHANG};
 
 pub fn execute_pipelines(pipelines: Vec<Pipeline>) -> i64 {
     let mut last_exit = 0i64;
@@ -74,7 +76,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
         let args: Vec<&str> = expanded_args.iter().map(|s| s.as_str()).collect();
         let env_strings = crate::get_env_refs();
         let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
-        let r = libsarga::process::execve(cmd_name, &args, &env_refs);
+        let r = libsarga::posix::execvp(&expanded_args[0], &args, &env_refs);
         if r.is_err() {
             println!("sash: command not found: {}", cmd_name);
         }
@@ -82,7 +84,30 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
     }
 
     if !bg {
-        libsarga::process::wait(pid).unwrap_or(0) as i64
+        // Wait with WUNTRACED to detect stopped jobs
+        loop {
+            let mut st = 0i32;
+            let r = unsafe { libsarga::syscall::syscall4(61, pid, &mut st as *mut i32 as u64, WUNTRACED as u64, 0) };
+            if r < 0 { break; }
+            if r as u64 == pid {
+                if WIFSTOPPED(st) {
+                    let sig = WSTOPSIG(st);
+                    crate::add_stopped_job(pid, "");
+                    println!("\n[{}] {} Stopped", 0, pid);
+                    return 0;
+                }
+                if (st & 0x7f) == 0 {
+                    return (st >> 8) as i64;
+                }
+                // Signaled — print info and return
+                let termsig = WTERMSIG(st);
+                if termsig != 0 && termsig != SIGCHLD {
+                    println!("sash: terminated by signal {}", termsig);
+                }
+                return if termsig != 0 { 128 + termsig as i64 } else { 0 };
+            }
+        }
+        0
     } else {
         crate::add_job(pid, cmd);
         0
@@ -243,7 +268,7 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
             let args: Vec<&str> = expanded_args.iter().map(|s| s.as_str()).collect();
             let env_strings = crate::get_env_refs();
             let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
-            let r = libsarga::process::execve(&expanded_name, &args, &env_refs);
+            let r = libsarga::posix::execvp(&expanded_name, &args, &env_refs);
             if r.is_err() {
                 println!("sash: command not found: {}", expanded_name);
             }
@@ -320,7 +345,7 @@ pub fn capture_output(cmd_str: &str) -> String {
         let args: Vec<&str> = expanded_args.iter().map(|s| s.as_str()).collect();
         let env_strings = crate::get_env_refs();
         let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
-        let _ = libsarga::process::execve(&expanded_args[0], &args, &env_refs);
+            let _ = libsarga::posix::execvp(&expanded_args[0], &args, &env_refs);
         unsafe { libsarga::syscall::syscall1(1, 1); }
         loop {}
     }

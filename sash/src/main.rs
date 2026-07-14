@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::ffi::CString;
+use libsarga::signal::*;
+use libsarga::posix::{WUNTRACED, WNOHANG};
 
 mod parser;
 mod executor;
@@ -22,9 +24,13 @@ static SHELL_ENV: ShellEnv = ShellEnv(Mutex::new(None));
 struct AliasTable(Mutex<Vec<(String, String)>>);
 static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 
+#[derive(Clone, Copy, PartialEq)]
+enum JobStatus { Running, Stopped, Done }
+
 struct JobEntry {
     pid: u64,
     cmd: String,
+    status: JobStatus,
 }
 struct JobTable(Mutex<Vec<JobEntry>>);
 static JOB_TABLE: JobTable = JobTable(Mutex::new(Vec::new()));
@@ -128,23 +134,94 @@ pub fn get_alias(name: &str) -> Option<String> {
 
 pub fn add_job(pid: u64, cmd: &parser::Command) {
     let cmd_str = cmd.args.join(" ");
-    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd_str });
+    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd_str, status: JobStatus::Running });
+}
+
+pub fn add_job_cmd(pid: u64, cmd: &str) {
+    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd.to_string(), status: JobStatus::Running });
 }
 
 pub fn print_jobs() {
     let tbl = JOB_TABLE.0.lock();
+    let any_stopped = tbl.iter().any(|j| j.status == JobStatus::Stopped);
     for (i, job) in tbl.iter().enumerate() {
-        println!("[{}] {} {}", i + 1, job.pid, job.cmd);
+        let marker = match job.status {
+            JobStatus::Running => if any_stopped { "Running" } else { "" },
+            JobStatus::Stopped => "Stopped",
+            JobStatus::Done => "Done",
+        };
+        println!("[{}] {} {}{}", i + 1, job.pid, job.cmd,
+            if marker.is_empty() { alloc::string::String::new() } else { alloc::format!(" ({})", marker) });
     }
+}
+
+pub fn reap_child(pid: u64, status: i32) {
+    let mut tbl = JOB_TABLE.0.lock();
+    let idx = tbl.iter().position(|j| j.pid == pid);
+    if let Some(i) = idx {
+        if libsarga::signal::WIFSTOPPED(status) {
+            tbl[i].status = JobStatus::Stopped;
+            println!("\n[{}] {} Stopped", i + 1, pid);
+        } else {
+            tbl.remove(i);
+        }
+    }
+}
+
+pub fn add_stopped_job(pid: u64, cmd: &str) {
+    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd.to_string(), status: JobStatus::Stopped });
+}
+
+pub fn wait_for_job(pid: u64) -> i64 {
+    loop {
+        let mut st = 0i32;
+        let r = unsafe { libsarga::syscall::syscall4(61, pid, &mut st as *mut i32 as u64, 0, 0) };
+        if r < 0 { break; }
+        if r > 0 {
+            reap_child(r as u64, st);
+            if (st & 0x7f) == 0 {
+                return (st >> 8) as i64;
+            } else if (st & 0x7f) == 0x7f && (st >> 8) == 0 {
+                return 0; // stopped
+            }
+        }
+    }
+    0
 }
 
 pub fn fg_job(id: usize) -> i64 {
     let mut tbl = JOB_TABLE.0.lock();
     if id == 0 || id > tbl.len() { println!("fg: job not found"); return 1; }
-    let job = &tbl[id - 1];
-    let code = libsarga::process::wait(job.pid).unwrap_or(1);
-    tbl.remove(id - 1);
-    code as i64
+    let job = tbl.remove(id - 1);
+    drop(tbl);
+
+    // If stopped, send SIGCONT first
+    if job.status == JobStatus::Stopped {
+        let _ = libsarga::signal::kill(job.pid as i64, SIGCONT);
+    }
+
+    // Bring to foreground and wait
+    loop {
+        let mut st = 0i32;
+        let r = unsafe { libsarga::syscall::syscall4(61, job.pid, &mut st as *mut i32 as u64,
+            WUNTRACED as u64, 0) };
+        if r < 0 { break; }
+        if r as u64 == job.pid {
+            if WIFSTOPPED(st) {
+                // Stopped again — add back to job table
+                let mut tbl = JOB_TABLE.0.lock();
+                tbl.push(JobEntry { pid: job.pid, cmd: job.cmd.clone(), status: JobStatus::Stopped });
+                return 0;
+            }
+            if (st & 0x7f) == 0 {
+                return (st >> 8) as i64;
+            }
+            let sig = WTERMSIG(st);
+            if sig != 0 { return 128 + sig as i64; }
+            return 0;
+        }
+    }
+    0
 }
 
 pub fn bg_job(id: usize) -> i64 {
@@ -269,8 +346,19 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
     input
 }
 
+fn init_signal_handlers() {
+    // Ignore SIGINT in the shell itself (child processes inherit default disposition)
+    let _ = rt_sigaction(SIGINT, Some(&SigAction::handler(SIG_IGN)), None);
+    // SIGCHLD: we poll via waitpid in the main loop, so keep default (no async handler needed)
+    // SIGTSTP: let child processes handle it; shell ignores it
+    let _ = rt_sigaction(SIGTSTP, Some(&SigAction::handler(SIG_IGN)), None);
+    // SIGQUIT: ignore
+    let _ = rt_sigaction(SIGQUIT, Some(&SigAction::handler(SIG_IGN)), None);
+}
+
 fn user_main() -> i32 {
     init_env();
+    init_signal_handlers();
 
     *HISTORY.0.lock() = Some(readline::History::new(1000));
 
@@ -278,6 +366,14 @@ fn user_main() -> i32 {
     println!("Type help for commands.");
 
     loop {
+        // Reap any finished background jobs before showing prompt
+        loop {
+            let mut st = 0i32;
+            let r = unsafe { libsarga::syscall::syscall4(61, -1i64 as u64, &mut st as *mut i32 as u64, WNOHANG as u64, 0) };
+            if r <= 0 { break; }
+            reap_child(r as u64, st);
+        }
+
         let prompt = make_prompt();
 
         let input;

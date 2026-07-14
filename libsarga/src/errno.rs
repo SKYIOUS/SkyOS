@@ -2,22 +2,30 @@
 
 use core::sync::atomic::{AtomicI32, Ordering};
 
+// Fallback global errno when TLS is not available
 static __ERRNO: AtomicI32 = AtomicI32::new(0);
 
 /// Returns a pointer to the thread-local errno location.
+/// Uses FS-segment TLS if available, otherwise falls back to a global static.
 #[no_mangle]
 pub extern "C" fn __errno_location() -> *mut i32 {
+    // Try TLS first (FS segment based, offset 0 = errno)
+    let mut base = 0u64;
+    let r = unsafe { crate::syscall::syscall2(158, 0x1003, &mut base as *mut u64 as u64) };
+    if r == 0 && base != 0 {
+        return unsafe { &mut *(base as *mut i32) };
+    }
     __ERRNO.as_ptr() as *mut i32
 }
 
 /// Sets the current thread's error number.
 pub fn set_errno(err: i32) {
-    __ERRNO.store(err, Ordering::SeqCst);
+    unsafe { *__errno_location() = err; }
 }
 
 /// Gets the current thread's error number.
 pub fn get_errno() -> i32 {
-    __ERRNO.load(Ordering::SeqCst)
+    unsafe { *__errno_location() }
 }
 
 /// Standard Sarga OS Error enum.

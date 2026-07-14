@@ -1,7 +1,11 @@
 //! POSIX-like syscall wrappers for libsarga ABI.
 //! These provide a C-compatible interface for porting software.
 
+use crate::errno::Error;
 use crate::syscall;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 // File modes
 pub const O_RDONLY: i32 = 0;
@@ -36,6 +40,99 @@ pub const CLOCK_REALTIME: i64 = 0;
 // wait options
 pub const WNOHANG: i32 = 1;
 pub const WUNTRACED: i32 = 2;
+
+// ELF magic
+const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
+const SHEBANG: [u8; 2] = [b'#', b'!'];
+
+/// Detect if a file starts with a shebang and extract interpreter+arg.
+pub fn shebang_interpreter(data: &[u8]) -> Option<(&str, Option<&str>)> {
+    if data.len() < 4 { return None; }
+    if data[..2] != SHEBANG { return None; }
+    let line_end = data.iter().position(|&b| b == b'\n').unwrap_or(data.len());
+    let line = core::str::from_utf8(&data[2..line_end]).ok()?.trim();
+    let mut words = line.split_whitespace();
+    let interpreter = words.next()?;
+    let arg = words.next();
+    Some((interpreter, arg))
+}
+
+/// Detect ELF machine type from header bytes.
+/// Returns Some(true) if native x86_64, Some(false) if non-native, None if not ELF.
+pub fn elf_is_native(data: &[u8]) -> Option<bool> {
+    if data.len() < 20 { return None; }
+    if data[..4] != ELF_MAGIC { return None; }
+    // e_ident[4] = class: 1=32-bit, 2=64-bit
+    // e_ident[5] = endian: 1=little, 2=big
+    // e_machine at offset 18 (little-endian u16)
+    let machine = u16::from_le_bytes([data[18], data[19]]);
+    // EM_X86_64 = 62
+    Some(machine == 62)
+}
+
+/// POSIX execvp: search PATH, handle shebang scripts, handle ELF detection.
+pub fn execvp(path: &str, args: &[&str], env: &[&str]) -> Result<(), Error> {
+    let resolved = if path.contains('/') {
+        path.to_string()
+    } else {
+        match find_in_path(path) {
+            Some(p) => p,
+            None => {
+                // Try with shebang detection on the raw name (search PATH)
+                return Err(Error::ENOENT);
+            }
+        }
+    };
+
+    // Try direct execve first (kernel handles ELF natively)
+    let r = crate::process::execve(&resolved, args, env);
+    if r.is_ok() { return r; }
+
+    // Read the first few bytes to check for shebang
+    let c_path = alloc::ffi::CString::new(resolved.as_bytes()).map_err(|_| Error::EINVAL)?;
+    let fd = unsafe { crate::syscall::open(c_path.as_ptr() as *const u8, 0) };
+    if fd < 0 { return Err(Error::from_i64(fd)); }
+    let mut header = [0u8; 256];
+    let n = unsafe { crate::syscall::read(fd, header.as_mut_ptr(), 256) };
+    let _ = unsafe { crate::syscall::close(fd) };
+    if n <= 0 { return Err(Error::ENOEXEC); }
+    let data = &header[..n as usize];
+
+    // Check for shebang
+    if let Some((interp, arg)) = shebang_interpreter(data) {
+        let mut interp_args: Vec<&str> = Vec::new();
+        interp_args.push(interp);
+        if let Some(a) = arg { interp_args.push(a); }
+        interp_args.push(&resolved);
+        // Append remaining args after the script name
+        for a in args.iter().skip(1) { interp_args.push(a); }
+        return crate::process::execve(interp, &interp_args, env);
+    }
+
+    // Check for ELF with non-native machine
+    if let Some(true) = elf_is_native(data) {
+        // Native ELF but execve failed — maybe permissions? Return original error.
+        return r;
+    }
+
+    Err(Error::ENOEXEC)
+}
+
+fn find_in_path(name: &str) -> Option<String> {
+    // Default PATH when environment variables aren't available at lib level
+    let path = alloc::string::String::from("/bin:/usr/bin");
+    for dir in path.split(':') {
+        let full = if dir.ends_with('/') {
+            alloc::format!("{}{}", dir, name)
+        } else {
+            alloc::format!("{}/{}", dir, name)
+        };
+        let c_str = alloc::ffi::CString::new(full.as_bytes()).ok()?;
+        let r = unsafe { crate::syscall::syscall2(4, c_str.as_ptr() as u64, 0) };
+        if r == 0 { return Some(full); }
+    }
+    None
+}
 
 #[repr(C)]
 pub struct Timespec {
