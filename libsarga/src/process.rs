@@ -68,6 +68,19 @@ pub fn getpid() -> u64 { unsafe { syscall0(39) as u64 } }
 /// Returns the process ID of the parent of the calling process.
 pub fn getppid() -> u64 { unsafe { syscall0(110) as u64 } }
 
+/// Spawns a new process running the given command (fork + exec).
+/// Returns the child PID on success.
+pub fn spawn(command: &str) -> Result<u64, Error> {
+    match fork() {
+        Ok(0) => {
+            let _ = execve(command, &[command], &[]);
+            exit(1);
+        }
+        Ok(pid) => Ok(pid),
+        Err(e) => Err(e),
+    }
+}
+
 /// Replaces the current process image with a new process image.
 pub fn execve(path: &str, args: &[&str], env: &[&str]) -> Result<(), Error> {
     let mut p = alloc::vec::Vec::from(path.as_bytes()); p.push(0);

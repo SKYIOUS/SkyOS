@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::cell::UnsafeCell;
 use crate::syscall::syscall3;
+use crate::syscall::SYS_FUTEX;
 
 // Raw Mutex (no value wrapping)
 pub struct RawMutex {
@@ -99,6 +100,37 @@ impl TlsKey {
         unsafe { crate::syscall::syscall2(158, 0x1003, &mut base as *mut u64 as u64) }; // ARCH_GET_FS
         if base == 0 { return; }
         unsafe { *((base + self.offset as u64) as *mut u64) = val; }
+    }
+}
+
+// ── Condition Variable ──────────────────────────────────────────
+
+pub struct Condvar {
+    state: AtomicU32,
+}
+
+impl Condvar {
+    pub const fn new() -> Self {
+        Self { state: AtomicU32::new(0) }
+    }
+
+    pub fn wait(&self, mutex: &RawMutex) {
+        self.state.store(1, Ordering::Release);
+        mutex.unlock();
+        while self.state.load(Ordering::Acquire) == 1 {
+            unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 0, 1) };
+        }
+        mutex.lock();
+    }
+
+    pub fn signal(&self) {
+        self.state.store(0, Ordering::Release);
+        unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 1, 1) };
+    }
+
+    pub fn broadcast(&self) {
+        self.state.store(0, Ordering::Release);
+        unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 1, i32::MAX as u64) };
     }
 }
 

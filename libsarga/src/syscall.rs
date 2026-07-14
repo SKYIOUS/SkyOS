@@ -71,6 +71,7 @@ pub const SYS_RESOLVE: u64 = 200;
 pub const SYS_BEEP: u64 = 104;
 pub const SYS_SELECT: u64 = 23;
 pub const SYS_POLL: u64 = 7;
+pub const SYS_GETTID: u64 = 186;
 pub const SYS_GETUID: u64 = 301;
 pub const SYS_GETGID: u64 = 302;
 pub const SYS_SETUID: u64 = 303;
@@ -92,3 +93,19 @@ pub unsafe fn mkdir(path: *const u8, mode: u32) -> i64 { syscall2(SYS_MKDIR, pat
 pub unsafe fn fstat(fd: i64, buf: *mut u8) -> i64 { syscall2(SYS_FSTAT, fd as u64, buf as u64) }
 
 pub unsafe fn beep(freq: u32, duration: u32) -> i64 { syscall2(SYS_BEEP, freq as u64, duration as u64) }
+
+// Futex operations
+pub const FUTEX_WAIT: u32 = 0;
+pub const FUTEX_WAKE: u32 = 1;
+
+/// Futex syscall wrapper.
+/// Matches the kernel's SYS_FUTEX (202) ABI:
+///   uaddr, op, val, timeout, uaddr2, val3
+pub unsafe fn sys_futex(uaddr: usize, op: u32, val: usize, timeout: usize, uaddr2: usize, val3: usize) -> i64 {
+    syscall6(SYS_FUTEX, uaddr as u64, op as u64, val as u64, timeout as u64, uaddr2 as u64, val3 as u64)
+}
+
+/// Get current thread ID.
+pub unsafe fn sys_gettid() -> i64 {
+    syscall0(SYS_GETTID)
+}

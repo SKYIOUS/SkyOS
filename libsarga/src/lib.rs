@@ -23,6 +23,10 @@ pub mod thread;
 pub mod posix;
 pub mod libskyos;
 pub mod signal;
+pub mod pthread;
+pub mod init;
+#[allow(dead_code)]
+pub mod init_services;
 
 
 // Widget toolkit
