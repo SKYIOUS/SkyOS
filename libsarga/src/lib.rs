@@ -29,6 +29,9 @@ pub mod init;
 pub mod init_services;
 
 
+// Vahi-Glass hardware compositor API
+pub mod glass;
+
 // Widget toolkit
 pub mod theme;
 pub mod png;

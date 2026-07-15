@@ -16,9 +16,16 @@ pub static DEFAULT_SERVICES: &[Service] = &[
         respawn_delay_ms: 2000,
     },
     Service {
+        name: "searchd",
+        command: "/bin/searchd",
+        depends: &[],
+        respawn: true,
+        respawn_delay_ms: 3000,
+    },
+    Service {
         name: "gui",
         command: "/bin/shell",
-        depends: &["udev", "net"],
+        depends: &["udev", "net", "searchd"],
         respawn: true,
         respawn_delay_ms: 500,
     },

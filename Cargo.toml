@@ -18,6 +18,7 @@ members = [
     "sargaview",
     "login-manager",
     "skystore",
+    "sargastore",
     "sysmon",
     "calendar",
     "notes",
@@ -36,6 +37,7 @@ members = [
     "passwd",
     "skybuild",
     "setup",
+    "searchd",
     "tests/thread_test",
 ]
 resolver = "2"

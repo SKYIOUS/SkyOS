@@ -187,6 +187,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sargastore"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "sargaview"
 version = "0.1.0"
 dependencies = [
@@ -202,6 +209,13 @@ dependencies = [
 
 [[package]]
 name = "search"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
+name = "searchd"
 version = "0.1.0"
 dependencies = [
  "libsarga",
