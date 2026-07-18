@@ -339,7 +339,7 @@ fn user_main() -> i32 {
 
         let _ = win.flush();
         prev_pressed = pressed;
-        unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_666_000); }
     }
 }
 

@@ -383,7 +383,7 @@ impl Window {
     }
 
     pub fn flush(&self) -> Result<(), i64> {
-        let ret = unsafe { syscall1(SYS_GUI_FLUSH, self.id) };
+        let ret = unsafe { syscall2(SYS_GUI_FLUSH, self.id, self.buffer.as_ptr() as u64) };
         if ret < 0 { Err(-ret) } else { Ok(()) }
     }
 
@@ -721,6 +721,11 @@ impl Window {
         crate::io::resize_window(self.id, width, height);
         self.width = width as u32;
         self.height = height as u32;
+        let new_len = (width * height) as usize;
+        let buf_ptr = unsafe { crate::syscall::syscall1(SYS_GUI_MAP_BUFFER, self.id) } as *mut u32;
+        if !buf_ptr.is_null() {
+            self.buffer = unsafe { core::slice::from_raw_parts_mut(buf_ptr, new_len) };
+        }
     }
 
     pub fn move_to(&mut self, x: u64, y: u64) {

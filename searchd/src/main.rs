@@ -65,7 +65,7 @@ fn user_main() -> i32 {
 
         cycle += 1;
         for _ in 0..30000 {
-            unsafe { libsarga::syscall::syscall1(35, 1_000_000u64); }
+            unsafe { libsarga::syscall::syscall2(35, 0, 1_000_000u64); }
         }
     }
 }

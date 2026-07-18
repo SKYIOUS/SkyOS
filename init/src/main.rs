@@ -56,9 +56,18 @@ fn user_main() -> i32 {
     let _ = io::write_all(1, b"Userland init running\n");
 
     // Mount essential filesystems
-    let _ = io::mount("none", "/tmp", "tmpfs", 0);
-    let _ = io::mount("none", "/dev", "devfs", 0);
-    let _ = io::mount("none", "/ctl", "ctlfs", 0);
+    let _ = io::mkdir("/tmp", 0o777);
+    let _ = io::mkdir("/dev", 0o755);
+    let _ = io::mkdir("/ctl", 0o755);
+    if let Err(_) = io::mount("none", "/tmp", "tmpfs", 0) {
+        let _ = io::write_all(1, b"[init] WARN: failed to mount /tmp\n");
+    }
+    if let Err(_) = io::mount("none", "/dev", "devfs", 0) {
+        let _ = io::write_all(1, b"[init] WARN: failed to mount /dev\n");
+    }
+    if let Err(_) = io::mount("none", "/ctl", "ctlfs", 0) {
+        let _ = io::write_all(1, b"[init] WARN: failed to mount /ctl\n");
+    }
 
     let mut services = Vec::new();
     services.push(Service {
@@ -93,7 +102,7 @@ fn user_main() -> i32 {
 
                         svc.pid = None;
                         if svc.respawn {
-                            let _ = io::nanosleep(500_000_000); // Wait 0.5s before respawn
+                            let _ = io::nanosleep(500_000_000);
                             let _ = svc.spawn();
                         }
                         found = true;
@@ -105,7 +114,7 @@ fn user_main() -> i32 {
                 }
             }
             Err(_) => {
-                let _ = io::nanosleep(100_000_000); // 100ms
+                let _ = io::nanosleep(100_000_000);
             }
         }
     }

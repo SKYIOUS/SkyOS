@@ -2,6 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use libsarga::{sarga_main, gui::Window, theme::Theme, io, process};
 
@@ -376,7 +377,7 @@ fn user_main() -> i32 {
 
         let _ = win.flush();
         prev_pressed = pressed;
-        unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
     }
 }
 

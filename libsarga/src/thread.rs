@@ -137,7 +137,8 @@ pub fn exit(code: u64) -> ! {
 }
 
 pub fn sleep_ms(ms: u64) {
-    unsafe { crate::syscall::syscall2(SYS_NANOSLEEP, ms * 1_000_000, 0) };
+    let ns = ms * 1_000_000;
+    let _ = crate::io::nanosleep(ns);
 }
 
 pub struct Mutex {

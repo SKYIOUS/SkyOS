@@ -49,7 +49,7 @@ fn user_main() -> i32 {
                 if draw_button(&mut win, &theme, 260, 300, 120, 40, "Begin", mouse) && m_pressed {
                     step = 1;
                     unsafe {
-                        libsarga::syscall::syscall1(35, 200_000_000u64);
+                        libsarga::syscall::syscall2(35, 0, 200_000_000u64);
                     }
                 }
             }
@@ -67,7 +67,7 @@ fn user_main() -> i32 {
                 if draw_button(&mut win, &theme, 260, 300, 120, 40, "Next", mouse) && m_pressed {
                     step = 2;
                     unsafe {
-                        libsarga::syscall::syscall1(35, 200_000_000u64);
+                        libsarga::syscall::syscall2(35, 0, 200_000_000u64);
                     }
                 }
             }
@@ -78,7 +78,7 @@ fn user_main() -> i32 {
                 if draw_button(&mut win, &theme, 260, 300, 120, 40, "Next", mouse) && m_pressed {
                     step = 3;
                     unsafe {
-                        libsarga::syscall::syscall1(35, 200_000_000u64);
+                        libsarga::syscall::syscall2(35, 0, 200_000_000u64);
                     }
                 }
             }
@@ -106,7 +106,7 @@ fn user_main() -> i32 {
 
         let _ = win.flush();
         unsafe {
-            libsarga::syscall::syscall1(35, 16_000_000u64);
+            libsarga::syscall::syscall2(35, 0, 16_000_000u64);
         }
     }
 }

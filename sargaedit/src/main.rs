@@ -456,7 +456,7 @@ fn user_main() -> i32 {
 
         ed.render(&mut win);
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
     }
 }
 

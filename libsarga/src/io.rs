@@ -181,8 +181,10 @@ pub fn getdents64(fd: i64, buf: &mut [u8]) -> Result<usize, Error> {
 
 /// Sleeps the current thread for a given number of nanoseconds.
 pub fn nanosleep(ns: u64) -> Result<(), Error> {
-    // SAFETY: nanosleep syscall is safe here
-    let r = unsafe { crate::syscall::syscall2(SYS_NANOSLEEP, ns, 0) };
+    // SAFETY: nanosleep syscall is safe here — kernel expects (seconds, nanoseconds)
+    let secs = ns / 1_000_000_000;
+    let rem_ns = ns % 1_000_000_000;
+    let r = unsafe { crate::syscall::syscall2(SYS_NANOSLEEP, secs, rem_ns) };
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
 }
 
@@ -192,11 +194,16 @@ pub fn sync() -> i64 {
     unsafe { crate::syscall::syscall0(36) }
 }
 
-/// Reboots or powers off the system.
+/// Reboots the system.
 pub fn reboot() -> i64 {
-    // magic=0xDEAD_BEEF, cmd=0 (poweroff) or 1 (reboot)
     // SAFETY: reboot syscall is safe here
-    unsafe { crate::syscall::syscall2(169, 0xDEAD_BEEF, 0) }
+    unsafe { crate::syscall::syscall3(169, 0xDEAD_BEEF, 0x28121969, 1) }
+}
+
+/// Powers off the system.
+pub fn poweroff() -> i64 {
+    // SAFETY: reboot syscall is safe here
+    unsafe { crate::syscall::syscall3(169, 0xDEAD_BEEF, 0x28121969, 0) }
 }
 
 /// Changes permissions of an open file.

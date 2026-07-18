@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicI32, AtomicIsize, Ordering};
 static ARGC: AtomicI32 = AtomicI32::new(0);
 static ARGV: AtomicIsize = AtomicIsize::new(0);
 
-pub fn init(stack: *const u64) {
+pub unsafe fn init(stack: *const u64) {
     let argc = unsafe { *stack } as i32;
     ARGC.store(argc, Ordering::SeqCst);
     ARGV.store(stack as isize + 8, Ordering::SeqCst);

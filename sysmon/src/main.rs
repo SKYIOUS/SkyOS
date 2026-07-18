@@ -37,7 +37,7 @@ fn user_main() -> i32 {
         win.draw_rounded_rect(20, 340, 115, 10, 5, theme.accent);
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 100_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
     }
 }
 

@@ -161,7 +161,7 @@ fn user_main() -> i32 {
             all_entries = load_index();
         }
 
-        unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
     }
 }
 

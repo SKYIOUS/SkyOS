@@ -26,10 +26,7 @@ fn user_main() -> i32 {
         copy_ctl_to_proc("/ctl/sys/net/stat", "/proc/net/sockstat");
 
         // Sleep 2 seconds between updates
-        unsafe {
-            let req = [2u64, 0u64];
-            syscall2(35, req.as_ptr() as u64, 0);
-        }
+        unsafe { syscall2(35, 2, 0); }
     }
 }
 

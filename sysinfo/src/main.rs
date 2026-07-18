@@ -32,7 +32,7 @@ fn user_main() -> i32 {
         win.draw_string_centered(370, "Copyright (c) 2026 SKYIOUS", theme.text_disabled, 0);
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 100_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
     }
 }
 

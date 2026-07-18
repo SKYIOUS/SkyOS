@@ -40,7 +40,7 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 10_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 10_000_000u64); }
     }
 }
 

@@ -9,8 +9,7 @@ fn user_main() -> i32 {
         return 1;
     }
     let secs: u64 = args::get(1).unwrap_or("0").parse().unwrap_or(0);
-    let ns_spec = if secs > 0 { secs * 1_000_000_000 } else { 100_000_000 };
-    let _ = unsafe { syscall1(35, ns_spec) };
+    let _ = unsafe { syscall2(35, secs, 0) };
 
     0
 }

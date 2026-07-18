@@ -207,7 +207,7 @@ fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
     // Wait for button release first so the initial click doesn't fire again
     while (win.get_mouse().buttons & 1) != 0 {
         while let Some(_) = win.get_key() {}
-        unsafe { libsarga::syscall::syscall1(35, 8_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 8_000_000u64); }
     }
     let mut prev = 0u8;
     loop {
@@ -237,7 +237,7 @@ fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
             if mx >= rx as i32 && mx < (rx + 80) as i32 && my >= 270 && my < 298 { return true; }
             if mx >= cx as i32 && mx < (cx + 80) as i32 && my >= 270 && my < 298 { return false; }
         }
-        unsafe { libsarga::syscall::syscall1(35, 8_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 8_000_000u64); }
     }
 }
 
@@ -443,7 +443,7 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 16_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
     }
 }
 

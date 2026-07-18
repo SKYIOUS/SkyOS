@@ -36,7 +36,7 @@ impl PthreadAttr {
 
 pub type PthreadStartFn = extern "C" fn(*mut core::ffi::c_void) -> *mut core::ffi::c_void;
 
-pub fn pthread_create(
+pub unsafe fn pthread_create(
     thread: &mut usize,
     _attr: Option<&PthreadAttr>,
     start: PthreadStartFn,

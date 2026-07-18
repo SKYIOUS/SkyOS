@@ -61,8 +61,7 @@ impl Calculator {
             let mut n = frac_part;
             let mut d = 6;
             while d > 0 && n > 0 { d -= 1; frac[d] = (n % 10) as u8; n /= 10; }
-            // Remove trailing zeros
-            while d < 6 && frac[5] == 0 { /* keep as is */ break; }
+            // Remove trailing zeros (handled below by end trimming)
             let mut end = 6;
             while end > d + 1 && frac[end - 1] == 0 { end -= 1; }
             for i in d..end { buf[len] = b'0' + frac[i]; len += 1; }
@@ -356,7 +355,7 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall1(35, 16_666_000); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 16_666_000); }
     }
 }
 

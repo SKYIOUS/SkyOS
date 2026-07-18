@@ -112,7 +112,7 @@ fn user_main() -> i32 {
         }
 
         // Sleep 500ms
-        unsafe { libsarga::syscall::syscall1(35, 500_000_000u64); }
+        unsafe { libsarga::syscall::syscall2(35, 0, 500_000_000u64); }
     }
 }
 

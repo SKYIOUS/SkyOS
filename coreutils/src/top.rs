@@ -34,7 +34,7 @@ fn user_main() -> i32 {
 
         _iteration += 1;
         libsarga::print!("\n(Press Ctrl-C to exit, updating every {}s)", interval);
-        unsafe { libsarga::syscall::syscall1(35, [interval * 1_000_000_000u64].as_ptr() as u64) };
+        unsafe { libsarga::syscall::syscall2(35, interval as u64, 0) };
     }
 }
 

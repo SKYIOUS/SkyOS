@@ -224,9 +224,9 @@ pub fn getppid() -> i64 {
 }
 
 /// Sleep for specified duration.
-pub fn nanosleep(req: &Timespec, rem: &mut Timespec) -> i64 {
+pub fn nanosleep(req: &Timespec, _rem: &mut Timespec) -> i64 {
     unsafe {
-        syscall::syscall2(35, req as *const Timespec as u64, rem as *mut Timespec as u64)
+        syscall::syscall2(35, req.sec as u64, req.nsec as u64)
     }
 }
 

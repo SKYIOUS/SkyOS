@@ -90,12 +90,15 @@ fn user_main() -> i32 {
 
     let mut show_password = false;
     let mut power_menu = false;
+    let mut m_was_pressed = false;
 
     loop {
         let mouse = win.get_mouse();
         let mx = mouse.x;
         let my = mouse.y;
         let m_pressed = mouse.buttons != 0;
+        let m_down = m_pressed && !m_was_pressed;
+        m_was_pressed = m_pressed;
 
         while let Some(key) = win.get_key() {
             match key {
@@ -106,8 +109,13 @@ fn user_main() -> i32 {
                     let user = core::str::from_utf8(&username_buf).unwrap_or("");
                     let pass = core::str::from_utf8(&password_buf).unwrap_or("");
                     if verify_password(user, pass) {
-                        let _ = process::execve("/bin/ade", &["/bin/ade"], &[]);
-                        return 0;
+                        match process::execve("/bin/ade", &["/bin/ade"], &[]) {
+                            Ok(_) => return 0,
+                            Err(_) => {
+                                let _ = io::write_all(1, b"[login] execve failed, continuing\n");
+                                password_buf.clear();
+                            }
+                        }
                     } else {
                         error_msg = String::from("Invalid username or password");
                         password_buf.clear();
@@ -215,16 +223,14 @@ fn user_main() -> i32 {
             theme.text_disabled,
             0,
         );
-        if m_pressed
+        if m_down
             && mx >= eye_x as u64
             && mx < (eye_x + 20) as u64
             && my >= eye_y as u64
             && my < (eye_y + 20) as u64
         {
             show_password = !show_password;
-            unsafe {
-                libsarga::syscall::syscall1(35, 100_000_000u64);
-            }
+            let _ = io::nanosleep(100_000_000);
         }
 
         // Error message
@@ -252,11 +258,9 @@ fn user_main() -> i32 {
         let pwr_y = 560u32;
         win.draw_rounded_rect(pwr_x, pwr_y, 30, 30, 15, theme.bg_elevated);
         win.draw_string(pwr_x + 10, pwr_y + 7, "P", 0xFFFFFFFF, 0);
-        if m_pressed && mx >= pwr_x as u64 && my >= pwr_y as u64 {
+        if m_down && mx >= pwr_x as u64 && my >= pwr_y as u64 {
             power_menu = !power_menu;
-            unsafe {
-                libsarga::syscall::syscall1(35, 100_000_000u64);
-            }
+            let _ = io::nanosleep(100_000_000);
         }
 
         if power_menu {
@@ -269,21 +273,17 @@ fn user_main() -> i32 {
             win.draw_string(mx_pos + 10, my_pos + 15, "Reboot", theme.text, 0);
             win.draw_string(mx_pos + 10, my_pos + 45, "Shutdown", theme.text, 0);
 
-            if m_pressed && mx >= mx_pos as u64 && mx < (mx_pos + menu_w) as u64 {
+            if m_down && mx >= mx_pos as u64 && mx < (mx_pos + menu_w) as u64 {
                 if my >= (my_pos + 10) as u64 && my < (my_pos + 40) as u64 {
-                    // Reboot syscall or exit
-                    process::exit(0);
+                    io::reboot();
                 } else if my >= (my_pos + 40) as u64 && my < (my_pos + 70) as u64 {
-                    // Shutdown syscall
-                    process::exit(0);
+                    io::poweroff();
                 }
             }
         }
 
         let _ = win.flush();
-        unsafe {
-            libsarga::syscall::syscall1(35, 16_000_000u64);
-        }
+        let _ = io::nanosleep(16_000_000);
     }
 }
 

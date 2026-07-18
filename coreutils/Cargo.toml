@@ -91,6 +91,34 @@ name = "sleep"
 path = "src/sleep.rs"
 
 [[bin]]
+name = "clear"
+path = "src/clear.rs"
+
+[[bin]]
+name = "printenv"
+path = "src/printenv.rs"
+
+[[bin]]
+name = "yes"
+path = "src/yes.rs"
+
+[[bin]]
+name = "rmdir"
+path = "src/rmdir.rs"
+
+[[bin]]
+name = "beep"
+path = "src/beep.rs"
+
+[[bin]]
+name = "tail"
+path = "src/tail.rs"
+
+[[bin]]
+name = "printf"
+path = "src/printf.rs"
+
+[[bin]]
 name = "true"
 path = "src/true.rs"
 
@@ -245,3 +273,23 @@ path = "src/mount.rs"
 [[bin]]
 name = "umount"
 path = "src/umount.rs"
+
+[[bin]]
+name = "nslookup"
+path = "src/nslookup.rs"
+
+[[bin]]
+name = "netstat"
+path = "src/netstat.rs"
+
+[[bin]]
+name = "telnet"
+path = "src/telnet.rs"
+
+[[bin]]
+name = "blkid"
+path = "src/blkid.rs"
+
+[[bin]]
+name = "fdisk"
+path = "src/fdisk.rs"
