@@ -4,6 +4,14 @@ extern crate alloc;
 use libsarga::theme::Theme;
 use libsarga::{gui::Window, sarga_main};
 use libsarga::{io, process};
+use desktop::Desktop;
+
+mod desktop;
+mod window;
+mod taskbar;
+mod start_menu;
+mod wallpaper;
+mod icons;
 
 const TASKBAR_H: u32 = 36;
 const MENU_ITEMS: &[(&str, &str)] = &[
@@ -41,78 +49,9 @@ struct AppWindow {
     opacity: u8, // For fade-in animation
 }
 
-struct Desktop {
-    screen_w: u32,
-    screen_h: u32,
-    windows: alloc::vec::Vec<AppWindow>,
-    start_menu: bool,
-    context_menu: Option<(i32, i32, &'static [(&'static str, &'static str)])>,
-    clock_ticks: u64,
-    mouse_x: i32,
-    mouse_y: i32,
-    mouse_btn: bool,
-    prev_mouse_btn: bool,
-    icons: alloc::vec::Vec<(&'static str, u32, u32)>,
-    theme: Theme,
-}
+
 
 impl Desktop {
-    fn new(w: u32, h: u32) -> Self {
-        let mut icons = alloc::vec::Vec::new();
-        icons.push(("Terminal", 30, 80));
-        icons.push(("Files", 30, 180));
-        icons.push(("SkyStore", 30, 280));
-        icons.push(("SkyEdit", 30, 380));
-        icons.push(("Calc", 30, 480));
-        Self {
-            screen_w: w,
-            screen_h: h,
-            windows: alloc::vec::Vec::new(),
-            start_menu: false,
-            context_menu: None,
-            clock_ticks: 0,
-            mouse_x: (w / 2) as i32,
-            mouse_y: (h / 2) as i32,
-            mouse_btn: false,
-            prev_mouse_btn: false,
-            icons,
-            theme: Theme::dark(),
-        }
-    }
-
-    fn taskbar_y(&self) -> u32 {
-        self.screen_h - TASKBAR_H
-    }
-
-    fn draw_wallpaper(&self, win: &mut Window) {
-        // Draw a nice gradient wallpaper
-        win.draw_gradient_rect(
-            0,
-            0,
-            self.screen_w,
-            self.screen_h,
-            0xFF1A1A2E,
-            0xFF0F0F1A,
-            true,
-        );
-        // Add some "abstract" shapes
-        win.draw_rounded_rect(
-            self.screen_w / 2,
-            self.screen_h / 4,
-            300,
-            300,
-            150,
-            0x103D5AFE,
-        );
-        win.draw_rounded_rect(
-            self.screen_w / 4,
-            self.screen_h / 2,
-            200,
-            200,
-            100,
-            0x103D5AFE,
-        );
-    }
 
     fn spawn_app(&mut self, path: &str, title: &str) {
         let w = 520u32;
@@ -316,16 +255,6 @@ impl Desktop {
     fn release_drag(&mut self) {
         if let Some(last) = self.windows.last_mut() {
             last.dragging = false;
-        }
-    }
-
-    fn tick(&mut self) {
-        self.clock_ticks += 1;
-        // Fade in animation
-        for w in self.windows.iter_mut() {
-            if w.opacity < 255 {
-                w.opacity = w.opacity.saturating_add(25);
-            }
         }
     }
 }
@@ -579,7 +508,7 @@ fn user_main() -> i32 {
             }
         }
 
-        desktop.draw_wallpaper(&mut desktop_win);
+        wallpaper::draw(&mut desktop_win, &desktop);
 
         for icon in &desktop.icons {
             draw_icon(&mut desktop_win, &desktop.theme, icon.0, icon.1, icon.2);
