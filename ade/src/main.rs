@@ -16,6 +16,8 @@ mod start_menu;
 mod wallpaper;
 mod icons;
 mod window_manager;
+mod render;
+
 
 
 
@@ -42,6 +44,7 @@ fn user_main() -> i32 {
             if key == b'q' && desktop.wm.is_empty() {
                 return 0;
             }
+            desktop.dirty = true;
             if let Some(last) = desktop.wm.last_mut() {
                 if last.focused && last.x > -100 {
                     let ch = key as char;
@@ -77,48 +80,11 @@ fn user_main() -> i32 {
             desktop.release_drag();
         }
 
-        wallpaper::draw(&mut desktop_win, &desktop);
-
-        for icon in &desktop.icons {
-            icons::draw(&mut desktop_win, &desktop.theme, icon.0, icon.1, icon.2);
+        if desktop.dirty {
+            render::render(&mut desktop_win, &desktop);
+            let _ = desktop_win.flush();
+            desktop.dirty = false;
         }
-
-        for aw in desktop.wm.windows() {
-            window::draw(&mut desktop_win, &desktop.theme, aw);
-        }
-
-        taskbar::draw(&mut desktop_win, &desktop.theme, &desktop);
-
-        if desktop.start_menu {
-            start_menu::draw(&mut desktop_win, &desktop.theme, &desktop);
-        }
-
-        if let Some((mx, my, items)) = desktop.context_menu {
-            let mw = 150u32;
-            let mh = items.len() as u32 * 28 + 10;
-            desktop_win.draw_rounded_rect(
-                mx as u32,
-                my as u32,
-                mw,
-                mh,
-                6,
-                desktop.theme.bg_elevated,
-            );
-            desktop_win.draw_rounded_rect_outline(
-                mx as u32,
-                my as u32,
-                mw,
-                mh,
-                6,
-                desktop.theme.border,
-            );
-            for (i, (name, _)) in items.iter().enumerate() {
-                let iy = my as u32 + 5 + i as u32 * 28;
-                desktop_win.draw_string(mx as u32 + 10, iy + 6, name, desktop.theme.text, 0);
-            }
-        }
-
-        let _ = desktop_win.flush();
         unsafe {
             libsarga::syscall::syscall2(35, 0, 16_000_000u64);
         }

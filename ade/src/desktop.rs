@@ -19,6 +19,7 @@ pub struct Desktop {
     prev_mouse_btn: bool,
     pub(crate) icons: alloc::vec::Vec<(&'static str, u32, u32)>,
     pub(crate) theme: Theme,
+    pub(crate) dirty: bool,
 }
 
 
@@ -43,6 +44,7 @@ impl Desktop {
             prev_mouse_btn: false,
             icons,
             theme: Theme::dark(),
+            dirty: true,
         }
     }
 
@@ -101,6 +103,7 @@ impl Desktop {
             }
         }
         self.wm.push(app_win);
+        self.dirty = true;
     }
 
     pub fn update_mouse(&mut self, mx: i32, my: i32, btn: bool) -> (bool, bool) {
@@ -114,6 +117,7 @@ impl Desktop {
     }
 
     pub(crate) fn handle_click(&mut self, mx: i32, my: i32) {
+        self.dirty = true;
         let taskbar_y = self.taskbar_y() as i32;
 
         if self.start_menu {
@@ -238,6 +242,7 @@ impl Desktop {
 
     pub(crate) fn handle_drag(&mut self, mx: i32, my: i32) {
         self.wm.update_drag(mx, my);
+        self.dirty = true;
     }
 
     pub(crate) fn release_drag(&mut self) {
