@@ -1,32 +1,10 @@
-use libsarga::gui::Window;
-use crate::desktop::Desktop;
+//! Wallpaper — desktop background gradient.
 
-pub(crate) fn draw(win: &mut Window, desktop: &Desktop) {
-    // Draw a nice gradient wallpaper
-    win.draw_gradient_rect(
-        0,
-        0,
-        desktop.screen_w,
-        desktop.screen_h,
-        0xFF1A1A2E,
-        0xFF0F0F1A,
-        true,
-    );
-    // Add some "abstract" shapes
-    win.draw_rounded_rect(
-        desktop.screen_w / 2,
-        desktop.screen_h / 4,
-        300,
-        300,
-        150,
-        0x103D5AFE,
-    );
-    win.draw_rounded_rect(
-        desktop.screen_w / 4,
-        desktop.screen_h / 2,
-        200,
-        200,
-        100,
-        0x103D5AFE,
-    );
+use libsarga::gui::Window;
+use crate::render::snapshot::RenderSnapshot;
+
+pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
+    win.draw_gradient_rect(0, 0, snap.screen_w, snap.screen_h, 0xFF1A1A2E, 0xFF0F0F1A, true);
+    win.draw_rounded_rect(snap.screen_w / 2, snap.screen_h / 4, 300, 300, 150, 0x103D5AFE);
+    win.draw_rounded_rect(snap.screen_w / 4, snap.screen_h / 2, 200, 200, 100, 0x103D5AFE);
 }

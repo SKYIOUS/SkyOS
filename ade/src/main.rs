@@ -1,3 +1,5 @@
+//! ADE desktop entrypoint — init, event loop, rendering.
+
 #![no_std]
 #![no_main]
 extern crate alloc;
@@ -5,19 +7,40 @@ use libsarga::{gui::Window, sarga_main};
 use libsarga::io;
 use desktop::Desktop;
 
+mod app_db;
+mod app_registry;
 mod constants;
+mod damage;
 mod desktop;
+mod desktop_icons;
+mod event;
+mod file_assoc;
+mod notification;
+mod geometry;
+mod perms;
 mod window;
 mod taskbar;
+mod tray;
+mod settings;
+mod vfs;
+mod watcher;
 mod start_menu;
 mod wallpaper;
 mod icons;
+mod ipc;
 mod launcher;
+mod login_session;
+mod lifecycle;
 mod window_manager;
+mod shortcut;
+mod theme_service;
+mod clipboard_service;
+mod config;
+mod session_service;
+mod recovery;
 mod render;
-
-
-
+mod service_manager;
+mod session;
 
 
 fn user_main() -> i32 {
@@ -39,51 +62,35 @@ fn user_main() -> i32 {
         desktop.tick();
 
         while let Some(key) = desktop_win.get_key() {
-            if key == b'q' && desktop.wm.is_empty() {
-                return 0;
-            }
-            desktop.dirty = true;
-            if let Some(last) = desktop.wm.last_mut() {
-                if last.focused && last.x > -100 {
-                    let ch = key as char;
-                    if ch.is_ascii_graphic() || ch == ' ' {
-                        if last.content.last().map_or(true, |l| l.len() > 80) {
-                            last.content.push(alloc::string::String::new());
-                        }
-                        if let Some(line) = last.content.last_mut() {
-                            line.push(ch);
-                        }
-                    } else if key == 0x0A || key == 0x0D {
-                        if let Some(line) = last.content.last_mut() {
-                            let cmd = line.clone();
-                            last.content.push(alloc::format!("$ {}", cmd));
-                        }
-                    } else if key == 0x7F || key == 0x08 {
-                        if let Some(line) = last.content.last_mut() {
-                            line.pop();
-                        }
-                    }
-                }
-            }
+            desktop.handle_event(event::Event::Key(key));
         }
 
         let ms = desktop_win.get_mouse();
-        let (pressed, released) = desktop.update_mouse(ms.x as i32, ms.y as i32, ms.buttons & 1 != 0);
+        let (pressed, released, dragging) = desktop.update_mouse(ms.x as i32, ms.y as i32, ms.buttons & 1 != 0);
+        if ms.scroll != 0 {
+            desktop.handle_event(event::Event::Scroll(ms.scroll));
+        }
         if pressed {
-            desktop.handle_click(ms.x as i32, ms.y as i32);
-        } else if ms.buttons & 1 != 0 {
-            desktop.handle_drag(ms.x as i32, ms.y as i32);
+            desktop.handle_event(event::Event::MouseClick(ms.x as i32, ms.y as i32));
+        } else if ms.buttons & 4 != 0 {
+            desktop.handle_event(event::Event::MouseMiddle(ms.x as i32, ms.y as i32));
+        } else if ms.buttons & 2 != 0 {
+            desktop.handle_event(event::Event::MouseRight(ms.x as i32, ms.y as i32));
+        } else if dragging {
+            desktop.handle_event(event::Event::MouseDrag(ms.x as i32, ms.y as i32));
         }
         if released {
-            desktop.release_drag();
+            desktop.handle_event(event::Event::MouseRelease);
         }
 
-        if desktop.dirty {
-            render::render(&mut desktop_win, &mut desktop);
+        if desktop.damage.is_dirty() {
+            let clock_str = desktop.prepare_clock();
+            let snap = desktop.snapshot();
+            render::render(&mut desktop_win, &snap, &clock_str);
             if let Err(e) = desktop_win.flush() {
                 io::print_str(&alloc::format!("[ade] flush error: {}\n", e));
             }
-            desktop.dirty = false;
+            desktop.damage.clear();
         }
         unsafe {
             libsarga::syscall::syscall2(35, 0, 16_000_000u64);

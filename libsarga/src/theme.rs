@@ -59,6 +59,32 @@ pub struct Theme {
 }
 
 impl Theme {
+    pub fn light() -> Self {
+        Theme {
+            bg_primary: 0xFFF5F5F5,
+            bg_surface: 0xFFFFFFFF,
+            bg_elevated: 0xFFEEEEEE,
+            accent: 0xFF3D5AFE,
+            accent_light: 0xFF1A8FE8,
+            accent_dark: 0xFF005A9E,
+            text: 0xFF000000,
+            text_secondary: 0xFF555555,
+            text_disabled: 0xFFAAAAAA,
+            border: 0xFFCCCCCC,
+            hover: 0xFF3D5AFE,
+            pressed: 0xFFE0E0E0,
+            error: 0xFFD32F2F,
+            success: 0xFF4CAF50,
+            warning: 0xFFFFC107,
+            separator: 0xFFCCCCCC,
+            shadow: 0x40000000,
+            font_size: 14,
+            border_radius: 12,
+            padding: 10,
+            spacing: 6,
+        }
+    }
+
     pub fn dark() -> Self {
         Theme {
             bg_primary: colors::BG_PRIMARY,

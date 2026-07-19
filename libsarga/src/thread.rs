@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use crate::sync::Mutex as SargaMutex;
 
 fn futex(uaddr: *mut u32, op: u32, val: u32) -> i64 {
+    // SAFETY: uaddr is a valid pointer to an AtomicU32, syscall3 is safe for futex operations
     unsafe { syscall3(SYS_FUTEX, uaddr as u64, op as u64, val as u64) }
 }
 
@@ -27,6 +28,7 @@ pub fn spawn(f: fn()) -> Thread {
 
     let stack_size = 1024 * 1024;
     let stack_ptr = unsafe {
+        // SAFETY: Layout is valid (size and alignment are powers of 2), alloc returns null on failure
         let layout = Layout::from_size_align(stack_size, 4096).unwrap();
         alloc(layout)
     };
@@ -37,6 +39,8 @@ pub fn spawn(f: fn()) -> Thread {
     let flags = 0x100 | 0x80000 | 0x00200000 | 0x02000000;
 
     let tid = unsafe {
+        // SAFETY: All arguments are valid - stack_top is properly aligned, func_ptr is a valid function pointer,
+        // clear_tid_ptr points to valid memory. syscall6 is safe for clone operations.
         let res = syscall6(
             56,
             flags,
@@ -72,7 +76,8 @@ pub unsafe fn spawn_raw(
 
     let stack_size = 1024 * 1024;
     let stack_ptr = {
-        let layout = Layout::from_size_align(stack_size, 4096).unwrap();
+        // SAFETY: Layout is valid (size and alignment are powers of 2), alloc returns null on failure
+        let layout = Layout::from_size_align(stack_size, 4096).expect("Invalid thread stack layout");
         alloc(layout)
     };
     let stack_top = stack_ptr as u64 + stack_size as u64;

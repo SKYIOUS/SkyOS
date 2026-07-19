@@ -1,3 +1,5 @@
+//! Clock formatting — tick-to-time-string conversion with caching.
+
 pub struct ClockCache {
     hrs: u64,
     mins: u64,

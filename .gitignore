@@ -30,3 +30,4 @@ plan.md
 Thumbs.db
 .idea/
 .vscode/
+.aider*

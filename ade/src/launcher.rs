@@ -1,18 +1,29 @@
+//! Application launcher — fork + execve + window creation.
+
 use crate::desktop::Desktop;
 use crate::window::{AppWindow, WindowState};
+use crate::app_db::APPS;
 
 pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
-    let w = 520u32;
-    let h = 360u32;
-    let x = 80 + desktop.wm.len() as i32 * 30;
-    let y = 40 + desktop.wm.len() as i32 * 20;
+    spawn_app_at(desktop, path, title, 80 + desktop.wm.len() as i32 * 30, 40 + desktop.wm.len() as i32 * 20, 520, 360);
+}
+
+pub(crate) fn spawn_app_at(desktop: &mut Desktop, path: &str, title: &str, px: i32, py: i32, pw: u32, ph: u32) {
+    let w = pw;
+    let h = ph;
+    let x = px;
+    let y = py;
     let mut app_win = AppWindow {
         x, y, w, h,
+        prev_x: x, prev_y: y, prev_w: w, prev_h: h,
         title: alloc::string::String::from(title),
         content: alloc::vec::Vec::new(),
         scroll: 0, pid: None, focused: true,
         dragging: false, drag_ox: 0, drag_oy: 0,
-        state: WindowState::Normal, opacity: 0,
+        state: WindowState::Normal, prev_state: WindowState::Normal, opacity: 0,
+        selection: None,
+        anim: None,
+        always_on_top: false,
     };
     app_win.content.push(alloc::format!("> {}", path));
     app_win.content.push(alloc::string::String::new());
@@ -22,11 +33,18 @@ pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
             Ok(0) => { let _ = libsarga::process::execve(path, &[path], &[]); libsarga::process::exit(1); }
             Ok(pid) => {
                 app_win.pid = Some(pid);
+                let app_idx = APPS.iter().position(|a| a.exec == path).unwrap_or(0);
+                desktop.lifecycle.register(pid, app_idx);
                 app_win.content.push(alloc::format!("[launched {} pid={}]", title, pid));
             }
             Err(e) => { app_win.content.push(alloc::format!("[fork failed: {}]", e)); }
         }
     }
-    desktop.wm.push(app_win);
-    desktop.dirty = true;
+    let id = desktop.wm.create(app_win);
+    if let Some(w) = desktop.wm.lookup_mut(id) {
+        w.opacity = 0;
+        w.animate_to(w.x, w.y, w.w, w.h);
+    }
+    desktop.notif.push("App Launched", title, 1, 120);
+    desktop.damage.mark_full();
 }

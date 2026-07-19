@@ -1,6 +1,9 @@
+//! Desktop icons — app shortcuts drawn on wallpaper.
+
 use libsarga::gui::Window;
 use libsarga::theme::Theme;
 
+#[allow(dead_code)]
 pub(crate) fn draw(win: &mut Window, theme: &Theme, name: &str, x: u32, y: u32) {
     win.draw_rounded_rect(x, y, 40, 40, 6, theme.bg_elevated);
     let letter = name.as_bytes()[0] as char;

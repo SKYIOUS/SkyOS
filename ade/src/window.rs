@@ -1,5 +1,10 @@
+//! Window primitives — AppWindow, WindowId, Selection, text cursor input handling.
+
 use libsarga::gui::Window;
 use libsarga::theme::Theme;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowId(pub(crate) usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowState {
@@ -9,11 +14,36 @@ pub enum WindowState {
     Fullscreen,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct Selection {
+    pub start: (u32, u32),
+    pub end: (u32, u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AnimState {
+    pub from_x: i32,
+    pub from_y: i32,
+    pub from_w: u32,
+    pub from_h: u32,
+    pub to_x: i32,
+    pub to_y: i32,
+    pub to_w: u32,
+    pub to_h: u32,
+    pub tick: u32,
+    pub duration: u32,
+}
+
 pub struct AppWindow {
     pub(crate) x: i32,
     pub(crate) y: i32,
     pub(crate) w: u32,
     pub(crate) h: u32,
+    pub(crate) prev_x: i32,
+    pub(crate) prev_y: i32,
+    pub(crate) prev_w: u32,
+    pub(crate) prev_h: u32,
     pub(crate) title: alloc::string::String,
     pub(crate) content: alloc::vec::Vec<alloc::string::String>,
     pub(crate) scroll: u32,
@@ -23,10 +53,56 @@ pub struct AppWindow {
     pub(crate) drag_ox: i32,
     pub(crate) drag_oy: i32,
     pub(crate) state: WindowState,
+    pub(crate) prev_state: WindowState,
     pub(crate) opacity: u8,
+    #[allow(dead_code)]
+    pub(crate) selection: Option<Selection>,
+    pub(crate) anim: Option<AnimState>,
+    pub(crate) always_on_top: bool,
+
 }
 
-pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow) {
+impl AppWindow {
+    pub(crate) fn animate_to(&mut self, x: i32, y: i32, w: u32, h: u32) {
+        self.anim = Some(AnimState {
+            from_x: self.x,
+            from_y: self.y,
+            from_w: self.w,
+            from_h: self.h,
+            to_x: x,
+            to_y: y,
+            to_w: w,
+            to_h: h,
+            tick: 0,
+            duration: 10,
+        });
+    }
+
+    pub(crate) fn tick_animation(&mut self) -> bool {
+        if let Some(ref mut a) = self.anim {
+            a.tick += 1;
+            let t = a.tick.min(a.duration);
+            if t >= a.duration {
+                self.x = a.to_x;
+                self.y = a.to_y;
+                self.w = a.to_w;
+                self.h = a.to_h;
+                self.anim = None;
+            } else {
+                let d = a.duration;
+                self.x = a.from_x + ((a.to_x - a.from_x) * t as i32) / d as i32;
+                self.y = a.from_y + ((a.to_y - a.from_y) * t as i32) / d as i32;
+                self.w = a.from_w + ((a.to_w as i32 - a.from_w as i32) * t as i32 / d as i32) as u32;
+                self.h = a.from_h + ((a.to_h as i32 - a.from_h as i32) * t as i32 / d as i32) as u32;
+            }
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visible: bool) {
     // Don't draw minimized windows.
     if aw.state == WindowState::Minimized {
         return;
@@ -102,6 +178,10 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow) {
         0,
     );
 
+    if aw.always_on_top {
+        win.draw_string(aw.x as u32 + aw.w - 82, aw.y as u32 + 7, "[A]", 0xFFFFAA00, 0);
+    }
+
     // Close button
     let close_x = aw.x as u32 + aw.w - 28;
     let close_y = aw.y as u32 + 6;
@@ -144,5 +224,14 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow) {
             theme.text_secondary,
             0,
         );
+    }
+
+    if cursor_visible && aw.focused && !aw.content.is_empty() {
+        let last = &aw.content[aw.content.len() - 1];
+        let cx = aw.x as u32 + 8 + last.len() as u32 * 8;
+        let cy = aw.y as u32 + 30 + (aw.content.len().saturating_sub(1) as u32 - aw.scroll).saturating_sub(1) * 14;
+        if cy < aw.y as u32 + aw.h {
+            win.draw_char(cx, cy, '_', theme.accent, 0);
+        }
     }
 }

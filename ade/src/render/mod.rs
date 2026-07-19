@@ -1,22 +1,47 @@
+//! Render pipeline — frames a snapshot onto the window surface.
+
 pub(crate) mod clock;
 pub(crate) mod overlay;
+pub(crate) mod snapshot;
 
-pub(crate) fn render(win: &mut libsarga::gui::Window, desktop: &mut crate::desktop::Desktop) {
-    crate::wallpaper::draw(win, desktop);
+pub(crate) fn render(
+    win: &mut libsarga::gui::Window,
+    snap: &snapshot::RenderSnapshot,
+    clock_str: &str,
+) {
+    crate::wallpaper::draw(win, snap);
 
-    for icon in &desktop.icons {
-        crate::icons::draw(win, &desktop.theme, icon.0, icon.1, icon.2);
+    if !snap.fullscreen {
+        crate::desktop_icons::draw(win, snap.icons, snap.theme, snap.rubber);
     }
 
-    for aw in desktop.wm.windows() {
-        crate::window::draw(win, &desktop.theme, aw);
+    for aw in snap.windows {
+        if !aw.always_on_top {
+            crate::window::draw(win, snap.theme, aw, snap.cursor_visible);
+        }
+    }
+    for aw in snap.windows {
+        if aw.always_on_top {
+            crate::window::draw(win, snap.theme, aw, snap.cursor_visible);
+        }
     }
 
-    crate::taskbar::draw(win, desktop);
-
-    if desktop.start_menu {
-        crate::start_menu::draw(win, &desktop.theme, desktop);
+    if !snap.fullscreen {
+        crate::taskbar::draw(win, snap, clock_str);
     }
 
-    overlay::draw_context_menu(win, desktop);
+    if snap.start_menu {
+        crate::start_menu::draw(win, snap); // reads start_menu_state + app_db from snapshot
+    }
+
+    overlay::draw_context_menu(win, snap);
+    overlay::draw_clipboard(win, snap);
+    overlay::draw_notifications(win, snap);
+    if let Some(s) = snap.settings {
+        s.draw(win, snap);
+    }
+
+    if snap.switcher_active {
+        overlay::draw_switcher(win, snap);
+    }
 }
