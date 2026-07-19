@@ -122,25 +122,3 @@ impl WindowManager {
     }
 }
 
-pub enum ResizeEdge {
-    Left,
-    Right,
-    Top,
-    Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-pub enum WindowAction {
-    Close,
-    Minimize,
-    Maximize,
-    Restore,
-}
-
-pub struct Workspace<WindowId> {
-    windows: Vec<WindowId>,
-}
-

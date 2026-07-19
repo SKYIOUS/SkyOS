@@ -52,11 +52,6 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow) {
         0x60000000,
     );
 
-    // Fade-in (placeholder for future animation system)
-    if aw.opacity < 255 {
-        // Future animation code
-    }
-
     // Window body
     win.draw_rounded_rect(
         aw.x as u32,
