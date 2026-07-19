@@ -1,7 +1,7 @@
 use libsarga::gui::Window;
 use libsarga::theme::Theme;
 use crate::desktop::Desktop;
-use crate::MENU_ITEMS;
+use crate::constants::MENU_ITEMS;
 
 pub(crate) fn draw(win: &mut Window, theme: &Theme, desktop: &Desktop) {
     let taskbar_y = desktop.taskbar_y();

@@ -6,34 +6,18 @@ use libsarga::{gui::Window, sarga_main};
 use libsarga::{io, process};
 use desktop::Desktop;
 use crate::wallpaper::draw;
-use crate::window::AppWindow;
+use crate::window::{AppWindow, WindowState};
 
+mod constants;
 mod desktop;
 mod window;
 mod taskbar;
 mod start_menu;
 mod wallpaper;
 mod icons;
+mod window_manager;
 
-const TASKBAR_H: u32 = 36;
-const MENU_ITEMS: &[(&str, &str)] = &[
-    ("Terminal", "/bin/sash"),
-    ("File Manager", "/bin/skyfiles"),
-    ("SkyStore", "/bin/skystore"),
-    ("System Monitor", "/bin/sysmon"),
-    ("Calendar", "/bin/calendar"),
-    ("Notes", "/bin/notes"),
-    ("Paint", "/bin/paint"),
-    ("Clock", "/bin/clock"),
-    ("Tasks", "/bin/tasks"),
-    ("Search", "/bin/search"),
-    ("System Info", "/bin/sysinfo"),
-    ("Settings", "/bin/skysettings"),
-    ("SkyEdit", "/bin/skyedit"),
-    ("---", ""),
-    ("About SARGA OS", ""),
-    ("Shutdown", ""),
-];
+use crate::constants::MENU_ITEMS;
 
 
 
@@ -59,6 +43,7 @@ impl Desktop {
             dragging: false,
             drag_ox: 0,
             drag_oy: 0,
+            state: WindowState::Normal,
             opacity: 0,
         };
         app_win.content.push(alloc::format!("> {}", path));
@@ -147,10 +132,10 @@ impl Desktop {
             for (i, _) in self.windows.iter().enumerate() {
                 let bx = btn_x + i as i32 * 120;
                 if mx >= bx && mx < bx + 115 {
-                    let was_minimized = self.windows[i].x == -9999;
+                    let was_minimized =
+                    self.windows[i].state == WindowState::Minimized;
                     if was_minimized {
-                        self.windows[i].x = 80 + i as i32 * 30;
-                        self.windows[i].y = 40 + i as i32 * 20;
+                        self.windows[i].state = WindowState::Normal;
                     }
                     for w in self.windows.iter_mut() {
                         w.focused = false;
@@ -196,8 +181,7 @@ impl Desktop {
                 && my >= w.y + 3
                 && my < w.y + 19
             {
-                self.windows[i].x = -9999;
-                self.windows[i].y = -9999;
+                self.windows[i].state = WindowState::Minimized;
                 return;
             }
 

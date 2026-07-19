@@ -1,7 +1,8 @@
 use libsarga::gui::Window;
 use libsarga::process;
 use libsarga::theme::Theme;
-use crate::{AppWindow, MENU_ITEMS, TASKBAR_H};
+use crate::constants::TASKBAR_H;
+use crate::window::AppWindow;
 
 
 pub struct Desktop {
