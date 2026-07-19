@@ -1,7 +1,7 @@
 use libsarga::gui::Window;
 use crate::desktop::Desktop;
 
-pub fn draw(win: &mut Window, desktop: &Desktop) {
+pub(crate) fn draw(win: &mut Window, desktop: &Desktop) {
     // Draw a nice gradient wallpaper
     win.draw_gradient_rect(
         0,

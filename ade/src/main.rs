@@ -1,12 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::theme::Theme;
 use libsarga::{gui::Window, sarga_main};
-use libsarga::{io, process};
+use libsarga::io;
 use desktop::Desktop;
-use crate::wallpaper::draw;
-use crate::window::{AppWindow, WindowState};
 
 mod constants;
 mod desktop;
@@ -83,7 +80,9 @@ fn user_main() -> i32 {
 
         if desktop.dirty {
             render::render(&mut desktop_win, &mut desktop);
-            let _ = desktop_win.flush();
+            if let Err(e) = desktop_win.flush() {
+                io::print_str(&alloc::format!("[ade] flush error: {}\n", e));
+            }
             desktop.dirty = false;
         }
         unsafe {

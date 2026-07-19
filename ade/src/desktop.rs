@@ -1,8 +1,15 @@
-use libsarga::gui::Window;
 use libsarga::process;
 use libsarga::theme::Theme;
 use crate::constants::{MENU_ITEMS, TASKBAR_H};
 use crate::window::WindowState;
+
+const TITLE_H: i32 = 22;
+const BTN_TOP: i32 = 3;
+const BTN_BOT: i32 = 19;
+const CLOSE_R: i32 = 4;
+const CLOSE_L: i32 = 24;
+const MIN_R: i32 = 28;
+const MIN_L: i32 = 48;
 use crate::window_manager::WindowManager;
 
 
@@ -54,8 +61,12 @@ impl Desktop {
         self.screen_h - TASKBAR_H
     }
 
-    pub fn tick(&mut self) {
+    pub fn advance_clock(&mut self) {
         self.clock_ticks += 1;
+    }
+
+    pub fn tick(&mut self) {
+        self.advance_clock();
         for w in self.wm.windows_mut().iter_mut() {
             if w.opacity < 255 {
                 w.opacity = w.opacity.saturating_add(25);
@@ -155,24 +166,24 @@ impl Desktop {
             let wy = self.wm.windows()[i].y;
             let ww = self.wm.windows()[i].w;
             let wh = self.wm.windows()[i].h;
-            if mx >= wx && mx < wx + ww as i32 && my >= wy && my < wy + 22 {
+            if mx >= wx && mx < wx + ww as i32 && my >= wy && my < wy + TITLE_H {
                 self.wm.bring_to_front(i);
                 self.wm.begin_drag(i, mx, my);
                 return;
             }
 
-            if mx >= wx + ww as i32 - 24
-                && mx < wx + ww as i32 - 4
-                && my >= wy + 3
-                && my < wy + 19
+            if mx >= wx + ww as i32 - CLOSE_L
+                && mx < wx + ww as i32 - CLOSE_R
+                && my >= wy + BTN_TOP
+                && my < wy + BTN_BOT
             {
                 self.wm.close(i);
                 return;
             }
-            if mx >= wx + ww as i32 - 48
-                && mx < wx + ww as i32 - 28
-                && my >= wy + 3
-                && my < wy + 19
+            if mx >= wx + ww as i32 - MIN_L
+                && mx < wx + ww as i32 - MIN_R
+                && my >= wy + BTN_TOP
+                && my < wy + BTN_BOT
             {
                 self.wm.minimize(i);
                 return;

@@ -1,5 +1,6 @@
 use libsarga::gui::Window;
 use crate::desktop::Desktop;
+use crate::window::WindowState;
 use crate::constants::TASKBAR_H;
 
 pub(crate) fn draw(win: &mut Window, desktop: &mut Desktop) {
@@ -19,7 +20,7 @@ pub(crate) fn draw(win: &mut Window, desktop: &mut Desktop) {
     for (i, aw) in desktop.wm.windows().iter().enumerate() {
         let bx = 75 + i as u32 * 125;
         let is_top = i == desktop.wm.len() - 1;
-        let is_min = aw.x == -9999;
+        let is_min = aw.state == WindowState::Minimized;
         let hover = desktop.mouse_x >= bx as i32
             && desktop.mouse_x < bx as i32 + 120
             && desktop.mouse_y >= ty as i32 + 4
