@@ -15,6 +15,7 @@ mod taskbar;
 mod start_menu;
 mod wallpaper;
 mod icons;
+mod launcher;
 mod window_manager;
 mod render;
 
@@ -81,7 +82,7 @@ fn user_main() -> i32 {
         }
 
         if desktop.dirty {
-            render::render(&mut desktop_win, &desktop);
+            render::render(&mut desktop_win, &mut desktop);
             let _ = desktop_win.flush();
             desktop.dirty = false;
         }

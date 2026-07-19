@@ -1,6 +1,7 @@
+pub(crate) mod clock;
 pub(crate) mod overlay;
 
-pub(crate) fn render(win: &mut libsarga::gui::Window, desktop: &crate::desktop::Desktop) {
+pub(crate) fn render(win: &mut libsarga::gui::Window, desktop: &mut crate::desktop::Desktop) {
     crate::wallpaper::draw(win, desktop);
 
     for icon in &desktop.icons {
@@ -11,7 +12,7 @@ pub(crate) fn render(win: &mut libsarga::gui::Window, desktop: &crate::desktop::
         crate::window::draw(win, &desktop.theme, aw);
     }
 
-    crate::taskbar::draw(win, &desktop.theme, desktop);
+    crate::taskbar::draw(win, desktop);
 
     if desktop.start_menu {
         crate::start_menu::draw(win, &desktop.theme, desktop);
