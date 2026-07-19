@@ -3,12 +3,13 @@ use libsarga::process;
 use libsarga::theme::Theme;
 use crate::constants::{MENU_ITEMS, TASKBAR_H};
 use crate::window::{AppWindow, WindowState};
+use crate::window_manager::WindowManager;
 
 
 pub struct Desktop {
     pub(crate) screen_w: u32,
     pub(crate) screen_h: u32,
-    pub(crate) windows: alloc::vec::Vec<AppWindow>,
+    pub(crate) wm: WindowManager,
     pub(crate) start_menu: bool,
     pub(crate) context_menu: Option<(i32, i32, &'static [(&'static str, &'static str)])>,
     pub(crate) clock_ticks: u64,
@@ -32,7 +33,7 @@ impl Desktop {
         Self {
             screen_w: w,
             screen_h: h,
-            windows: alloc::vec::Vec::new(),
+            wm: WindowManager::new(),
             start_menu: false,
             context_menu: None,
             clock_ticks: 0,
@@ -51,7 +52,7 @@ impl Desktop {
 
     pub fn tick(&mut self) {
         self.clock_ticks += 1;
-        for w in self.windows.iter_mut() {
+        for w in self.wm.windows_mut().iter_mut() {
             if w.opacity < 255 {
                 w.opacity = w.opacity.saturating_add(25);
             }
@@ -61,8 +62,8 @@ impl Desktop {
     pub(crate) fn spawn_app(&mut self, path: &str, title: &str) {
         let w = 520u32;
         let h = 360u32;
-        let x = 80 + self.windows.len() as i32 * 30;
-        let y = 40 + self.windows.len() as i32 * 20;
+        let x = 80 + self.wm.len() as i32 * 30;
+        let y = 40 + self.wm.len() as i32 * 20;
         let mut app_win = AppWindow {
             x,
             y,
@@ -99,7 +100,7 @@ impl Desktop {
                 }
             }
         }
-        self.windows.push(app_win);
+        self.wm.push(app_win);
     }
 
     #[allow(dead_code)]
@@ -120,7 +121,7 @@ impl Desktop {
                     match name {
                         "About SARGA OS" => {
                             self.spawn_app("", "About SARGA OS");
-                            if let Some(w) = self.windows.last_mut() {
+                            if let Some(w) = self.wm.last_mut() {
                                 w.content.clear();
                                 w.content
                                     .push(alloc::string::String::from("  SARGA OS v0.4.0"));
@@ -162,69 +163,49 @@ impl Desktop {
                 return;
             }
             let btn_x = 75i32;
-            for (i, _) in self.windows.iter().enumerate() {
+            for (i, _) in self.wm.windows().iter().enumerate() {
                 let bx = btn_x + i as i32 * 120;
                 if mx >= bx && mx < bx + 115 {
-                    let was_minimized =
-                    self.windows[i].state == WindowState::Minimized;
-                    if was_minimized {
-                        self.windows[i].state = WindowState::Normal;
+                    if self.wm.windows()[i].state == WindowState::Minimized {
+                        self.wm.restore(i);
                     }
-                    for w in self.windows.iter_mut() {
-                        w.focused = false;
-                    }
-                    self.windows[i].focused = true;
-                    let w = self.windows.remove(i);
-                    self.windows.push(w);
+                    self.wm.bring_to_front(i);
                     return;
                 }
             }
             return;
         }
 
-        for i in (0..self.windows.len()).rev() {
-            let w = &self.windows[i];
-            if mx >= w.x && mx < w.x + w.w as i32 && my >= w.y && my < w.y + 22 {
-                for win in self.windows.iter_mut() {
-                    win.focused = false;
-                }
-                self.windows[i].focused = true;
-                let win = self.windows.remove(i);
-                let drag_ox = mx - win.x;
-                let drag_oy = my - win.y;
-                self.windows.push(win);
-                if let Some(last) = self.windows.last_mut() {
-                    last.dragging = true;
-                    last.drag_ox = drag_ox;
-                    last.drag_oy = drag_oy;
-                }
+        for i in (0..self.wm.len()).rev() {
+            let wx = self.wm.windows()[i].x;
+            let wy = self.wm.windows()[i].y;
+            let ww = self.wm.windows()[i].w;
+            let wh = self.wm.windows()[i].h;
+            if mx >= wx && mx < wx + ww as i32 && my >= wy && my < wy + 22 {
+                self.wm.bring_to_front(i);
+                self.wm.begin_drag(i, mx, my);
                 return;
             }
 
-            if mx >= w.x + w.w as i32 - 24
-                && mx < w.x + w.w as i32 - 4
-                && my >= w.y + 3
-                && my < w.y + 19
+            if mx >= wx + ww as i32 - 24
+                && mx < wx + ww as i32 - 4
+                && my >= wy + 3
+                && my < wy + 19
             {
-                self.windows.remove(i);
+                self.wm.close(i);
                 return;
             }
-            if mx >= w.x + w.w as i32 - 48
-                && mx < w.x + w.w as i32 - 28
-                && my >= w.y + 3
-                && my < w.y + 19
+            if mx >= wx + ww as i32 - 48
+                && mx < wx + ww as i32 - 28
+                && my >= wy + 3
+                && my < wy + 19
             {
-                self.windows[i].state = WindowState::Minimized;
+                self.wm.minimize(i);
                 return;
             }
 
-            if mx >= w.x && mx < w.x + w.w as i32 && my >= w.y && my < w.y + w.h as i32 {
-                for win in self.windows.iter_mut() {
-                    win.focused = false;
-                }
-                self.windows[i].focused = true;
-                let win = self.windows.remove(i);
-                self.windows.push(win);
+            if mx >= wx && mx < wx + ww as i32 && my >= wy && my < wy + wh as i32 {
+                self.wm.bring_to_front(i);
                 return;
             }
         }
@@ -248,18 +229,11 @@ impl Desktop {
 
     #[allow(dead_code)]
     fn handle_drag(&mut self, mx: i32, my: i32) {
-        if let Some(last) = self.windows.last_mut() {
-            if last.dragging {
-                last.x = mx - last.drag_ox;
-                last.y = my - last.drag_oy;
-            }
-        }
+        self.wm.update_drag(mx, my);
     }
 
     #[allow(dead_code)]
     fn release_drag(&mut self) {
-        if let Some(last) = self.windows.last_mut() {
-            last.dragging = false;
-        }
+        self.wm.end_drag();
     }
 }

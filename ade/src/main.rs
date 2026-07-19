@@ -39,10 +39,10 @@ fn user_main() -> i32 {
         desktop.tick();
 
         while let Some(key) = desktop_win.get_key() {
-            if key == b'q' && desktop.windows.is_empty() {
+            if key == b'q' && desktop.wm.is_empty() {
                 return 0;
             }
-            if let Some(last) = desktop.windows.last_mut() {
+            if let Some(last) = desktop.wm.last_mut() {
                 if last.focused && last.x > -100 {
                     let ch = key as char;
                     if ch.is_ascii_graphic() || ch == ' ' {
@@ -72,7 +72,7 @@ fn user_main() -> i32 {
             icons::draw(&mut desktop_win, &desktop.theme, icon.0, icon.1, icon.2);
         }
 
-        for aw in &desktop.windows {
+        for aw in desktop.wm.windows() {
             window::draw(&mut desktop_win, &desktop.theme, aw);
         }
 

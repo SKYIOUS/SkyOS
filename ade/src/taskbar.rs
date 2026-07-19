@@ -29,9 +29,9 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, desktop: &Desktop) {
     win.draw_rounded_rect(5, ty + 4, 58, TASKBAR_H - 8, 6, start_bg);
     win.draw_string(13, ty + 10, "Start", 0xFFFFFFFF, 0);
 
-    for (i, aw) in desktop.windows.iter().enumerate() {
+    for (i, aw) in desktop.wm.windows().iter().enumerate() {
         let bx = 75 + i as u32 * 125;
-        let is_top = i == desktop.windows.len() - 1;
+        let is_top = i == desktop.wm.len() - 1;
         let is_min = aw.x == -9999;
         let hover = desktop.mouse_x >= bx as i32
             && desktop.mouse_x < bx as i32 + 120

@@ -38,6 +38,18 @@ impl WindowManager {
         self.windows.is_empty()
     }
 
+    pub fn last_mut(&mut self) -> Option<&mut AppWindow> {
+        self.windows.last_mut()
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut AppWindow> {
+        self.windows.get_mut(index)
+    }
+
+    pub fn focused_mut(&mut self) -> Option<&mut AppWindow> {
+        self.focused.and_then(|i| self.windows.get_mut(i))
+    }
+
     pub fn focused(&self) -> Option<usize> {
         self.focused
     }
