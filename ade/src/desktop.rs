@@ -103,8 +103,17 @@ impl Desktop {
         self.wm.push(app_win);
     }
 
-    #[allow(dead_code)]
-    fn handle_click(&mut self, mx: i32, my: i32) {
+    pub fn update_mouse(&mut self, mx: i32, my: i32, btn: bool) -> (bool, bool) {
+        self.mouse_x = mx;
+        self.mouse_y = my;
+        let just_pressed = btn && !self.mouse_btn;
+        let just_released = !btn && self.mouse_btn;
+        self.prev_mouse_btn = self.mouse_btn;
+        self.mouse_btn = btn;
+        (just_pressed, just_released)
+    }
+
+    pub(crate) fn handle_click(&mut self, mx: i32, my: i32) {
         let taskbar_y = self.taskbar_y() as i32;
 
         if self.start_menu {
@@ -227,13 +236,11 @@ impl Desktop {
         }
     }
 
-    #[allow(dead_code)]
-    fn handle_drag(&mut self, mx: i32, my: i32) {
+    pub(crate) fn handle_drag(&mut self, mx: i32, my: i32) {
         self.wm.update_drag(mx, my);
     }
 
-    #[allow(dead_code)]
-    fn release_drag(&mut self) {
+    pub(crate) fn release_drag(&mut self) {
         self.wm.end_drag();
     }
 }

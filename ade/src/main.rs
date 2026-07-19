@@ -66,6 +66,17 @@ fn user_main() -> i32 {
             }
         }
 
+        let ms = desktop_win.get_mouse();
+        let (pressed, released) = desktop.update_mouse(ms.x as i32, ms.y as i32, ms.buttons & 1 != 0);
+        if pressed {
+            desktop.handle_click(ms.x as i32, ms.y as i32);
+        } else if ms.buttons & 1 != 0 {
+            desktop.handle_drag(ms.x as i32, ms.y as i32);
+        }
+        if released {
+            desktop.release_drag();
+        }
+
         wallpaper::draw(&mut desktop_win, &desktop);
 
         for icon in &desktop.icons {
