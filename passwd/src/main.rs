@@ -4,20 +4,24 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::io::{self, open, read, close};
-use libsarga::process::geteuid;
-use libsarga::errno::Error;
-use libsarga::sarga_main;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use libsarga::errno::Error;
+use libsarga::io::{self, close, open, read};
+use libsarga::process::geteuid;
+use libsarga::sarga_main;
 
 fn read_line(fd: i64) -> Result<Vec<u8>, Error> {
     let mut buf = Vec::new();
     let mut byte = [0u8; 1];
     loop {
         let n = read(fd, &mut byte)?;
-        if n == 0 { break; }
-        if byte[0] == b'\n' || byte[0] == b'\r' { break; }
+        if n == 0 {
+            break;
+        }
+        if byte[0] == b'\n' || byte[0] == b'\r' {
+            break;
+        }
         buf.push(byte[0]);
     }
     Ok(buf)
@@ -29,7 +33,9 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
     let mut tmp = [0u8; 512];
     loop {
         let n = read(fd, &mut tmp)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
     }
     let _ = close(fd);
@@ -37,7 +43,11 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
 }
 
 fn hex_nibble(v: u8) -> u8 {
-    if v < 10 { b'0' + v } else { b'a' + v - 10 }
+    if v < 10 {
+        b'0' + v
+    } else {
+        b'a' + v - 10
+    }
 }
 
 fn hex_encode(bytes: &[u8]) -> Vec<u8> {
@@ -69,11 +79,18 @@ fn set_password(username: &str, new_password: &str) -> Result<(), Error> {
     let dk_enc = hex_encode(&dk);
     let salt_hex = core::str::from_utf8(&salt_enc).unwrap_or("");
     let dk_hex = core::str::from_utf8(&dk_enc).unwrap_or("");
-    let new_line = alloc::format!("{}:PBKDF2-{}:{}:10000:0:99999:7:::\n", username, salt_hex, dk_hex);
+    let new_line = alloc::format!(
+        "{}:PBKDF2-{}:{}:10000:0:99999:7:::\n",
+        username,
+        salt_hex,
+        dk_hex
+    );
 
     let mut out = Vec::new();
     for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let mut parts = line.splitn(2, |&b| b == b':');
         let name = parts.next().unwrap_or(b"");
         if name == username.as_bytes() {
@@ -131,7 +148,10 @@ fn user_main() -> i32 {
 
     match set_password(&target_user, &pw1) {
         Ok(_) => io::print_str("passwd: password updated successfully\n"),
-        Err(e) => { io::print_str(&alloc::format!("passwd: update failed: {}\n", e)); return 1; }
+        Err(e) => {
+            io::print_str(&alloc::format!("passwd: update failed: {}\n", e));
+            return 1;
+        }
     }
     0
 }

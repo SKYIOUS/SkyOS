@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, args};
 use libsarga::fs;
+use libsarga::{args, println, sarga_main};
 
 fn user_main() -> i32 {
     if args::argc() < 3 {
@@ -36,7 +36,7 @@ fn user_main() -> i32 {
     let target = args::get(args_start + 1).unwrap_or(source);
 
     match fs::mount(source, target, fstype, 0) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => println!("mount: {}: error {}", target, e),
     }
     0

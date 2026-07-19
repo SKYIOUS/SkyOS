@@ -1,8 +1,8 @@
 //! Service framework — central service registry and lifecycle.
 #![allow(dead_code)]
 
-use crate::ipc::MessageBus;
 use crate::config::Config;
+use crate::ipc::MessageBus;
 use crate::perms::PermissionManager;
 
 pub(crate) struct ServiceManager {
@@ -42,14 +42,29 @@ impl ServiceManager {
             crate::ipc::IpcTarget::Service("config") => {
                 if req.method == "get" && req.args.len() >= 2 {
                     let val = self.config.get(&req.args[0], &req.args[1]);
-                    self.bus.respond(req.seq, val.is_some(), val.map(|v| alloc::vec![alloc::string::String::from(v)]).unwrap_or_default());
+                    self.bus.respond(
+                        req.seq,
+                        val.is_some(),
+                        val.map(|v| alloc::vec![alloc::string::String::from(v)])
+                            .unwrap_or_default(),
+                    );
                 }
             }
             crate::ipc::IpcTarget::Service("perms") => {
                 if req.method == "check" && req.args.len() >= 2 {
                     let pid: u64 = req.args[0].parse().unwrap_or(0);
                     let perm: u32 = req.args[1].parse().unwrap_or(0);
-                    self.bus.respond(req.seq, true, alloc::vec![alloc::string::String::from(if self.perms.check(pid, perm) { "granted" } else { "denied" })]);
+                    self.bus.respond(
+                        req.seq,
+                        true,
+                        alloc::vec![alloc::string::String::from(
+                            if self.perms.check(pid, perm) {
+                                "granted"
+                            } else {
+                                "denied"
+                            }
+                        )],
+                    );
                 }
             }
             _ => {

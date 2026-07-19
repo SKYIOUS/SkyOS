@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, args};
 use libsarga::libskyos::net_ext;
+use libsarga::{args, println, sarga_main};
 
 fn user_main() -> i32 {
     let hostname = if args::argc() > 1 {

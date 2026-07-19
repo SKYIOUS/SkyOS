@@ -1,5 +1,5 @@
-use crate::io;
 use crate::errno;
+use crate::io;
 use crate::sync::{Mutex, MutexGuard};
 use alloc::boxed::Box;
 
@@ -19,21 +19,63 @@ pub struct FILE {
     pub _bufsize: usize,
 }
 
-pub static STDIN: Mutex<FILE> = Mutex::new(FILE { fd: 0, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
-pub static STDOUT: Mutex<FILE> = Mutex::new(FILE { fd: 1, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
-pub static STDERR: Mutex<FILE> = Mutex::new(FILE { fd: 2, eof: false, error: false, unbuf: true, _buffer: [0; 128], _bufpos: 0, _bufsize: 0 });
+pub static STDIN: Mutex<FILE> = Mutex::new(FILE {
+    fd: 0,
+    eof: false,
+    error: false,
+    unbuf: true,
+    _buffer: [0; 128],
+    _bufpos: 0,
+    _bufsize: 0,
+});
+pub static STDOUT: Mutex<FILE> = Mutex::new(FILE {
+    fd: 1,
+    eof: false,
+    error: false,
+    unbuf: true,
+    _buffer: [0; 128],
+    _bufpos: 0,
+    _bufsize: 0,
+});
+pub static STDERR: Mutex<FILE> = Mutex::new(FILE {
+    fd: 2,
+    eof: false,
+    error: false,
+    unbuf: true,
+    _buffer: [0; 128],
+    _bufpos: 0,
+    _bufsize: 0,
+});
 
-pub fn stdin() -> MutexGuard<'static, FILE> { STDIN.lock() }
-pub fn stdout() -> MutexGuard<'static, FILE> { STDOUT.lock() }
-pub fn stderr() -> MutexGuard<'static, FILE> { STDERR.lock() }
+pub fn stdin() -> MutexGuard<'static, FILE> {
+    STDIN.lock()
+}
+pub fn stdout() -> MutexGuard<'static, FILE> {
+    STDOUT.lock()
+}
+pub fn stderr() -> MutexGuard<'static, FILE> {
+    STDERR.lock()
+}
 
 pub fn fopen(path: &str, mode: &str) -> Option<&'static mut FILE> {
     let flags = if mode.contains('w') {
-        if mode.contains('+') { 0x42 } else { 0x41 }
+        if mode.contains('+') {
+            0x42
+        } else {
+            0x41
+        }
     } else if mode.contains('a') {
-        if mode.contains('+') { 0x42 } else { 0x401 }
+        if mode.contains('+') {
+            0x42
+        } else {
+            0x401
+        }
     } else {
-        if mode.contains('+') { 0x42 } else { 0x40 }
+        if mode.contains('+') {
+            0x42
+        } else {
+            0x40
+        }
     };
 
     match io::open(path, flags) {
@@ -61,26 +103,42 @@ pub fn fclose(file: &mut FILE) -> i32 {
         let fd = file.fd;
         match io::close(fd) {
             Ok(_) => {
-                unsafe { drop(Box::from_raw(file as *mut FILE)); }
+                unsafe {
+                    drop(Box::from_raw(file as *mut FILE));
+                }
                 0
             }
-            Err(_) => { file.error = true; -1 }
+            Err(_) => {
+                file.error = true;
+                -1
+            }
         }
-    } else { 0 }
+    } else {
+        0
+    }
 }
 
 pub fn fread(buf: &mut [u8], file: &mut FILE) -> usize {
     match io::read(file.fd, buf) {
-        Ok(0) => { file.eof = true; 0 }
+        Ok(0) => {
+            file.eof = true;
+            0
+        }
         Ok(n) => n,
-        Err(_) => { file.error = true; 0 }
+        Err(_) => {
+            file.error = true;
+            0
+        }
     }
 }
 
 pub fn fwrite(buf: &[u8], file: &mut FILE) -> usize {
     match io::write_all(file.fd, buf) {
         Ok(_) => buf.len(),
-        Err(_) => { file.error = true; 0 }
+        Err(_) => {
+            file.error = true;
+            0
+        }
     }
 }
 
@@ -91,7 +149,10 @@ pub fn fputs(s: &str, file: &mut FILE) -> i32 {
 pub fn fprintf(file: &mut FILE, args: core::fmt::Arguments<'_>) -> i32 {
     match core::fmt::write(&mut FwriteWriter(file), args) {
         Ok(_) => 0,
-        Err(_) => { file.error = true; -1 }
+        Err(_) => {
+            file.error = true;
+            -1
+        }
     }
 }
 
@@ -99,7 +160,11 @@ struct FwriteWriter<'a>(&'a mut FILE);
 
 impl core::fmt::Write for FwriteWriter<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        if fwrite(s.as_bytes(), self.0) == s.len() { Ok(()) } else { Err(core::fmt::Error) }
+        if fwrite(s.as_bytes(), self.0) == s.len() {
+            Ok(())
+        } else {
+            Err(core::fmt::Error)
+        }
     }
 }
 
@@ -113,12 +178,24 @@ macro_rules! fprintf {
 pub fn fgetc(file: &mut FILE) -> i32 {
     let mut c = [0u8; 1];
     match io::read(file.fd, &mut c) {
-        Ok(0) => { file.eof = true; -1 }
+        Ok(0) => {
+            file.eof = true;
+            -1
+        }
         Ok(_) => c[0] as i32,
-        Err(_) => { file.error = true; -1 }
+        Err(_) => {
+            file.error = true;
+            -1
+        }
     }
 }
 
-pub fn feof(file: &FILE) -> bool { file.eof }
-pub fn ferror(file: &FILE) -> bool { file.error }
-pub fn fileno(file: &FILE) -> i64 { file.fd }
+pub fn feof(file: &FILE) -> bool {
+    file.eof
+}
+pub fn ferror(file: &FILE) -> bool {
+    file.error
+}
+pub fn fileno(file: &FILE) -> i64 {
+    file.fd
+}

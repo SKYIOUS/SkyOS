@@ -3,28 +3,44 @@
 extern crate alloc;
 use alloc::format;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, println, net, io, args};
+use libsarga::{args, io, net, println, sarga_main};
 
 fn mime_type(path: &str) -> &str {
-    if path.ends_with(".html") || path.ends_with(".htm") { "text/html" }
-    else if path.ends_with(".css") { "text/css" }
-    else if path.ends_with(".js") { "application/javascript" }
-    else if path.ends_with(".png") { "image/png" }
-    else if path.ends_with(".jpg") || path.ends_with(".jpeg") { "image/jpeg" }
-    else if path.ends_with(".gif") { "image/gif" }
-    else if path.ends_with(".svg") { "image/svg+xml" }
-    else if path.ends_with(".json") { "application/json" }
-    else if path.ends_with(".txt") || path.ends_with(".md") { "text/plain" }
-    else { "application/octet-stream" }
+    if path.ends_with(".html") || path.ends_with(".htm") {
+        "text/html"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".txt") || path.ends_with(".md") {
+        "text/plain"
+    } else {
+        "application/octet-stream"
+    }
 }
 
 fn serve(fd: i64, root: &str, raw_path: &str) {
     if raw_path.contains("..") {
-        let resp = "HTTP/1.1 403 Forbidden\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden";
+        let resp =
+            "HTTP/1.1 403 Forbidden\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden";
         let _ = io::write_all(fd, resp.as_bytes());
         return;
     }
-    let path = if raw_path == "/" { "/index.html" } else { raw_path };
+    let path = if raw_path == "/" {
+        "/index.html"
+    } else {
+        raw_path
+    };
     let full = format!("{}{}", root, path);
     match io::stat(&full) {
         Ok(st) if st.mode & 0x8000 != 0 => {
@@ -43,7 +59,11 @@ fn serve(fd: i64, root: &str, raw_path: &str) {
                     loop {
                         match io::read(file_fd, &mut buf) {
                             Ok(0) => break,
-                            Ok(n) => if io::write_all(fd, &buf[..n]).is_err() { break; },
+                            Ok(n) => {
+                                if io::write_all(fd, &buf[..n]).is_err() {
+                                    break;
+                                }
+                            }
                             Err(_) => break,
                         }
                     }
@@ -56,7 +76,10 @@ fn serve(fd: i64, root: &str, raw_path: &str) {
             }
         }
         _ => {
-            let body = format!("<html><body><h1>404 Not Found</h1><p>{}</p></body></html>\r\n", raw_path);
+            let body = format!(
+                "<html><body><h1>404 Not Found</h1><p>{}</p></body></html>\r\n",
+                raw_path
+            );
             let resp = format!(
                 "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{}",
                 body.len(), body
@@ -75,7 +98,10 @@ fn user_main() -> i32 {
     let fd4 = net::socket(net::AF_INET, net::SOCK_STREAM, 0).unwrap_or(-1);
     let fd6 = net::socket(net::AF_INET6, net::SOCK_STREAM, 0).unwrap_or(-1);
 
-    if fd4 < 0 && fd6 < 0 { println!("httpd: no socket"); return 1; }
+    if fd4 < 0 && fd6 < 0 {
+        println!("httpd: no socket");
+        return 1;
+    }
 
     if fd4 >= 0 {
         let addr = net::SockAddrIn::new(ip4, port);
@@ -110,7 +136,10 @@ fn user_main() -> i32 {
                 client_fd = fd;
             }
         }
-        if client_fd < 0 { libsarga::posix::sched_yield(); continue; }
+        if client_fd < 0 {
+            libsarga::posix::sched_yield();
+            continue;
+        }
 
         let n = net::recv(client_fd, &mut buf).unwrap_or(0);
         if n > 0 {

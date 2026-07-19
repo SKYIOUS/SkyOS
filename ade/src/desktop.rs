@@ -1,19 +1,19 @@
 //! Desktop coordinator — event dispatch, window management, layout logic.
 
-use libsarga::process;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
-use alloc::string::String;
+use crate::app_db::APPS;
 use crate::constants::TASKBAR_H;
-use crate::window::{WindowId, WindowState};
+use crate::damage::DamageTracker;
+use crate::desktop_icons::DesktopIcons;
 use crate::event::Event;
 use crate::geometry::{Point, Rect};
-use crate::damage::DamageTracker;
-use crate::app_db::APPS;
-use crate::desktop_icons::DesktopIcons;
-use crate::start_menu::StartMenuState;
 use crate::notification::NotificationCenter;
+use crate::start_menu::StartMenuState;
 use crate::tray::SystemTray;
+use crate::window::{WindowId, WindowState};
+use alloc::collections::VecDeque;
+use alloc::string::String;
+use alloc::vec::Vec;
+use libsarga::process;
 
 pub(crate) enum Cursor {
     Default,
@@ -53,7 +53,7 @@ const ICON_MENU: &[(&str, &str)] = &[
     ("---", ""),
     ("Properties", "properties"),
 ];
-use crate::window_manager::{WindowManager, SnapRegion};
+use crate::window_manager::{SnapRegion, WindowManager};
 
 pub(crate) enum TilingMode {
     Floating,
@@ -62,7 +62,6 @@ pub(crate) enum TilingMode {
 }
 use crate::render::snapshot::RenderSnapshot;
 use crate::shortcut::{ShortcutAction, ShortcutManager};
-
 
 pub struct Desktop {
     pub(crate) screen_w: u32,
@@ -108,10 +107,10 @@ pub struct Desktop {
     #[allow(dead_code)]
     pub(crate) vfs: crate::vfs::VfsContext,
     pub(crate) watcher: crate::watcher::FileWatcher,
+    pub(crate) explorers: alloc::vec::Vec<crate::explorer::ExplorerState>,
     #[allow(dead_code)]
     pub(crate) recovery: crate::recovery::RecoverySystem,
 }
-
 
 impl Desktop {
     pub fn new(w: u32, h: u32) -> Self {
@@ -156,6 +155,7 @@ impl Desktop {
             file_assoc: crate::file_assoc::FileAssociationEngine::new(),
             vfs: crate::vfs::VfsContext::new(),
             watcher: crate::watcher::FileWatcher::new(),
+            explorers: alloc::vec::Vec::new(),
             recovery: crate::recovery::RecoverySystem::new(),
         }
     }
@@ -215,7 +215,10 @@ impl Desktop {
     fn restore_geometries(&mut self) {
         for (i, &(x, y, w, h)) in self.prev_tiling_geos.iter().enumerate() {
             if let Some(aw) = self.wm.lookup_mut(WindowId(i)) {
-                aw.x = x; aw.y = y; aw.w = w; aw.h = h;
+                aw.x = x;
+                aw.y = y;
+                aw.w = w;
+                aw.h = h;
             }
         }
         self.prev_tiling_geos.clear();
@@ -226,10 +229,15 @@ impl Desktop {
         let sw = self.screen_w;
         let th = self.taskbar_y();
         let n = self.wm.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         if n == 1 {
             if let Some(w) = self.wm.lookup_mut(WindowId(0)) {
-                w.x = 0; w.y = 0; w.w = sw; w.h = th;
+                w.x = 0;
+                w.y = 0;
+                w.w = sw;
+                w.h = th;
             }
             return;
         }
@@ -239,7 +247,10 @@ impl Desktop {
         for i in 0..n {
             if let Some(w) = self.wm.lookup_mut(WindowId(i)) {
                 if i == 0 {
-                    w.x = 0; w.y = 0; w.w = master_w; w.h = th;
+                    w.x = 0;
+                    w.y = 0;
+                    w.w = master_w;
+                    w.h = th;
                 } else {
                     w.x = master_w as i32;
                     w.y = ((i as u32 - 1) * stack_h) as i32;
@@ -258,7 +269,10 @@ impl Desktop {
         let th = self.taskbar_y();
         for i in 0..self.wm.len() {
             if let Some(w) = self.wm.lookup_mut(WindowId(i)) {
-                w.x = 0; w.y = 0; w.w = sw; w.h = th;
+                w.x = 0;
+                w.y = 0;
+                w.w = sw;
+                w.h = th;
             }
         }
         self.tiling_mode = TilingMode::Monocle;
@@ -282,7 +296,9 @@ impl Desktop {
     }
 
     fn cycle_window(&mut self) {
-        if self.wm.len() < 2 { return; }
+        if self.wm.len() < 2 {
+            return;
+        }
         if !self.switcher_active {
             let current = self.wm.active().map(|id| id.0).unwrap_or(0);
             self.switcher_idx = current;
@@ -317,7 +333,8 @@ impl Desktop {
         match action {
             "terminal" => self.spawn_app("/bin/sash", "Terminal"),
             "arrange" => {
-                let positions: &[(i32, i32)] = &[(30,80), (30,180), (30,280), (30,380), (30,480)];
+                let positions: &[(i32, i32)] =
+                    &[(30, 80), (30, 180), (30, 280), (30, 380), (30, 480)];
                 for (i, ic) in self.desktop_icons.icons.iter_mut().enumerate() {
                     if i < positions.len() {
                         ic.x = positions[i].0;
@@ -325,8 +342,8 @@ impl Desktop {
                     }
                 }
             }
-            "paste" => {},
-            "wallpaper" => {},
+            "paste" => {}
+            "wallpaper" => {}
             "settings" => {
                 self.settings.toggle();
                 self.context_menu = None;
@@ -363,20 +380,34 @@ impl Desktop {
         self.start_menu.open = false;
         self.app_reg.record_launch(app_idx);
         let app = &APPS[app_idx];
+        if app.exec == "/bin/skyfiles" && app.name.starts_with("File") {
+            self.spawn_explorer();
+            return;
+        }
         if app.exec.is_empty() {
             if app.name == "About SARGA" || app.name == "About SARGA OS" {
                 self.spawn_app("", "About SARGA OS");
                 if let Some(w) = self.wm.focused_mut() {
                     w.content.clear();
-                    w.content.push(alloc::string::String::from("  SARGA OS v0.4.0"));
+                    w.content.push(alloc::format!(
+                        "  SARGA OS v{}",
+                        libsarga::version::SKYOS_VERSION
+                    ));
                     w.content.push(alloc::string::String::new());
-                    w.content.push(alloc::string::String::from("  Kernel: SARGA"));
-                    w.content.push(alloc::string::String::from("  Arch: x86_64"));
-                    w.content.push(alloc::string::String::from("  Shell: SargaSH"));
-                    w.content.push(alloc::string::String::from("  Desktop: ADE"));
-                    w.content.push(alloc::string::String::from("  Widgets: libsarga"));
+                    w.content
+                        .push(alloc::string::String::from("  Kernel: SARGA"));
+                    w.content
+                        .push(alloc::string::String::from("  Arch: x86_64"));
+                    w.content
+                        .push(alloc::string::String::from("  Shell: SargaSH"));
+                    w.content
+                        .push(alloc::string::String::from("  Desktop: ADE"));
+                    w.content
+                        .push(alloc::string::String::from("  Widgets: libsarga"));
                     w.content.push(alloc::string::String::new());
-                    w.content.push(alloc::string::String::from("  A modern OS written in Rust."));
+                    w.content.push(alloc::string::String::from(
+                        "  A modern OS written in Rust.",
+                    ));
                 }
             }
         } else {
@@ -387,29 +418,35 @@ impl Desktop {
     fn handle_key(&mut self, key: u8) {
         if self.start_menu.open {
             match key {
-                0x1B => { // Esc
+                0x1B => {
+                    // Esc
                     self.start_menu.open = false;
                     self.damage.mark_full();
                 }
-                0x0D | 0x0A => { // Enter
+                0x0D | 0x0A => {
+                    // Enter
                     if let Some(app_idx) = self.start_menu.selected_app() {
                         self.launch_app(app_idx);
                         self.damage.mark_full();
                     }
                 }
-                0x09 => { // Tab → next category
-                    self.start_menu.cat_idx = (self.start_menu.cat_idx + 1) % crate::app_db::CATEGORIES.len();
+                0x09 => {
+                    // Tab → next category
+                    self.start_menu.cat_idx =
+                        (self.start_menu.cat_idx + 1) % crate::app_db::CATEGORIES.len();
                     self.start_menu.selected = 0;
                     self.start_menu.scroll = 0;
                     self.start_menu.rebuild_filter(&self.app_reg.db);
                     self.damage.mark_full();
                 }
-                0x7F | 0x08 => { // Backspace
+                0x7F | 0x08 => {
+                    // Backspace
                     self.start_menu.search.pop();
                     self.start_menu.rebuild_filter(&self.app_reg.db);
                     self.damage.mark_full();
                 }
-                ch if (ch >= 0x20 && ch <= 0x7E) => { // printable ASCII → search
+                ch if (ch >= 0x20 && ch <= 0x7E) => {
+                    // printable ASCII → search
                     self.start_menu.search.push(ch);
                     self.start_menu.rebuild_filter(&self.app_reg.db);
                     self.damage.mark_full();
@@ -420,11 +457,13 @@ impl Desktop {
         }
         if self.switcher_active {
             match key {
-                0x09 => { // Tab → next window
+                0x09 => {
+                    // Tab → next window
                     self.switcher_idx = (self.switcher_idx + 1) % self.wm.len();
                     self.damage.mark_full();
                 }
-                0x0D | 0x0A | 0x1B => { // Enter / Escape → confirm selection
+                0x0D | 0x0A | 0x1B => {
+                    // Enter / Escape → confirm selection
                     if self.switcher_idx < self.wm.len() {
                         self.wm.bring_to_front(WindowId(self.switcher_idx));
                     }
@@ -437,7 +476,11 @@ impl Desktop {
         }
         if let Some(action) = self.shortcuts.handle(key) {
             match action {
-                ShortcutAction::Quit => { if self.wm.is_empty() { process::exit(0); } }
+                ShortcutAction::Quit => {
+                    if self.wm.is_empty() {
+                        process::exit(0);
+                    }
+                }
                 ShortcutAction::CloseFocused => {
                     if let Some(id) = self.wm.active() {
                         self.wm.close(id);
@@ -461,7 +504,8 @@ impl Desktop {
             }
             return;
         }
-        if key == 0x0C { // Ctrl+L = clear terminal
+        if key == 0x0C {
+            // Ctrl+L = clear terminal
             if let Some(last) = self.wm.focused_mut() {
                 if last.focused {
                     last.content.clear();
@@ -470,7 +514,8 @@ impl Desktop {
             }
             return;
         }
-        if key == 0x1B { // Escape exits fullscreen
+        if key == 0x1B {
+            // Escape exits fullscreen
             if let Some(id) = self.wm.active() {
                 if let Some(w) = self.wm.lookup(id) {
                     if w.state == WindowState::Fullscreen {
@@ -481,7 +526,8 @@ impl Desktop {
                 }
             }
         }
-        if key == 0x7F || key == 0x08 { // Delete/Backspace → delete selected icons
+        if key == 0x7F || key == 0x08 {
+            // Delete/Backspace → delete selected icons
             let before = self.desktop_icons.icons.len();
             self.desktop_icons.icons.retain(|ic| !ic.selected);
             if self.desktop_icons.icons.len() < before {
@@ -489,7 +535,9 @@ impl Desktop {
                 return;
             }
         }
-        if b'q' == key && self.wm.is_empty() { process::exit(0); }
+        if b'q' == key && self.wm.is_empty() {
+            process::exit(0);
+        }
         self.damage.mark_full();
         if let Some(last) = self.wm.focused_mut() {
             if last.focused && last.x > -100 {
@@ -520,6 +568,65 @@ impl Desktop {
 
     pub(crate) fn spawn_app(&mut self, path: &str, title: &str) {
         crate::launcher::spawn_app(self, path, title);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn spawn_explorer(&mut self) {
+        let id = self.explorers.len() as u32;
+        let mut explorer = crate::explorer::ExplorerState::new(id, "/home");
+        explorer.refresh();
+        self.explorers.push(explorer);
+        let path = "/bin/skyfiles";
+        let mut app_win = crate::window::AppWindow {
+            x: 60,
+            y: 40,
+            w: 640,
+            h: 440,
+            prev_x: 60,
+            prev_y: 40,
+            prev_w: 640,
+            prev_h: 440,
+            title: alloc::string::String::from("File Explorer"),
+            content: alloc::vec::Vec::new(),
+            scroll: 0,
+            pid: None,
+            focused: true,
+            dragging: false,
+            drag_ox: 0,
+            drag_oy: 0,
+            state: crate::window::WindowState::Normal,
+            prev_state: crate::window::WindowState::Normal,
+            opacity: 0,
+            selection: None,
+            anim: None,
+            always_on_top: false,
+            explorer_id: Some(id),
+        };
+        app_win.content.push(alloc::string::String::new());
+        if !path.is_empty() {
+            match libsarga::process::fork() {
+                Ok(0) => {
+                    let _ = libsarga::process::execve(path, &[path], &[]);
+                    libsarga::process::exit(1);
+                }
+                Ok(pid) => {
+                    app_win.pid = Some(pid);
+                    let app_idx = crate::app_db::APPS
+                        .iter()
+                        .position(|a| a.exec == path)
+                        .unwrap_or(0);
+                    self.lifecycle.register(pid, app_idx);
+                }
+                Err(_) => {}
+            }
+        }
+        let wid = self.wm.create(app_win);
+        if let Some(w) = self.wm.lookup_mut(wid) {
+            w.opacity = 0;
+            w.animate_to(w.x, w.y, w.w, w.h);
+        }
+        self.notif.push("App Launched", "File Explorer", 1, 120);
+        self.damage.mark_full();
     }
 
     #[allow(dead_code)]
@@ -570,9 +677,9 @@ impl Desktop {
                         }
                     }
                     _ => {
-                    self.settings.open = false;
-                    self.context_menu = None;
-                }
+                        self.settings.open = false;
+                        self.context_menu = None;
+                    }
                 }
                 self.damage.mark_full();
                 return;
@@ -599,7 +706,8 @@ impl Desktop {
 
             // search bar click
             let search_y = menu_y + 8;
-            if mx >= menu_x + 8 && mx < menu_x + menu_w - 8 && my >= search_y && my < search_y + 36 {
+            if mx >= menu_x + 8 && mx < menu_x + menu_w - 8 && my >= search_y && my < search_y + 36
+            {
                 return; // focus search (keyboard will handle input)
             }
 
@@ -638,7 +746,9 @@ impl Desktop {
             let bottom_y = menu_y + menu_h - 36;
             let mut rx = menu_x + 72;
             for &idx in self.app_reg.db.recent.iter() {
-                if rx > menu_x + menu_w - 20 { break; }
+                if rx > menu_x + menu_w - 20 {
+                    break;
+                }
                 if mx >= rx && mx < rx + 80 && my >= bottom_y + 2 && my < bottom_y + 32 {
                     self.launch_app(idx);
                     return;
@@ -657,7 +767,10 @@ impl Desktop {
             for i in 0..self.wm.len() {
                 let bx = btn_x + i as i32 * 120;
                 if mx >= bx && mx < bx + 115 {
-                    let is_min = { let s = self.wm.iter(); s[i].state == WindowState::Minimized };
+                    let is_min = {
+                        let s = self.wm.iter();
+                        s[i].state == WindowState::Minimized
+                    };
                     if is_min {
                         self.wm.restore(WindowId(i));
                     }
@@ -696,11 +809,15 @@ impl Desktop {
         }
 
         for i in (0..self.wm.len()).rev() {
-            let (x, y, w, h) = { let s = self.wm.iter(); (s[i].x, s[i].y, s[i].w, s[i].h) };
+            let (x, y, w, h) = {
+                let s = self.wm.iter();
+                (s[i].x, s[i].y, s[i].w, s[i].h)
+            };
             let wr = Rect::new(x, y, w, h);
             if Rect::new(x, y, w, TITLE_H as u32).hit_test(pt) {
                 if self.double_click {
-                    self.wm.toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
+                    self.wm
+                        .toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
                     return;
                 }
                 self.wm.bring_to_front(WindowId(i));
@@ -709,23 +826,36 @@ impl Desktop {
             }
 
             if Rect::new(
-                x + w as i32 - CLOSE_L, y + BTN_TOP,
-                (CLOSE_L - CLOSE_R) as u32, (BTN_BOT - BTN_TOP) as u32,
-            ).hit_test(pt) {
+                x + w as i32 - CLOSE_L,
+                y + BTN_TOP,
+                (CLOSE_L - CLOSE_R) as u32,
+                (BTN_BOT - BTN_TOP) as u32,
+            )
+            .hit_test(pt)
+            {
                 self.wm.close(WindowId(i));
                 return;
             }
             if Rect::new(
-                x + w as i32 - MAX_L, y + BTN_TOP,
-                (MAX_L - MAX_R) as u32, (BTN_BOT - BTN_TOP) as u32,
-            ).hit_test(pt) {
-                self.wm.toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
+                x + w as i32 - MAX_L,
+                y + BTN_TOP,
+                (MAX_L - MAX_R) as u32,
+                (BTN_BOT - BTN_TOP) as u32,
+            )
+            .hit_test(pt)
+            {
+                self.wm
+                    .toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
                 return;
             }
             if Rect::new(
-                x + w as i32 - MIN_L, y + BTN_TOP,
-                (MIN_L - MIN_R) as u32, (BTN_BOT - BTN_TOP) as u32,
-            ).hit_test(pt) {
+                x + w as i32 - MIN_L,
+                y + BTN_TOP,
+                (MIN_L - MIN_R) as u32,
+                (BTN_BOT - BTN_TOP) as u32,
+            )
+            .hit_test(pt)
+            {
                 self.wm.minimize(WindowId(i));
                 return;
             }
@@ -739,7 +869,24 @@ impl Desktop {
                 return;
             }
 
+            // Explorer content click
             if wr.hit_test(pt) {
+                let is_explorer = { self.wm.iter()[i].explorer_id.is_some() };
+                if is_explorer {
+                    let exp_id = self.wm.iter()[i].explorer_id.unwrap();
+                    if let Some(exp_state) = self.explorers.iter_mut().find(|e| e.id == exp_id) {
+                        let aw_ref = &self.wm.iter()[i];
+                        crate::explorer::handle_explorer_click(
+                            exp_state,
+                            mx,
+                            my,
+                            aw_ref,
+                            self.double_click,
+                        );
+                    }
+                    self.wm.bring_to_front(WindowId(i));
+                    return;
+                }
                 self.wm.bring_to_front(WindowId(i));
                 return;
             }
@@ -754,9 +901,15 @@ impl Desktop {
 
     fn hit_window_edge(x: i32, y: i32, w: u32, h: u32, mx: i32, my: i32) -> u8 {
         let mut edges = 0u8;
-        if mx >= x && mx < x + RESIZE_MARGIN && my >= y && my < y + h as i32 { edges |= 1; }
-        if mx >= x + w as i32 - RESIZE_MARGIN && mx < x + w as i32 && my >= y && my < y + h as i32 { edges |= 2; }
-        if my >= y + h as i32 - RESIZE_MARGIN && my < y + h as i32 { edges |= 4; }
+        if mx >= x && mx < x + RESIZE_MARGIN && my >= y && my < y + h as i32 {
+            edges |= 1;
+        }
+        if mx >= x + w as i32 - RESIZE_MARGIN && mx < x + w as i32 && my >= y && my < y + h as i32 {
+            edges |= 2;
+        }
+        if my >= y + h as i32 - RESIZE_MARGIN && my < y + h as i32 {
+            edges |= 4;
+        }
         edges
     }
 
@@ -779,9 +932,13 @@ impl Desktop {
 
         // window titlebar right-click
         for i in (0..self.wm.len()).rev() {
-            let (x, y, w, _h) = { let s = self.wm.iter(); (s[i].x, s[i].y, s[i].w, s[i].h) };
+            let (x, y, w, _h) = {
+                let s = self.wm.iter();
+                (s[i].x, s[i].y, s[i].w, s[i].h)
+            };
             if Rect::new(x, y, w, 22).hit_test(pt) {
-                self.wm.toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
+                self.wm
+                    .toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
                 self.damage.mark_full();
                 return;
             }
@@ -822,7 +979,10 @@ impl Desktop {
         }
         let pt = Point::new(self.mouse_x, self.mouse_y);
         for i in (0..self.wm.len()).rev() {
-            let (x, y, w, h) = { let s = self.wm.iter(); (s[i].x, s[i].y, s[i].w, s[i].h) };
+            let (x, y, w, h) = {
+                let s = self.wm.iter();
+                (s[i].x, s[i].y, s[i].w, s[i].h)
+            };
             let edges = Self::hit_window_edge(x, y, w, h, pt.x, pt.y);
             if edges != 0 {
                 self.cursor = match edges {
@@ -870,9 +1030,17 @@ impl Desktop {
                 if self.resize_edges & 4 != 0 {
                     nh = (oh as i32 + dy) as u32;
                 }
-                if nw < MIN_WIN_W { nw = MIN_WIN_W; nx = ox + ow as i32 - MIN_WIN_W as i32; }
-                if nh < MIN_WIN_H { nh = MIN_WIN_H; }
-                w.x = nx; w.y = oy; w.w = nw; w.h = nh;
+                if nw < MIN_WIN_W {
+                    nw = MIN_WIN_W;
+                    nx = ox + ow as i32 - MIN_WIN_W as i32;
+                }
+                if nh < MIN_WIN_H {
+                    nh = MIN_WIN_H;
+                }
+                w.x = nx;
+                w.y = oy;
+                w.w = nw;
+                w.h = nh;
             }
         } else {
             self.wm.update_drag(mx, my);
@@ -909,14 +1077,62 @@ impl Desktop {
             let edge_top = my < SNAP_MARGIN;
             let edge_bot = my > ty - SNAP_MARGIN;
             match (edge_left, edge_right, edge_top, edge_bot) {
-                (true, _, true, _) => self.wm.snap_to_region(id, SnapRegion::TopLeft, self.screen_w, self.screen_h, ty as u32),
-                (true, _, _, true) => self.wm.snap_to_region(id, SnapRegion::BottomLeft, self.screen_w, self.screen_h, ty as u32),
-                (_, true, true, _) => self.wm.snap_to_region(id, SnapRegion::TopRight, self.screen_w, self.screen_h, ty as u32),
-                (_, true, _, true) => self.wm.snap_to_region(id, SnapRegion::BottomRight, self.screen_w, self.screen_h, ty as u32),
-                (true, _, _, _) => self.wm.snap_to_region(id, SnapRegion::Left, self.screen_w, self.screen_h, ty as u32),
-                (_, true, _, _) => self.wm.snap_to_region(id, SnapRegion::Right, self.screen_w, self.screen_h, ty as u32),
-                (_, _, true, _) => self.wm.snap_to_region(id, SnapRegion::Top, self.screen_w, self.screen_h, ty as u32),
-                (_, _, _, true) => self.wm.snap_to_region(id, SnapRegion::Bottom, self.screen_w, self.screen_h, ty as u32),
+                (true, _, true, _) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::TopLeft,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (true, _, _, true) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::BottomLeft,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (_, true, true, _) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::TopRight,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (_, true, _, true) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::BottomRight,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (true, _, _, _) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::Left,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (_, true, _, _) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::Right,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (_, _, true, _) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::Top,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
+                (_, _, _, true) => self.wm.snap_to_region(
+                    id,
+                    SnapRegion::Bottom,
+                    self.screen_w,
+                    self.screen_h,
+                    ty as u32,
+                ),
                 _ => {}
             }
         }
@@ -925,13 +1141,18 @@ impl Desktop {
     }
 
     pub(crate) fn prepare_clock(&mut self) -> alloc::string::String {
-        alloc::string::String::from(
-            crate::render::clock::format_time(self.clock_ticks, &mut self.clock_cache)
-        )
+        alloc::string::String::from(crate::render::clock::format_time(
+            self.clock_ticks,
+            &mut self.clock_cache,
+        ))
     }
 
     pub fn snapshot(&self) -> RenderSnapshot<'_> {
-        let fs = self.wm.iter().iter().any(|w| w.state == WindowState::Fullscreen);
+        let fs = self
+            .wm
+            .iter()
+            .iter()
+            .any(|w| w.state == WindowState::Fullscreen);
         RenderSnapshot {
             screen_w: self.screen_w,
             screen_h: self.screen_h,
@@ -953,6 +1174,7 @@ impl Desktop {
             tray: self.tray.entries,
             clipboard: Some(&self.clipboard_svc),
             settings: Some(&self.settings),
+            explorers: &self.explorers,
         }
     }
 }

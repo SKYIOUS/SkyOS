@@ -1,11 +1,17 @@
 //! Window manager — ordered window list, focus, drag, minimize, close.
 
-use alloc::vec::Vec;
 use crate::window::{AppWindow, WindowId, WindowState};
+use alloc::vec::Vec;
 
 pub(crate) enum SnapRegion {
-    Left, Right, Top, Bottom,
-    TopLeft, TopRight, BottomLeft, BottomRight,
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 pub struct WindowManager {
@@ -130,7 +136,14 @@ impl WindowManager {
         }
     }
 
-    pub fn snap_to_region(&mut self, id: WindowId, region: SnapRegion, sw: u32, _sh: u32, tb_h: u32) {
+    pub fn snap_to_region(
+        &mut self,
+        id: WindowId,
+        region: SnapRegion,
+        sw: u32,
+        _sh: u32,
+        tb_h: u32,
+    ) {
         if let Some(w) = self.windows.get_mut(id.0) {
             let half_w = sw / 2;
             let half_h = tb_h / 2;

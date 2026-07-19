@@ -1,36 +1,36 @@
 /// Color constants for the dark theme
 pub mod colors {
-    pub const BG_PRIMARY: u32 = 0xFF0F0F1A;     // Darker navy background
-    pub const BG_SURFACE: u32 = 0xFF1A1A2E;     // Card/surface
-    pub const BG_ELEVATED: u32 = 0xFF252540;    // Elevated surface
-    pub const ACCENT: u32 = 0xFF3D5AFE;         // Indigo accent
-    pub const ACCENT_LIGHT: u32 = 0xFF1A8FE8;   // Lighter accent
-    pub const ACCENT_DARK: u32 = 0xFF005A9E;    // Darker accent
-    pub const TEXT_PRIMARY: u32 = 0xFFFFFFFF;    // White text
-    pub const TEXT_SECONDARY: u32 = 0xFFB0B0B0;  // Gray text
-    pub const TEXT_DISABLED: u32 = 0xFF606060;   // Disabled text
-    pub const BORDER: u32 = 0xFF30304D;         // Border color
-    pub const HOVER: u32 = 0xFF3D5AFE;          // Hover state (use accent or lighter)
-    pub const PRESSED: u32 = 0xFF1A1A30;        // Pressed state
-    pub const ERROR: u32 = 0xFFD32F2F;          // Error red
-    pub const SUCCESS: u32 = 0xFF4CAF50;        // Success green
-    pub const WARNING: u32 = 0xFFFFC107;        // Warning yellow
-    pub const SEPARATOR: u32 = 0xFF3A3A5C;      // Separator line
-    pub const SHADOW: u32 = 0x80000000;         // Semi-transparent black
+    pub const BG_PRIMARY: u32 = 0xFF0F0F1A; // Darker navy background
+    pub const BG_SURFACE: u32 = 0xFF1A1A2E; // Card/surface
+    pub const BG_ELEVATED: u32 = 0xFF252540; // Elevated surface
+    pub const ACCENT: u32 = 0xFF3D5AFE; // Indigo accent
+    pub const ACCENT_LIGHT: u32 = 0xFF1A8FE8; // Lighter accent
+    pub const ACCENT_DARK: u32 = 0xFF005A9E; // Darker accent
+    pub const TEXT_PRIMARY: u32 = 0xFFFFFFFF; // White text
+    pub const TEXT_SECONDARY: u32 = 0xFFB0B0B0; // Gray text
+    pub const TEXT_DISABLED: u32 = 0xFF606060; // Disabled text
+    pub const BORDER: u32 = 0xFF30304D; // Border color
+    pub const HOVER: u32 = 0xFF3D5AFE; // Hover state (use accent or lighter)
+    pub const PRESSED: u32 = 0xFF1A1A30; // Pressed state
+    pub const ERROR: u32 = 0xFFD32F2F; // Error red
+    pub const SUCCESS: u32 = 0xFF4CAF50; // Success green
+    pub const WARNING: u32 = 0xFFFFC107; // Warning yellow
+    pub const SEPARATOR: u32 = 0xFF3A3A5C; // Separator line
+    pub const SHADOW: u32 = 0x80000000; // Semi-transparent black
 
     // Taskbar
-    pub const TASKBAR: u32 = 0xFF1A1A2E;        // Taskbar background
-    pub const TASKBAR_HOVER: u32 = 0xFF2D2D4A;  // Taskbar hover
+    pub const TASKBAR: u32 = 0xFF1A1A2E; // Taskbar background
+    pub const TASKBAR_HOVER: u32 = 0xFF2D2D4A; // Taskbar hover
 
     // Start menu
-    pub const MENU_BG: u32 = 0xFF252540;        // Menu background
-    pub const MENU_HOVER: u32 = 0xFF3A3A5C;     // Menu hover
-    pub const MENU_TEXT: u32 = 0xFFFFFFFF;       // Menu text
+    pub const MENU_BG: u32 = 0xFF252540; // Menu background
+    pub const MENU_HOVER: u32 = 0xFF3A3A5C; // Menu hover
+    pub const MENU_TEXT: u32 = 0xFFFFFFFF; // Menu text
 
     // Window
-    pub const WIN_TITLE: u32 = 0xFF1B1B2F;      // Title bar
-    pub const WIN_BG: u32 = 0xFF1E1E32;         // Window background
-    pub const WIN_BORDER: u32 = 0xFF3A3A5C;     // Window border
+    pub const WIN_TITLE: u32 = 0xFF1B1B2F; // Title bar
+    pub const WIN_BG: u32 = 0xFF1E1E32; // Window background
+    pub const WIN_BORDER: u32 = 0xFF3A3A5C; // Window border
     pub const WIN_CLOSE_HOVER: u32 = 0xFFE81123; // Close button hover
 }
 

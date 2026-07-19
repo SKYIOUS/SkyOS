@@ -2,8 +2,8 @@
 #![no_main]
 extern crate alloc;
 
-use libsarga::{sarga_main, println, args, io};
 use libsarga::libskyos::net_ext;
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     if args::argc() < 2 {

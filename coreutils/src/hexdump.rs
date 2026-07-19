@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, io, args};
 use core::fmt::Write;
+use libsarga::{args, io, sarga_main};
 
 struct StdoutWriter;
 impl core::fmt::Write for StdoutWriter {
@@ -16,7 +16,9 @@ fn user_main() -> i32 {
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
         io::open(&path, 0).unwrap_or(0)
-    } else { 0 };
+    } else {
+        0
+    };
     let mut buf = [0u8; 16];
     let mut offset = 0usize;
     loop {
@@ -28,20 +30,30 @@ fn user_main() -> i32 {
         let mut w = StdoutWriter;
         write!(w, "{:08x} ", offset).ok();
         for i in 0..16 {
-            if i < n { write!(w, "{:02x} ", buf[i]).ok(); }
-            else { write!(w, "   ").ok(); }
-            if i == 7 { write!(w, " ").ok(); }
+            if i < n {
+                write!(w, "{:02x} ", buf[i]).ok();
+            } else {
+                write!(w, "   ").ok();
+            }
+            if i == 7 {
+                write!(w, " ").ok();
+            }
         }
         write!(w, " |").ok();
         for i in 0..n {
             let c = buf[i];
-            if c >= 0x20 && c <= 0x7e { write!(w, "{}", c as char).ok(); }
-            else { write!(w, ".").ok(); }
+            if c >= 0x20 && c <= 0x7e {
+                write!(w, "{}", c as char).ok();
+            } else {
+                write!(w, ".").ok();
+            }
         }
         write!(w, "|\n").ok();
         offset += n;
     }
-    if fd != 0 { let _ = io::close(fd); }
+    if fd != 0 {
+        let _ = io::close(fd);
+    }
     0
 }
 

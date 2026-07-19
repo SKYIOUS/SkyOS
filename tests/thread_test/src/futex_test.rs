@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use libsarga::{sarga_main, println};
+use libsarga::{println, sarga_main};
 
 mod raw {
     pub fn futex(uaddr: *mut u32, op: u32, val: u32) -> i64 {
@@ -13,10 +13,15 @@ mod raw {
         unsafe { libsarga::syscall::syscall0(57) }
     }
     pub fn exit(status: i64) -> ! {
-        unsafe { libsarga::syscall::syscall1(60, status as u64); unreachable!() }
+        unsafe {
+            libsarga::syscall::syscall1(60, status as u64);
+            unreachable!()
+        }
     }
     pub fn yield_now() {
-        unsafe { libsarga::syscall::syscall0(24); }
+        unsafe {
+            libsarga::syscall::syscall0(24);
+        }
     }
     pub fn getpid() -> i64 {
         unsafe { libsarga::syscall::syscall0(39) }
@@ -85,7 +90,9 @@ fn main_test() -> i32 {
     println!("[PARENT {}] forked child pid={}", raw::getpid(), pid);
 
     // Give child time to start, then signal
-    for _ in 0..200 { raw::yield_now(); }
+    for _ in 0..200 {
+        raw::yield_now();
+    }
 
     // Signal child by setting FUTEX_VAL and waking
     // ponytail: no sched_setattr on user side; yield + futex_wake is enough
@@ -112,5 +119,7 @@ fn main_test() -> i32 {
     }
 }
 
-fn user_main() -> i32 { main_test() }
+fn user_main() -> i32 {
+    main_test()
+}
 sarga_main!(user_main);

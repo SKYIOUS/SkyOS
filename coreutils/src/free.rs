@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, print, io};
+use libsarga::{io, print, println, sarga_main};
 
 fn read_ctl(path: &str) -> u64 {
     let mut path_buf = alloc::vec::Vec::from(path.as_bytes());

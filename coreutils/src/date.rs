@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, args, syscall};
+use libsarga::{args, sarga_main, syscall};
 
 #[repr(C)]
 struct TimeSpec {
@@ -13,9 +13,12 @@ fn format_timestamp(sec: u64, _nsec: u64) -> alloc::string::String {
     // Basic formatting: YYYY-MM-DD HH:MM:SS (UTC)
     // Epoch is 1970-01-01
     let mut s = sec;
-    let seconds = s % 60; s /= 60;
-    let minutes = s % 60; s /= 60;
-    let hours = s % 24; s /= 24;
+    let seconds = s % 60;
+    s /= 60;
+    let minutes = s % 60;
+    s /= 60;
+    let hours = s % 24;
+    s /= 24;
 
     // Simplistic day to date conversion (ignoring leap years for brevity in this OS)
     let days = s;
@@ -24,7 +27,15 @@ fn format_timestamp(sec: u64, _nsec: u64) -> alloc::string::String {
     let month = (day_of_year / 30) + 1;
     let day = (day_of_year % 30) + 1;
 
-    alloc::format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day, hours, minutes, seconds)
+    alloc::format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        year,
+        month,
+        day,
+        hours,
+        minutes,
+        seconds
+    )
 }
 
 fn user_main() -> i32 {
@@ -45,7 +56,10 @@ fn user_main() -> i32 {
         return 0;
     }
 
-    let mut ts = TimeSpec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = TimeSpec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // clock_gettime: syscall2(228, CLOCK_REALTIME=0, ts_ptr)
     let r = unsafe { syscall::syscall2(228, 0, &mut ts as *mut TimeSpec as u64) };
     if r == 0 {

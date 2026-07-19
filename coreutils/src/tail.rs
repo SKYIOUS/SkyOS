@@ -2,7 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, args, io};
+use libsarga::{args, io, sarga_main};
 
 fn user_main() -> i32 {
     let mut count: usize = 10;
@@ -25,7 +25,12 @@ fn user_main() -> i32 {
     if let Some(path) = file {
         let fd = match io::open(path, 0) {
             Ok(fd) => fd,
-            Err(_) => { io::print_str("tail: "); io::print_str(path); io::print_str(": No such file\n"); return 1; }
+            Err(_) => {
+                io::print_str("tail: ");
+                io::print_str(path);
+                io::print_str(": No such file\n");
+                return 1;
+            }
         };
         loop {
             let n = match io::read(fd, &mut buf) {
@@ -49,7 +54,11 @@ fn user_main() -> i32 {
 
     let s = core::str::from_utf8(&all).unwrap_or("");
     let lines: Vec<&str> = s.split('\n').collect();
-    let start = if lines.len() > count { lines.len() - count } else { 0 };
+    let start = if lines.len() > count {
+        lines.len() - count
+    } else {
+        0
+    };
     for line in &lines[start..] {
         io::write_all(1, line.as_bytes()).ok();
         io::write_all(1, b"\n").ok();

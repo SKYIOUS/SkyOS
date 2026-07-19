@@ -59,7 +59,7 @@ pub struct AppWindow {
     pub(crate) selection: Option<Selection>,
     pub(crate) anim: Option<AnimState>,
     pub(crate) always_on_top: bool,
-
+    pub(crate) explorer_id: Option<u32>,
 }
 
 impl AppWindow {
@@ -92,8 +92,10 @@ impl AppWindow {
                 let d = a.duration;
                 self.x = a.from_x + ((a.to_x - a.from_x) * t as i32) / d as i32;
                 self.y = a.from_y + ((a.to_y - a.from_y) * t as i32) / d as i32;
-                self.w = a.from_w + ((a.to_w as i32 - a.from_w as i32) * t as i32 / d as i32) as u32;
-                self.h = a.from_h + ((a.to_h as i32 - a.from_h as i32) * t as i32 / d as i32) as u32;
+                self.w =
+                    a.from_w + ((a.to_w as i32 - a.from_w as i32) * t as i32 / d as i32) as u32;
+                self.h =
+                    a.from_h + ((a.to_h as i32 - a.from_h as i32) * t as i32 / d as i32) as u32;
             }
             true
         } else {
@@ -102,7 +104,13 @@ impl AppWindow {
     }
 }
 
-pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visible: bool) {
+pub(crate) fn draw(
+    win: &mut Window,
+    theme: &Theme,
+    aw: &AppWindow,
+    cursor_visible: bool,
+    explorers: &[crate::explorer::ExplorerState],
+) {
     // Don't draw minimized windows.
     if aw.state == WindowState::Minimized {
         return;
@@ -120,13 +128,7 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visib
     };
 
     // Shadow
-    win.draw_rect_alpha(
-        aw.x as u32 + 6,
-        aw.y as u32 + 6,
-        aw.w,
-        aw.h,
-        0x60000000,
-    );
+    win.draw_rect_alpha(aw.x as u32 + 6, aw.y as u32 + 6, aw.w, aw.h, 0x60000000);
 
     // Window body
     win.draw_rounded_rect(
@@ -170,16 +172,16 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visib
         false,
     );
 
-    win.draw_string(
-        aw.x as u32 + 12,
-        aw.y as u32 + 7,
-        &aw.title,
-        0xFFFFFFFF,
-        0,
-    );
+    win.draw_string(aw.x as u32 + 12, aw.y as u32 + 7, &aw.title, 0xFFFFFFFF, 0);
 
     if aw.always_on_top {
-        win.draw_string(aw.x as u32 + aw.w - 82, aw.y as u32 + 7, "[A]", 0xFFFFAA00, 0);
+        win.draw_string(
+            aw.x as u32 + aw.w - 82,
+            aw.y as u32 + 7,
+            "[A]",
+            0xFFFFAA00,
+            0,
+        );
     }
 
     // Close button
@@ -193,6 +195,12 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visib
     let min_x = aw.x as u32 + aw.w - 54;
     win.draw_rounded_rect(min_x, close_y, 22, 18, 4, theme.bg_elevated);
     win.draw_line_h(min_x + 6, close_y + 14, 10, 0xFFFFFFFF);
+
+    // Explorer content
+    if let Some(exp_id) = aw.explorer_id {
+        crate::explorer::draw_explorer_content(win, theme, aw, explorers, exp_id);
+        return;
+    }
 
     // Window content
     let line_y = aw.y as u32 + 28;
@@ -211,25 +219,17 @@ pub(crate) fn draw(win: &mut Window, theme: &Theme, aw: &AppWindow, cursor_visib
             break;
         }
 
-        let display = if line.len() > 55 {
-            &line[..55]
-        } else {
-            line
-        };
+        let display = if line.len() > 55 { &line[..55] } else { line };
 
-        win.draw_string(
-            aw.x as u32 + 8,
-            ly,
-            display,
-            theme.text_secondary,
-            0,
-        );
+        win.draw_string(aw.x as u32 + 8, ly, display, theme.text_secondary, 0);
     }
 
     if cursor_visible && aw.focused && !aw.content.is_empty() {
         let last = &aw.content[aw.content.len() - 1];
         let cx = aw.x as u32 + 8 + last.len() as u32 * 8;
-        let cy = aw.y as u32 + 30 + (aw.content.len().saturating_sub(1) as u32 - aw.scroll).saturating_sub(1) * 14;
+        let cy = aw.y as u32
+            + 30
+            + (aw.content.len().saturating_sub(1) as u32 - aw.scroll).saturating_sub(1) * 14;
         if cy < aw.y as u32 + aw.h {
             win.draw_char(cx, cy, '_', theme.accent, 0);
         }

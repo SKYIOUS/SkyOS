@@ -1,7 +1,7 @@
 //! Damage tracking — dirty rectangle accumulation for efficient repaints.
 
-use alloc::vec::Vec;
 use crate::geometry::Rect;
+use alloc::vec::Vec;
 
 pub struct DamageTracker {
     rects: Vec<Rect>,
@@ -10,19 +10,26 @@ pub struct DamageTracker {
 
 impl DamageTracker {
     pub fn new() -> Self {
-        Self { rects: Vec::new(), full: true }
+        Self {
+            rects: Vec::new(),
+            full: true,
+        }
     }
 
     #[allow(dead_code)]
     pub fn add(&mut self, r: Rect) {
-        if self.full { return; }
+        if self.full {
+            return;
+        }
         if self.rects.len() >= 16 {
             self.full = true;
             self.rects.clear();
             return;
         }
         for existing in &self.rects {
-            if existing.contains(&r) { return; }
+            if existing.contains(&r) {
+                return;
+            }
         }
         self.rects.push(r);
     }

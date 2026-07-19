@@ -58,7 +58,11 @@ impl GlassWindow {
 
     pub fn flush(&self) -> Result<u64, i64> {
         let ret = unsafe { syscall1(SYS_GLASS_FLUSH, self.window_id) };
-        if ret < 0 { Err(-ret) } else { Ok(ret as u64) }
+        if ret < 0 {
+            Err(-ret)
+        } else {
+            Ok(ret as u64)
+        }
     }
 
     pub fn poll(&self, fence_id: u64) -> bool {

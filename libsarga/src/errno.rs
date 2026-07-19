@@ -1,6 +1,6 @@
 //! Error handling and standard error codes.
 
-use core::sync::atomic::{AtomicI32, Ordering};
+use core::sync::atomic::AtomicI32;
 
 // Fallback global errno when TLS is not available
 static __ERRNO: AtomicI32 = AtomicI32::new(0);
@@ -20,7 +20,9 @@ pub extern "C" fn __errno_location() -> *mut i32 {
 
 /// Sets the current thread's error number.
 pub fn set_errno(err: i32) {
-    unsafe { *__errno_location() = err; }
+    unsafe {
+        *__errno_location() = err;
+    }
 }
 
 /// Gets the current thread's error number.

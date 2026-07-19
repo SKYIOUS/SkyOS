@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
 use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn read_all_stdin() -> alloc::vec::Vec<u8> {
     let mut data = alloc::vec::Vec::new();
@@ -25,13 +25,17 @@ fn user_main() -> i32 {
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
         if arg.starts_with("-d") {
-            let d = if arg.len() > 2 { &arg[2..] } else {
+            let d = if arg.len() > 2 {
+                &arg[2..]
+            } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
             };
             delim = d.as_bytes()[0];
         } else if arg.starts_with("-f") {
-            let f = if arg.len() > 2 { &arg[2..] } else {
+            let f = if arg.len() > 2 {
+                &arg[2..]
+            } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
             };

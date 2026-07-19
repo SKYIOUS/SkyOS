@@ -2,7 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, println, io, net, args};
+use libsarga::{args, io, net, println, sarga_main};
 
 fn user_main() -> i32 {
     if args::argc() < 3 {
@@ -14,7 +14,10 @@ fn user_main() -> i32 {
     let port: u16 = port_str.parse().unwrap_or(80);
 
     let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() != 4 { println!("nc: bad address"); return 0; }
+    if parts.len() != 4 {
+        println!("nc: bad address");
+        return 0;
+    }
     let ip: [u8; 4] = [
         parts[0].parse().unwrap_or(10),
         parts[1].parse().unwrap_or(0),
@@ -36,21 +39,31 @@ fn user_main() -> i32 {
                             Err(_) => break,
                         };
                         let r = net::send(fd, &buf[..n]).unwrap_or(0);
-                        if r == 0 { break; }
+                        if r == 0 {
+                            break;
+                        }
                         let mut resp = [0u8; 4096];
                         match net::recv(fd, &mut resp) {
                             Ok(0) => break,
-                            Ok(n) => { io::write_all(1, &resp[..n]).ok(); }
+                            Ok(n) => {
+                                io::write_all(1, &resp[..n]).ok();
+                            }
                             Err(_) => break,
                         }
                     }
                     let _ = io::close(fd);
                     return 0;
                 }
-                Err(e) => { println!("nc: connect failed: {}", e); return 1; }
+                Err(e) => {
+                    println!("nc: connect failed: {}", e);
+                    return 1;
+                }
             }
         }
-        Err(e) => { println!("nc: socket failed: {}", e); return 1; }
+        Err(e) => {
+            println!("nc: socket failed: {}", e);
+            return 1;
+        }
     }
 }
 

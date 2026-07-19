@@ -1,7 +1,7 @@
 //! Settings panel — sound, theme, display toggles.
 
-use libsarga::gui::Window;
 use crate::render::snapshot::RenderSnapshot;
+use libsarga::gui::Window;
 
 pub(crate) struct SettingsState {
     pub open: bool,
@@ -12,7 +12,12 @@ pub(crate) struct SettingsState {
 
 impl SettingsState {
     pub fn new() -> Self {
-        SettingsState { open: false, sound_on: true, theme_dark: true, hover_idx: -1 }
+        SettingsState {
+            open: false,
+            sound_on: true,
+            theme_dark: true,
+            hover_idx: -1,
+        }
     }
 
     pub fn toggle(&mut self) {
@@ -21,8 +26,11 @@ impl SettingsState {
     }
 
     pub fn draw(&self, win: &mut Window, snap: &RenderSnapshot) {
-        if !self.open { return; }
-        let pw = 320u32; let ph = 200u32;
+        if !self.open {
+            return;
+        }
+        let pw = 320u32;
+        let ph = 200u32;
         let px = (snap.screen_w - pw) / 2;
         let py = (snap.screen_h - ph) / 3;
         win.draw_rect_alpha(0, 0, snap.screen_w, snap.screen_h, 0x40000000);
@@ -38,7 +46,13 @@ impl SettingsState {
             win.draw_rounded_rect(px + 8, iy, pw - 16, 28, 4, bg);
             win.draw_string(px + 16, iy + 6, label, 0xFFD0D0D0, 0);
             let toggle_fg = if *val { 0xFF4CAF50 } else { 0xFF555555 };
-            win.draw_char(px + pw - 40, iy + 6, if *val { 'Y' } else { 'N' }, toggle_fg, 0);
+            win.draw_char(
+                px + pw - 40,
+                iy + 6,
+                if *val { 'Y' } else { 'N' },
+                toggle_fg,
+                0,
+            );
         }
 
         let close_hover = self.hover_idx == 2;
@@ -48,18 +62,29 @@ impl SettingsState {
     }
 
     pub fn hit_test(&self, mx: i32, my: i32, snap: &RenderSnapshot) -> Option<usize> {
-        if !self.open { return None; }
-        let pw = 320u32; let ph = 200u32;
+        if !self.open {
+            return None;
+        }
+        let pw = 320u32;
+        let ph = 200u32;
         let px = (snap.screen_w - pw) / 2;
         let py = (snap.screen_h - ph) / 3;
         for i in 0..2 {
             let iy = py + 36 + i as u32 * 32;
-            if mx >= px as i32 + 8 && mx <= (px + pw - 8) as i32 && my >= iy as i32 && my <= (iy + 28) as i32 {
+            if mx >= px as i32 + 8
+                && mx <= (px + pw - 8) as i32
+                && my >= iy as i32
+                && my <= (iy + 28) as i32
+            {
                 return Some(i);
             }
         }
         let cy = py + ph - 36;
-        if mx >= (px + 100) as i32 && mx <= (px + 220) as i32 && my >= cy as i32 && my <= (cy + 28) as i32 {
+        if mx >= (px + 100) as i32
+            && mx <= (px + 220) as i32
+            && my >= cy as i32
+            && my <= (cy + 28) as i32
+        {
             return Some(2);
         }
         None

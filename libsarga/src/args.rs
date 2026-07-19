@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicI32, AtomicIsize, Ordering};
+use core::sync::atomic::{AtomicI32, Ordering};
 
 static ARGC: AtomicI32 = AtomicI32::new(0);
 static ARGV: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
@@ -19,12 +19,18 @@ pub fn argv() -> *const *const u8 {
 
 pub fn get(pos: usize) -> Option<&'static str> {
     let argv = argv();
-    if pos >= argc() as usize { return None; }
+    if pos >= argc() as usize {
+        return None;
+    }
     unsafe {
         let ptr = *argv.add(pos);
-        if ptr.is_null() { return None; }
+        if ptr.is_null() {
+            return None;
+        }
         let mut len = 0;
-        while *ptr.add(len) != 0 { len += 1; }
+        while *ptr.add(len) != 0 {
+            len += 1;
+        }
         core::str::from_utf8(core::slice::from_raw_parts(ptr, len)).ok()
     }
 }

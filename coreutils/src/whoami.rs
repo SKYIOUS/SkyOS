@@ -4,10 +4,10 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::io::{self, open, read, close};
+use alloc::string::ToString;
+use libsarga::io::{self, close, open, read};
 use libsarga::process::geteuid;
 use libsarga::sarga_main;
-use alloc::string::ToString;
 
 fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let fd = open(path, 0)?;
@@ -15,7 +15,9 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::E
     let mut tmp = [0u8; 512];
     loop {
         let n = read(fd, &mut tmp)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
     }
     close(fd)?;
@@ -25,7 +27,9 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::E
 fn lookup_name_by_uid(uid: u32) -> alloc::string::String {
     if let Ok(data) = read_whole_file("/etc/passwd\0") {
         for line in data.split(|&b: &u8| b == b'\n') {
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             let mut parts = line.splitn(4, |&b: &u8| b == b':');
             let name = parts.next().unwrap_or(b"");
             let _pw_passwd = parts.next();

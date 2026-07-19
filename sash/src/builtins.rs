@@ -1,12 +1,15 @@
+use alloc::ffi::CString;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloc::ffi::CString;
-use alloc::format;
 use libsarga::println;
 
 pub fn try_builtin(cmd: &str, args: &[String]) -> Option<i64> {
-    let cmd = match cmd.rsplit('/').next() { Some(c) => c, None => cmd };
+    let cmd = match cmd.rsplit('/').next() {
+        Some(c) => c,
+        None => cmd,
+    };
 
     match cmd {
         "cd" => Some(builtin_cd(args)),
@@ -74,7 +77,7 @@ fn builtin_pwd() -> i64 {
     if r > 0 {
         let len = r as usize;
         buf[len] = 0;
-        if let Ok(s) = core::ffi::CStr::from_bytes_until_nul(&buf[..len+1]) {
+        if let Ok(s) = core::ffi::CStr::from_bytes_until_nul(&buf[..len + 1]) {
             println!("{}", s.to_str().unwrap_or(""));
         }
     }
@@ -124,26 +127,37 @@ fn builtin_alias(args: &[String]) -> i64 {
 
 fn builtin_unalias(args: &[String]) -> i64 {
     for arg in &args[1..] {
-        if arg == "-a" { crate::clear_aliases(); return 0; }
+        if arg == "-a" {
+            crate::clear_aliases();
+            return 0;
+        }
         crate::remove_alias(arg);
     }
     0
 }
 
 fn builtin_source(args: &[String]) -> i64 {
-    if args.len() < 2 { println!("source: missing filename"); return 1; }
+    if args.len() < 2 {
+        println!("source: missing filename");
+        return 1;
+    }
     let script_args: Vec<String> = args[2..].to_vec();
     crate::scripting::run_script_with_args(&args[1], &script_args)
 }
 
 fn builtin_exec(args: &[String]) -> i64 {
-    if args.len() < 2 { return 1; }
+    if args.len() < 2 {
+        return 1;
+    }
     let args_refs: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
     let env_strings = crate::get_env_refs();
     let env_refs: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
     let r = libsarga::process::execve(&args[1], &args_refs, &env_refs);
     println!("exec: {}: failed", args[1]);
-    match r { Ok(_) => 0, Err(e) => e as i32 as i64 }
+    match r {
+        Ok(_) => 0,
+        Err(e) => e as i32 as i64,
+    }
 }
 
 fn builtin_echo(args: &[String]) -> i64 {
@@ -151,21 +165,27 @@ fn builtin_echo(args: &[String]) -> i64 {
     let start = if !newline && args.len() > 1 { 2 } else { 1 };
     let mut s = String::new();
     for (i, a) in args[start..].iter().enumerate() {
-        if i > 0 { s.push(' '); }
+        if i > 0 {
+            s.push(' ');
+        }
         s.push_str(a);
     }
-    if newline { s.push('\n'); }
+    if newline {
+        s.push('\n');
+    }
     libsarga::print!("{}", s);
     0
 }
 
 fn builtin_test(args: &[String]) -> i64 {
     let test_args = if args[0] == "[" && args.last().map_or(false, |a| a == "]") {
-        &args[1..args.len()-1]
+        &args[1..args.len() - 1]
     } else {
         &args[1..]
     };
-    if test_args.is_empty() { return 1; }
+    if test_args.is_empty() {
+        return 1;
+    }
 
     match test_args[0].as_str() {
         "-f" => test_file(test_args.get(1), |_| true),
@@ -180,21 +200,35 @@ fn builtin_test(args: &[String]) -> i64 {
             let empty = String::new();
             let left = test_args.get(1).unwrap_or(&empty);
             let right = test_args.get(2).unwrap_or(&empty);
-            if left == right { 0 } else { 1 }
+            if left == right {
+                0
+            } else {
+                1
+            }
         }
         "!=" => {
             let empty = String::new();
             let left = test_args.get(1).unwrap_or(&empty);
             let right = test_args.get(2).unwrap_or(&empty);
-            if left != right { 0 } else { 1 }
+            if left != right {
+                0
+            } else {
+                1
+            }
         }
-        "-eq" => test_num(test_args.get(1), test_args.get(2), |a,b| a == b),
-        "-ne" => test_num(test_args.get(1), test_args.get(2), |a,b| a != b),
-        "-lt" => test_num(test_args.get(1), test_args.get(2), |a,b| a < b),
-        "-le" => test_num(test_args.get(1), test_args.get(2), |a,b| a <= b),
-        "-gt" => test_num(test_args.get(1), test_args.get(2), |a,b| a > b),
-        "-ge" => test_num(test_args.get(1), test_args.get(2), |a,b| a >= b),
-        "!" => if builtin_test(&[String::from("test"), test_args[1].clone()]) == 0 { 1 } else { 0 },
+        "-eq" => test_num(test_args.get(1), test_args.get(2), |a, b| a == b),
+        "-ne" => test_num(test_args.get(1), test_args.get(2), |a, b| a != b),
+        "-lt" => test_num(test_args.get(1), test_args.get(2), |a, b| a < b),
+        "-le" => test_num(test_args.get(1), test_args.get(2), |a, b| a <= b),
+        "-gt" => test_num(test_args.get(1), test_args.get(2), |a, b| a > b),
+        "-ge" => test_num(test_args.get(1), test_args.get(2), |a, b| a >= b),
+        "!" => {
+            if builtin_test(&[String::from("test"), test_args[1].clone()]) == 0 {
+                1
+            } else {
+                0
+            }
+        }
         _ => 1,
     }
 }
@@ -224,35 +258,56 @@ fn test_str_not_empty(arg: Option<&String>) -> i64 {
 fn test_num(a: Option<&String>, b: Option<&String>, cmp: fn(i64, i64) -> bool) -> i64 {
     let a_val: i64 = a.and_then(|s| s.parse().ok()).unwrap_or(0);
     let b_val: i64 = b.and_then(|s| s.parse().ok()).unwrap_or(0);
-    if cmp(a_val, b_val) { 0 } else { 1 }
+    if cmp(a_val, b_val) {
+        0
+    } else {
+        1
+    }
 }
 
 fn is_dir(path: &str) -> bool {
-    let c_str = match CString::new(path.as_bytes()) { Ok(c) => c, Err(_) => return false };
+    let c_str = match CString::new(path.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
     let mut st = [0i64; 13];
-    let r = unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
+    let r =
+        unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
     r == 0 && (st[3] & 0o40000) != 0
 }
 
 fn is_file(path: &str) -> bool {
-    let c_str = match CString::new(path.as_bytes()) { Ok(c) => c, Err(_) => return false };
+    let c_str = match CString::new(path.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
     let mut st = [0i64; 13];
-    let r = unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
+    let r =
+        unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
     r == 0
 }
 
 fn is_executable(path: &str) -> bool {
-    let c_str = match CString::new(path.as_bytes()) { Ok(c) => c, Err(_) => return false };
+    let c_str = match CString::new(path.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
     let mut st = [0i64; 13];
-    let r = unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
+    let r =
+        unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
     r == 0 && (st[3] & 0o111) != 0
 }
 
 fn builtin_read(args: &[String]) -> i64 {
-    let var = args.get(1).map(|s| s.clone()).unwrap_or_else(|| String::from("REPLY"));
+    let var = args
+        .get(1)
+        .map(|s| s.clone())
+        .unwrap_or_else(|| String::from("REPLY"));
     let mut buf = [0u8; 4096];
     let n = libsarga::io::read(0, &mut buf).unwrap_or(0);
-    if n == 0 { return 1; }
+    if n == 0 {
+        return 1;
+    }
     let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
     let trimmed = s.trim_end_matches('\n');
     crate::set_env(&var, trimmed);
@@ -266,7 +321,9 @@ fn builtin_printf(args: &[String]) -> i64 {
         format!("{}\n", arg)
     } else {
         let mut s = fmt.to_string();
-        if !s.ends_with('\n') { s.push('\n'); }
+        if !s.ends_with('\n') {
+            s.push('\n');
+        }
         s
     };
     libsarga::print!("{}", output);
@@ -279,17 +336,26 @@ fn builtin_jobs() -> i64 {
 }
 
 fn builtin_fg(args: &[String]) -> i64 {
-    let job_id = args.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+    let job_id = args
+        .get(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(1);
     crate::fg_job(job_id)
 }
 
 fn builtin_bg(args: &[String]) -> i64 {
-    let job_id = args.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+    let job_id = args
+        .get(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(1);
     crate::bg_job(job_id)
 }
 
 fn builtin_history(args: &[String]) -> i64 {
-    let n = args.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(usize::MAX);
+    let n = args
+        .get(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(usize::MAX);
     crate::print_history(n);
     0
 }
@@ -297,32 +363,79 @@ fn builtin_history(args: &[String]) -> i64 {
 fn builtin_type(args: &[String]) -> i64 {
     let cmd = match args.get(1) {
         Some(c) => c.as_str(),
-        None => { println!("type: missing argument"); return 1; }
+        None => {
+            println!("type: missing argument");
+            return 1;
+        }
     };
-    if let Some(alias) = crate::get_alias(cmd) { println!("{} is aliased to `{}'", cmd, alias); return 0; }
-    if matches_builtin(cmd) { println!("{} is a shell builtin", cmd); return 0; }
-    if let Some(path) = find_in_path(cmd) { println!("{} is {}", cmd, path); return 0; }
+    if let Some(alias) = crate::get_alias(cmd) {
+        println!("{} is aliased to `{}'", cmd, alias);
+        return 0;
+    }
+    if matches_builtin(cmd) {
+        println!("{} is a shell builtin", cmd);
+        return 0;
+    }
+    if let Some(path) = find_in_path(cmd) {
+        println!("{} is {}", cmd, path);
+        return 0;
+    }
     println!("{}: not found", cmd);
     1
 }
 
 pub fn matches_builtin(cmd: &str) -> bool {
-    matches!(cmd, "cd"|"pwd"|"exit"|"export"|"unset"|"env"|"alias"|"unalias"
-        |"source"|"."|"exec"|"true"|"false"|"test"|"["|"read"|"printf"
-        |"echo"|"jobs"|"fg"|"bg"|"history"|"type"|"help"|"ai"|"wait"|"eval"|"shift")
+    matches!(
+        cmd,
+        "cd" | "pwd"
+            | "exit"
+            | "export"
+            | "unset"
+            | "env"
+            | "alias"
+            | "unalias"
+            | "source"
+            | "."
+            | "exec"
+            | "true"
+            | "false"
+            | "test"
+            | "["
+            | "read"
+            | "printf"
+            | "echo"
+            | "jobs"
+            | "fg"
+            | "bg"
+            | "history"
+            | "type"
+            | "help"
+            | "ai"
+            | "wait"
+            | "eval"
+            | "shift"
+    )
 }
 
 pub fn find_in_path(cmd: &str) -> Option<String> {
     let path = crate::get_env("PATH").unwrap_or_else(|| String::from("/bin"));
     for dir in path.split(':') {
-        let full: String = if dir.ends_with('/') { format!("{}{}", dir, cmd) } else { format!("{}/{}", dir, cmd) };
+        let full: String = if dir.ends_with('/') {
+            format!("{}{}", dir, cmd)
+        } else {
+            format!("{}/{}", dir, cmd)
+        };
         let c_str = match CString::new(full.as_bytes()) {
             Ok(c) => c,
             Err(_) => continue,
         };
         let mut st = [0i64; 13];
-        let r = unsafe { libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64) };
-        if r == 0 { return Some(full); }
+        let r = unsafe {
+            libsarga::syscall::syscall2(4, c_str.as_ptr() as u64, st.as_mut_ptr() as u64)
+        };
+        if r == 0 {
+            return Some(full);
+        }
     }
     None
 }
@@ -357,10 +470,19 @@ fn builtin_help() -> i64 {
 }
 
 fn builtin_ai(args: &[String]) -> i64 {
-    if args.len() < 2 { println!("Usage: ai <intent> [args...]"); return 1; }
+    if args.len() < 2 {
+        println!("Usage: ai <intent> [args...]");
+        return 1;
+    }
     match libsarga::ai::query(&args[1]) {
-        Ok(resp) => { println!("SARGAAI: {}", resp); 0 }
-        Err(_) => { println!("SARGAAI: Error"); 1 }
+        Ok(resp) => {
+            println!("SARGAAI: {}", resp);
+            0
+        }
+        Err(_) => {
+            println!("SARGAAI: Error");
+            1
+        }
     }
 }
 
@@ -369,13 +491,16 @@ fn builtin_wait(args: &[String]) -> i64 {
         if let Ok(pid) = args[1].parse::<u64>() {
             libsarga::process::wait(pid).unwrap_or(0) as i64
         } else {
-            println!("wait: invalid pid: {}", args[1]); 1
+            println!("wait: invalid pid: {}", args[1]);
+            1
         }
     } else {
         // Wait for all children
         loop {
             let r = unsafe { libsarga::syscall::syscall3(61, -1i64 as u64, 0u64, 0u64) };
-            if r < 0 { break; }
+            if r < 0 {
+                break;
+            }
         }
         0
     }
@@ -385,16 +510,24 @@ fn builtin_eval(args: &[String]) -> i64 {
     let expr = args[1..].join(" ");
     let tokens = match crate::parser::tokenize(&expr) {
         Ok(t) => t,
-        Err(e) => { println!("eval: {}", e); return 1; }
+        Err(e) => {
+            println!("eval: {}", e);
+            return 1;
+        }
     };
     let pipelines = crate::parser::parse(&tokens);
     crate::executor::execute_pipelines(pipelines)
 }
 
 fn builtin_shift(args: &[String]) -> i64 {
-    let n = args.get(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+    let n = args
+        .get(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(1);
     // shift is a no-op without scripting context, but we store for script use
-    if n > 0 { crate::shift_positional(n) }
+    if n > 0 {
+        crate::shift_positional(n)
+    }
     0
 }
 

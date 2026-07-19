@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, net, io, args};
+use libsarga::{args, io, net, println, sarga_main};
 
 fn user_main() -> i32 {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
@@ -9,7 +9,10 @@ fn user_main() -> i32 {
 
     let fd = match net::socket(net::AF_INET, net::SOCK_STREAM, 0) {
         Ok(fd) => fd,
-        Err(e) => { println!("echod: socket: {}", e); return 0; }
+        Err(e) => {
+            println!("echod: socket: {}", e);
+            return 0;
+        }
     };
 
     let addr = net::SockAddrIn::new(ip, port);

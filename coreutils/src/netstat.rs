@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, print, println, io};
+use libsarga::{io, print, println, sarga_main};
 
 fn user_main() -> i32 {
     println!("Active Internet connections");

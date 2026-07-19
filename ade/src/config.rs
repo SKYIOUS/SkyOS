@@ -1,9 +1,9 @@
 //! Configuration system — namespaced key-value settings, defaults, observers.
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 pub(crate) struct ConfigValue {
     pub value: String,
@@ -26,26 +26,61 @@ impl Config {
         namespaces.push(ConfigNamespace {
             name: "desktop",
             keys: vec![
-                ("theme", ConfigValue { value: String::from("dark"), default: String::from("dark") }),
-                ("wallpaper", ConfigValue { value: String::from(""), default: String::from("") }),
-                ("sound_enabled", ConfigValue { value: String::from("true"), default: String::from("true") }),
+                (
+                    "theme",
+                    ConfigValue {
+                        value: String::from("dark"),
+                        default: String::from("dark"),
+                    },
+                ),
+                (
+                    "wallpaper",
+                    ConfigValue {
+                        value: String::from(""),
+                        default: String::from(""),
+                    },
+                ),
+                (
+                    "sound_enabled",
+                    ConfigValue {
+                        value: String::from("true"),
+                        default: String::from("true"),
+                    },
+                ),
             ],
         });
         namespaces.push(ConfigNamespace {
             name: "session",
             keys: vec![
-                ("auto_restore", ConfigValue { value: String::from("true"), default: String::from("true") }),
-                ("save_on_exit", ConfigValue { value: String::from("true"), default: String::from("true") }),
+                (
+                    "auto_restore",
+                    ConfigValue {
+                        value: String::from("true"),
+                        default: String::from("true"),
+                    },
+                ),
+                (
+                    "save_on_exit",
+                    ConfigValue {
+                        value: String::from("true"),
+                        default: String::from("true"),
+                    },
+                ),
             ],
         });
-        Config { namespaces, observers: Vec::new() }
+        Config {
+            namespaces,
+            observers: Vec::new(),
+        }
     }
 
     pub fn get(&self, ns: &str, key: &str) -> Option<&str> {
         for n in &self.namespaces {
             if n.name == ns {
                 for (k, v) in &n.keys {
-                    if *k == key { return Some(&v.value); }
+                    if *k == key {
+                        return Some(&v.value);
+                    }
                 }
             }
         }

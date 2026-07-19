@@ -14,10 +14,18 @@ pub struct LinearLayout {
 
 impl LinearLayout {
     pub fn vertical(spacing: i32, padding: i32) -> Self {
-        LinearLayout { direction: LayoutDirection::Vertical, spacing, padding }
+        LinearLayout {
+            direction: LayoutDirection::Vertical,
+            spacing,
+            padding,
+        }
     }
     pub fn horizontal(spacing: i32, padding: i32) -> Self {
-        LinearLayout { direction: LayoutDirection::Horizontal, spacing, padding }
+        LinearLayout {
+            direction: LayoutDirection::Horizontal,
+            spacing,
+            padding,
+        }
     }
 
     pub fn apply(&self, children: &mut [Box<dyn Widget>], x: i32, y: i32, max_w: u32, max_h: u32) {
@@ -51,11 +59,16 @@ pub struct GridLayout {
 
 impl GridLayout {
     pub fn new(cols: usize, spacing: i32, padding: i32) -> Self {
-        GridLayout { cols, spacing, padding }
+        GridLayout {
+            cols,
+            spacing,
+            padding,
+        }
     }
 
     pub fn apply(&self, children: &mut [Box<dyn Widget>], x: i32, y: i32, total_w: u32) {
-        let cell_w = (total_w as i32 - self.padding * 2 - self.spacing * (self.cols as i32 - 1)) / self.cols as i32;
+        let cell_w = (total_w as i32 - self.padding * 2 - self.spacing * (self.cols as i32 - 1))
+            / self.cols as i32;
         for (i, child) in children.iter_mut().enumerate() {
             let col = i % self.cols;
             let row = i / self.cols;

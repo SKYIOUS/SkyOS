@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
-use libsarga::fs;
 use libsarga::args;
+use libsarga::fs;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn user_main() -> i32 {
     if args::argc() < 2 {
@@ -17,14 +17,23 @@ fn user_main() -> i32 {
         match fs::stat(arg) {
             Ok(st) => {
                 let mode = st.mode;
-                let ftype = if mode & 0o170000 == 0o100000 { "regular file" }
-                    else if mode & 0o170000 == 0o040000 { "directory" }
-                    else if mode & 0o170000 == 0o120000 { "symbolic link" }
-                    else if mode & 0o170000 == 0o060000 { "block device" }
-                    else if mode & 0o170000 == 0o020000 { "character device" }
-                    else if mode & 0o170000 == 0o010000 { "named pipe" }
-                    else if mode & 0o170000 == 0o140000 { "socket" }
-                    else { "unknown" };
+                let ftype = if mode & 0o170000 == 0o100000 {
+                    "regular file"
+                } else if mode & 0o170000 == 0o040000 {
+                    "directory"
+                } else if mode & 0o170000 == 0o120000 {
+                    "symbolic link"
+                } else if mode & 0o170000 == 0o060000 {
+                    "block device"
+                } else if mode & 0o170000 == 0o020000 {
+                    "character device"
+                } else if mode & 0o170000 == 0o010000 {
+                    "named pipe"
+                } else if mode & 0o170000 == 0o140000 {
+                    "socket"
+                } else {
+                    "unknown"
+                };
                 io::print_str(&alloc::format!(
                     "  File: {}\n  Size: {}     Blocks: {}     Type: {}\n  Mode: {:06o}   Uid: {}   Gid: {}\n",
                     arg, st.size, st.blocks, ftype, mode & 0o7777, st.uid, st.gid

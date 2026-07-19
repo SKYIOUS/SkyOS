@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
 use libsarga::gui::Window;
 use libsarga::io;
+use libsarga::sarga_main;
 use libsarga::theme::Theme;
 
 struct Calculator {
@@ -43,35 +43,61 @@ impl Calculator {
         let negative = val < 0.0 && val != 0.0;
         let mut buf = [0u8; 24];
         let mut len = 0;
-        if negative { buf[len] = b'-'; len += 1; }
+        if negative {
+            buf[len] = b'-';
+            len += 1;
+        }
         // Integer part
         if int_part == 0 {
-            buf[len] = b'0'; len += 1;
+            buf[len] = b'0';
+            len += 1;
         } else {
             let mut digits = [0u8; 20];
             let mut n = int_part;
             let mut d = 0;
-            while n > 0 { digits[d] = (n % 10) as u8; n /= 10; d += 1; }
-            while d > 0 { d -= 1; buf[len] = b'0' + digits[d]; len += 1; }
+            while n > 0 {
+                digits[d] = (n % 10) as u8;
+                n /= 10;
+                d += 1;
+            }
+            while d > 0 {
+                d -= 1;
+                buf[len] = b'0' + digits[d];
+                len += 1;
+            }
         }
         // Fractional part
         if frac_part > 0 {
-            buf[len] = b'.'; len += 1;
+            buf[len] = b'.';
+            len += 1;
             let mut frac = [0u8; 6];
             let mut n = frac_part;
             let mut d = 6;
-            while d > 0 && n > 0 { d -= 1; frac[d] = (n % 10) as u8; n /= 10; }
+            while d > 0 && n > 0 {
+                d -= 1;
+                frac[d] = (n % 10) as u8;
+                n /= 10;
+            }
             // Remove trailing zeros (handled below by end trimming)
             let mut end = 6;
-            while end > d + 1 && frac[end - 1] == 0 { end -= 1; }
-            for i in d..end { buf[len] = b'0' + frac[i]; len += 1; }
+            while end > d + 1 && frac[end - 1] == 0 {
+                end -= 1;
+            }
+            for i in d..end {
+                buf[len] = b'0' + frac[i];
+                len += 1;
+            }
         }
         self.display_len = len;
-        for i in 0..len { self.display[i] = buf[i]; }
+        for i in 0..len {
+            self.display[i] = buf[i];
+        }
     }
 
     fn push_digit(&mut self, d: u8) {
-        if self.error { return; }
+        if self.error {
+            return;
+        }
         if self.new_number {
             self.display_len = 0;
             self.new_number = false;
@@ -83,7 +109,9 @@ impl Calculator {
     }
 
     fn push_dot(&mut self) {
-        if self.error { return; }
+        if self.error {
+            return;
+        }
         if self.new_number {
             self.display[0] = b'0';
             self.display_len = 1;
@@ -91,7 +119,9 @@ impl Calculator {
         }
         // Check if dot already exists
         for i in 0..self.display_len {
-            if self.display[i] == b'.' { return; }
+            if self.display[i] == b'.' {
+                return;
+            }
         }
         self.display[self.display_len] = b'.';
         self.display_len += 1;
@@ -103,11 +133,18 @@ impl Calculator {
         let mut decimal_pos = s.len();
         let mut negative = false;
         for (i, &b) in s.as_bytes().iter().enumerate() {
-            if b == b'-' { negative = true; }
-            else if b == b'.' { decimal_pos = i + 1; }
+            if b == b'-' {
+                negative = true;
+            } else if b == b'.' {
+                decimal_pos = i + 1;
+            }
         }
         // Parse integer part
-        let int_end = if decimal_pos <= s.len() { decimal_pos - 1 } else { s.len() };
+        let int_end = if decimal_pos <= s.len() {
+            decimal_pos - 1
+        } else {
+            s.len()
+        };
         let mut power = 1.0;
         for i in (0..int_end).rev() {
             let b = s.as_bytes()[i];
@@ -129,17 +166,29 @@ impl Calculator {
             }
             result += frac_val;
         }
-        if negative { -result } else { result }
+        if negative {
+            -result
+        } else {
+            result
+        }
     }
 
     fn calculate(&mut self) {
-        if self.error { return; }
+        if self.error {
+            return;
+        }
         let b = self.current_value();
         let result = match self.operator {
             b'+' => self.operand + b,
             b'-' => self.operand - b,
             b'*' => self.operand * b,
-            b'/' => if b != 0.0 { self.operand / b } else { f64::INFINITY },
+            b'/' => {
+                if b != 0.0 {
+                    self.operand / b
+                } else {
+                    f64::INFINITY
+                }
+            }
             _ => b,
         };
         self.set_display(result);
@@ -148,7 +197,9 @@ impl Calculator {
     }
 
     fn op(&mut self, op: u8) {
-        if self.error { return; }
+        if self.error {
+            return;
+        }
         if self.operator != b'=' && !self.new_number {
             self.calculate();
         } else {
@@ -158,7 +209,9 @@ impl Calculator {
         self.new_number = true;
     }
 
-    fn equals(&mut self) { self.calculate(); }
+    fn equals(&mut self) {
+        self.calculate();
+    }
 
     fn clear(&mut self) {
         self.display_len = 1;
@@ -170,7 +223,9 @@ impl Calculator {
     }
 
     fn backspace(&mut self) {
-        if self.error || self.new_number { return; }
+        if self.error || self.new_number {
+            return;
+        }
         if self.display_len > 1 {
             self.display_len -= 1;
         } else {
@@ -181,7 +236,9 @@ impl Calculator {
     }
 
     fn negate(&mut self) {
-        if self.error { return; }
+        if self.error {
+            return;
+        }
         if self.display_len > 0 && self.display[0] == b'-' {
             for i in 1..self.display_len {
                 self.display[i - 1] = self.display[i];
@@ -221,14 +278,20 @@ const GRID_Y: u32 = 70;
 fn btn_rect(col: usize, row: usize) -> (u32, u32, u32, u32) {
     let x = GRID_X + col as u32 * (BTN_W + BTN_PAD);
     let y = GRID_Y + row as u32 * (BTN_H + BTN_PAD);
-    let w = if col == 0 && row == 4 { BTN_W * 2 + BTN_PAD } else { BTN_W };
+    let w = if col == 0 && row == 4 {
+        BTN_W * 2 + BTN_PAD
+    } else {
+        BTN_W
+    };
     (x, y, w, BTN_H)
 }
 
 fn hit_test(mx: u32, my: u32) -> Option<(usize, usize)> {
     for row in 0..5 {
         for col in 0..4 {
-            if BTN_LABELS[row][col].is_empty() { continue; }
+            if BTN_LABELS[row][col].is_empty() {
+                continue;
+            }
             let (x, y, w, h) = btn_rect(col, row);
             if mx >= x && mx < x + w && my >= y && my < y + h {
                 return Some((col, row));
@@ -247,7 +310,10 @@ fn user_main() -> i32 {
 
     let mut win = match Window::create("Calculator", win_w, win_h) {
         Ok(w) => w,
-        Err(e) => { io::print_str(&alloc::format!("calculator: window failed: {}\n", e)); return 0; }
+        Err(e) => {
+            io::print_str(&alloc::format!("calculator: window failed: {}\n", e));
+            return 0;
+        }
     };
 
     let mut prev_pressed = false;
@@ -313,7 +379,9 @@ fn user_main() -> i32 {
         for row in 0..5 {
             for col in 0..4 {
                 let label = BTN_LABELS[row][col];
-                if label.is_empty() { continue; }
+                if label.is_empty() {
+                    continue;
+                }
                 let (x, y, w, h) = btn_rect(col, row);
 
                 // Button color
@@ -330,7 +398,11 @@ fn user_main() -> i32 {
                 win.draw_rounded_rect(x, y, w, h, 6, final_bg);
 
                 // Label
-                let text_color = if label == "C" || label == "±" || label == "%" { theme.text } else { 0xFFFFFFFF };
+                let text_color = if label == "C" || label == "±" || label == "%" {
+                    theme.text
+                } else {
+                    0xFFFFFFFF
+                };
                 let label_w = label.len() as u32 * 12;
                 let lx = x + (w - label_w) / 2;
                 let ly = y + (h - 14) / 2;
@@ -355,7 +427,9 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 16_666_000); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 16_666_000);
+        }
     }
 }
 

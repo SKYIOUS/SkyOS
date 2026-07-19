@@ -4,10 +4,10 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::io::{self, open, read, close};
-use libsarga::process::{getuid, geteuid, getgid, getegid};
-use libsarga::sarga_main;
 use alloc::string::ToString;
+use libsarga::io::{self, close, open, read};
+use libsarga::process::{getegid, geteuid, getgid, getuid};
+use libsarga::sarga_main;
 
 fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let fd = open(path, 0)?;
@@ -15,7 +15,9 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::E
     let mut tmp = [0u8; 512];
     loop {
         let n = read(fd, &mut tmp)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
     }
     close(fd)?;
@@ -25,7 +27,9 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::E
 fn lookup_name_by_uid(uid: u32) -> alloc::string::String {
     if let Ok(data) = read_whole_file("/etc/passwd\0") {
         for line in data.split(|&b: &u8| b == b'\n') {
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             let mut parts = line.splitn(4, |&b: &u8| b == b':');
             let name = parts.next().unwrap_or(b"");
             let _pw_passwd = parts.next();
@@ -43,10 +47,15 @@ fn lookup_name_by_uid(uid: u32) -> alloc::string::String {
 fn lookup_name_by_gid(gid: u32) -> alloc::string::String {
     if let Ok(data) = read_whole_file("/etc/group\0") {
         for line in data.split(|&b: &u8| b == b'\n') {
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             let mut parts = line.splitn(2, |&b: &u8| b == b':');
             let name = parts.next().unwrap_or(b"");
-            if let Ok(g) = core::str::from_utf8(parts.next().unwrap_or(b"")).unwrap_or("0").parse::<u32>() {
+            if let Ok(g) = core::str::from_utf8(parts.next().unwrap_or(b""))
+                .unwrap_or("0")
+                .parse::<u32>()
+            {
                 if g == gid {
                     return core::str::from_utf8(name).unwrap_or("?").to_string();
                 }
@@ -65,9 +74,17 @@ fn user_main() -> i32 {
     let uname = lookup_name_by_uid(uid);
     let gname = lookup_name_by_gid(gid);
 
-    io::print_str(&alloc::format!("uid={}({}) euid={}({}) gid={}({}) egid={}({})\n",
-        uid, uname, euid, lookup_name_by_uid(euid),
-        gid, gname, egid, lookup_name_by_gid(egid)));
+    io::print_str(&alloc::format!(
+        "uid={}({}) euid={}({}) gid={}({}) egid={}({})\n",
+        uid,
+        uname,
+        euid,
+        lookup_name_by_uid(euid),
+        gid,
+        gname,
+        egid,
+        lookup_name_by_gid(egid)
+    ));
     return 0;
 }
 

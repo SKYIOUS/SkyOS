@@ -2,8 +2,8 @@
 #![no_main]
 extern crate alloc;
 
-use libsarga::{sarga_main, println};
 use core::sync::atomic::{AtomicBool, Ordering};
+use libsarga::{println, sarga_main};
 
 mod raw {
     pub fn rt_sigaction(sig: u64, act: *const u8, oldact: *mut u8, setsize: u64) -> i64 {
@@ -31,7 +31,9 @@ mod raw {
         unsafe { libsarga::syscall::syscall0(57) }
     }
     pub fn yield_now() {
-        unsafe { libsarga::syscall::syscall0(24); }
+        unsafe {
+            libsarga::syscall::syscall0(24);
+        }
     }
 }
 
@@ -55,7 +57,9 @@ core::arch::global_asm!(
     "mov rax, 15",
     "syscall"
 );
-extern "C" { fn sigusr1_restorer(); }
+extern "C" {
+    fn sigusr1_restorer();
+}
 
 fn main_test() -> i32 {
     let sa = SigAction {
@@ -65,13 +69,19 @@ fn main_test() -> i32 {
         sa_mask: 0,
     };
     let res = raw::rt_sigaction(10, &sa as *const _ as *const u8, core::ptr::null_mut(), 8);
-    if res < 0 { println!("FAIL: rt_sigaction(SIGUSR1)"); return 1; }
+    if res < 0 {
+        println!("FAIL: rt_sigaction(SIGUSR1)");
+        return 1;
+    }
     println!("Registered SIGUSR1 handler");
 
     // Create a pipe
     let mut fds = [0i32; 2];
     let prc = raw::pipe(&mut fds as *mut _);
-    if prc < 0 { println!("FAIL: pipe"); return 1; }
+    if prc < 0 {
+        println!("FAIL: pipe");
+        return 1;
+    }
     let rfd = fds[0] as i64;
     let wfd = fds[1] as i64;
     println!("Pipe created: read={} write={}", rfd, wfd);
@@ -79,18 +89,25 @@ fn main_test() -> i32 {
     // Fork: child writes to pipe after delay (if ever), parent reads with signal
     let pid = raw::getpid();
     let child = raw::fork();
-    if child < 0 { println!("FAIL: fork"); return 1; }
+    if child < 0 {
+        println!("FAIL: fork");
+        return 1;
+    }
 
     if child == 0 {
         // Child: wait for parent to start reading, then send signal
-        for _ in 0..500 { raw::yield_now(); }
+        for _ in 0..500 {
+            raw::yield_now();
+        }
         raw::kill(pid as u64, 10); // SIGUSR1 to parent
         println!("[CHILD] Sent SIGUSR1 to parent");
         // Also write something so pipe read can succeed if signal missed
         let msg = b"hello";
         raw::write(wfd, msg.as_ptr(), msg.len());
         raw::close(wfd);
-        loop { raw::yield_now(); }
+        loop {
+            raw::yield_now();
+        }
     }
 
     // Parent: read from empty pipe (should block, then get EINTR)
@@ -104,7 +121,10 @@ fn main_test() -> i32 {
         raw::close(rfd);
         0
     } else if got && ret > 0 {
-        println!("PARTIAL: pipe read returned data ({}) but signal also arrived", ret);
+        println!(
+            "PARTIAL: pipe read returned data ({}) but signal also arrived",
+            ret
+        );
         raw::close(rfd);
         0
     } else if ret < 0 {
@@ -118,5 +138,7 @@ fn main_test() -> i32 {
     }
 }
 
-fn user_main() -> i32 { main_test() }
+fn user_main() -> i32 {
+    main_test()
+}
 sarga_main!(user_main);

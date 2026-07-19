@@ -1,7 +1,7 @@
-use core::sync::atomic::{AtomicU32, Ordering};
-use core::cell::UnsafeCell;
 use crate::syscall::syscall3;
 use crate::syscall::SYS_FUTEX;
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 // Raw Mutex (no value wrapping)
 pub struct RawMutex {
@@ -10,7 +10,9 @@ pub struct RawMutex {
 
 impl RawMutex {
     pub const fn new() -> Self {
-        Self { state: AtomicU32::new(0) }
+        Self {
+            state: AtomicU32::new(0),
+        }
     }
 
     pub fn lock(&self) {
@@ -27,7 +29,11 @@ impl RawMutex {
         };
 
         loop {
-            if self.state.compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+            if self
+                .state
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return Ok(());
             }
 
@@ -111,7 +117,9 @@ const RWLOCK_READER_MASK: u32 = (1 << 31) - 1;
 
 impl RwLock {
     pub const fn new() -> Self {
-        Self { state: AtomicU32::new(0) }
+        Self {
+            state: AtomicU32::new(0),
+        }
     }
 
     pub fn read(&self) {
@@ -119,7 +127,11 @@ impl RwLock {
             let state = self.state.load(Ordering::Acquire);
             // Check if writer is not holding lock and reader count won't overflow
             if (state & RWLOCK_WRITER) == 0 && (state & RWLOCK_READER_MASK) < RWLOCK_READER_MASK {
-                if self.state.compare_exchange(state, state + 1, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+                if self
+                    .state
+                    .compare_exchange(state, state + 1, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
+                {
                     return;
                 }
             }
@@ -131,7 +143,9 @@ impl RwLock {
     pub fn try_read(&self) -> bool {
         let state = self.state.load(Ordering::Acquire);
         if (state & RWLOCK_WRITER) == 0 && (state & RWLOCK_READER_MASK) < RWLOCK_READER_MASK {
-            self.state.compare_exchange(state, state + 1, Ordering::Acquire, Ordering::Relaxed).is_ok()
+            self.state
+                .compare_exchange(state, state + 1, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
         } else {
             false
         }
@@ -142,7 +156,11 @@ impl RwLock {
             let state = self.state.load(Ordering::Acquire);
             // Try to acquire writer lock if no readers or writer
             if state == 0 {
-                if self.state.compare_exchange(0, RWLOCK_WRITER, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+                if self
+                    .state
+                    .compare_exchange(0, RWLOCK_WRITER, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok()
+                {
                     return;
                 }
             }
@@ -152,7 +170,9 @@ impl RwLock {
     }
 
     pub fn try_write(&self) -> bool {
-        self.state.compare_exchange(0, RWLOCK_WRITER, Ordering::Acquire, Ordering::Relaxed).is_ok()
+        self.state
+            .compare_exchange(0, RWLOCK_WRITER, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     pub fn read_unlock(&self) {
@@ -183,15 +203,21 @@ impl TlsKey {
     pub fn get(&self) -> u64 {
         let mut base = 0u64;
         unsafe { crate::syscall::syscall2(158, 0x1003, &mut base as *mut u64 as u64) }; // ARCH_GET_FS
-        if base == 0 { return 0; }
+        if base == 0 {
+            return 0;
+        }
         unsafe { *((base + self.offset as u64) as *const u64) }
     }
 
     pub fn set(&self, val: u64) {
         let mut base = 0u64;
         unsafe { crate::syscall::syscall2(158, 0x1003, &mut base as *mut u64 as u64) }; // ARCH_GET_FS
-        if base == 0 { return; }
-        unsafe { *((base + self.offset as u64) as *mut u64) = val; }
+        if base == 0 {
+            return;
+        }
+        unsafe {
+            *((base + self.offset as u64) as *mut u64) = val;
+        }
     }
 }
 
@@ -203,7 +229,9 @@ pub struct Condvar {
 
 impl Condvar {
     pub const fn new() -> Self {
-        Self { state: AtomicU32::new(0) }
+        Self {
+            state: AtomicU32::new(0),
+        }
     }
 
     pub fn wait(&self, mutex: &RawMutex) {
@@ -266,7 +294,9 @@ pub fn init_tls() -> u64 {
     }
 
     // Initialize errno at offset 0 to 0
-    unsafe { *(addr as *mut i32) = 0; }
+    unsafe {
+        *(addr as *mut i32) = 0;
+    }
 
     addr
 }

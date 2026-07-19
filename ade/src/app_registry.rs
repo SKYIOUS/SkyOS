@@ -1,7 +1,7 @@
 //! Application registry — installed apps, metadata, capabilities, launch tracking.
 
-use alloc::vec::Vec;
 use crate::app_db::{AppDb, AppEntry, APPS};
+use alloc::vec::Vec;
 
 #[allow(dead_code)]
 pub(crate) struct RegisteredApp {
@@ -19,14 +19,20 @@ pub(crate) struct AppRegistry {
 
 impl AppRegistry {
     pub fn new() -> Self {
-        let apps = APPS.iter().map(|entry| RegisteredApp {
-            entry,
-            version: "0.1.0",
-            capabilities: cap_of(entry.cat),
-            icon: entry.name.as_bytes()[0] as char,
-            launch_count: 0,
-        }).collect();
-        AppRegistry { apps, db: AppDb::new() }
+        let apps = APPS
+            .iter()
+            .map(|entry| RegisteredApp {
+                entry,
+                version: "0.1.0",
+                capabilities: cap_of(entry.cat),
+                icon: entry.name.as_bytes()[0] as char,
+                launch_count: 0,
+            })
+            .collect();
+        AppRegistry {
+            apps,
+            db: AppDb::new(),
+        }
     }
 
     pub fn record_launch(&mut self, idx: usize) {

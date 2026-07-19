@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Clock", 300, 300).expect("Window::create failed");
@@ -26,7 +26,9 @@ fn user_main() -> i32 {
         win.draw_string_centered(180, "London, UK", theme.text_secondary, 0);
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 100_000_000u64);
+        }
     }
 }
 

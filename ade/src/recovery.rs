@@ -1,9 +1,9 @@
 //! Recovery system — crash logs, safe mode, session recovery.
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
-use alloc::string::String;
 use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 const CRASH_LOG: &str = "/tmp/skyos.crash";
 
@@ -17,7 +17,11 @@ impl RecoverySystem {
     pub fn new() -> Self {
         let crash_count = Self::read_crash_count();
         let safe_mode = crash_count >= 3;
-        RecoverySystem { safe_mode, crash_count, last_session_saved: false }
+        RecoverySystem {
+            safe_mode,
+            crash_count,
+            last_session_saved: false,
+        }
     }
 
     pub fn record_crash(&mut self, app: &str, pid: u64) {
@@ -43,13 +47,21 @@ impl RecoverySystem {
     }
 
     fn read_crash_count() -> u32 {
-        let fd = match libsarga::io::open(CRASH_LOG, 0) { Ok(f) => f, _ => return 0 };
+        let fd = match libsarga::io::open(CRASH_LOG, 0) {
+            Ok(f) => f,
+            _ => return 0,
+        };
         let mut buf = [0u8; 64];
         let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
         let _ = libsarga::io::close(fd);
         if n > 0 {
             let s = core::str::from_utf8(&buf[..n as usize]).unwrap_or("");
-            s.split(':').last().and_then(|c| c.trim().parse().ok()).unwrap_or(0)
-        } else { 0 }
+            s.split(':')
+                .last()
+                .and_then(|c| c.trim().parse().ok())
+                .unwrap_or(0)
+        } else {
+            0
+        }
     }
 }

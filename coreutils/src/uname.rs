@@ -1,14 +1,18 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, print, println, args, syscall::*};
+use libsarga::{args, print, println, sarga_main, syscall::*};
 
 fn field(buf: &[u8], start: usize) -> &str {
-    core::str::from_utf8(&buf[start..start + 64]).unwrap_or("?").trim_end_matches('\0')
+    core::str::from_utf8(&buf[start..start + 64])
+        .unwrap_or("?")
+        .trim_end_matches('\0')
 }
 
 fn emit(first: &mut bool, s: &str) {
-    if !*first { print!(" "); }
+    if !*first {
+        print!(" ");
+    }
     print!("{}", s);
     *first = false;
 }
@@ -56,11 +60,21 @@ fn user_main() -> i32 {
 
         let mut first = true;
 
-        if print_sysname { emit(&mut first, sysname); }
-        if print_nodename { emit(&mut first, nodename); }
-        if print_release { emit(&mut first, release); }
-        if print_version { emit(&mut first, version); }
-        if print_machine { emit(&mut first, machine); }
+        if print_sysname {
+            emit(&mut first, sysname);
+        }
+        if print_nodename {
+            emit(&mut first, nodename);
+        }
+        if print_release {
+            emit(&mut first, release);
+        }
+        if print_version {
+            emit(&mut first, version);
+        }
+        if print_machine {
+            emit(&mut first, machine);
+        }
         if first {
             emit(&mut first, sysname);
         }

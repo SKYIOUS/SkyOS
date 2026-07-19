@@ -1,16 +1,18 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
 use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn user_main() -> i32 {
     let mut count = false;
     let mut i = 1;
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
-        if arg == "-c" { count = true; }
+        if arg == "-c" {
+            count = true;
+        }
         i += 1;
     }
     let mut prev = alloc::string::String::new();

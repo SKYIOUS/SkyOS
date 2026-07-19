@@ -2,20 +2,27 @@
 #![no_main]
 extern crate alloc;
 
-use libsarga::{sarga_main, println};
+use libsarga::{println, sarga_main};
 
 mod raw {
     pub fn fork() -> i64 {
         unsafe { libsarga::syscall::syscall0(57) }
     }
     pub fn exit(status: i64) -> ! {
-        unsafe { libsarga::syscall::syscall1(60, status as u64); unreachable!() }
+        unsafe {
+            libsarga::syscall::syscall1(60, status as u64);
+            unreachable!()
+        }
     }
     pub fn wait4(pid: i64, status: *mut i32, options: i32, usage: *mut u8) -> i64 {
-        unsafe { libsarga::syscall::syscall4(61, pid as u64, status as u64, options as u64, usage as u64) }
+        unsafe {
+            libsarga::syscall::syscall4(61, pid as u64, status as u64, options as u64, usage as u64)
+        }
     }
     pub fn yield_now() {
-        unsafe { libsarga::syscall::syscall0(24); }
+        unsafe {
+            libsarga::syscall::syscall0(24);
+        }
     }
     pub fn rt_sigaction(sig: u64, act: *const u8, oldact: *mut u8, setsize: u64) -> i64 {
         unsafe { libsarga::syscall::syscall4(13, sig, act as u64, oldact as u64, setsize) }

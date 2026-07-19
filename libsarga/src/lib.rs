@@ -3,51 +3,54 @@
 
 pub extern crate alloc;
 
-pub mod mem;
-pub mod syscall;
-pub mod io;
-pub mod process;
-pub mod gui;
 pub mod ai;
-pub mod vahiai;
-pub mod sync;
-pub mod start;
-pub mod errno;
-pub mod stdio;
 pub mod args;
-pub mod net;
-pub mod gpu;
-pub mod hash;
+pub mod config;
+pub mod errno;
 pub mod fs;
-pub mod thread;
-pub mod posix;
-pub mod libskyos;
-pub mod signal;
-pub mod pthread;
+pub mod gpu;
+pub mod gui;
+pub mod hash;
 pub mod init;
 #[allow(dead_code)]
 pub mod init_services;
-
+pub mod io;
+pub mod libskyos;
+pub mod mem;
+pub mod net;
+pub mod posix;
+pub mod process;
+pub mod pthread;
+pub mod semver;
+pub mod signal;
+pub mod start;
+pub mod stdio;
+pub mod sync;
+pub mod syscall;
+pub mod thread;
+pub mod toml;
+pub mod vahiai;
+pub mod version;
 
 // Vahi-Glass hardware compositor API
 pub mod glass;
 
 // Widget toolkit
-pub mod theme;
-pub mod png;
-pub mod widget;
 pub mod button;
-pub mod label;
-pub mod textbox;
-pub mod progress_bar;
 pub mod checkbox;
-pub mod tab_widget;
-pub mod menubar;
-pub mod dialog;
 pub mod combobox;
-pub mod slider;
-pub mod scrollbar;
+pub mod dialog;
+pub mod label;
 pub mod layout;
+pub mod menubar;
+pub mod png;
+pub mod progress_bar;
+pub mod scrollbar;
+pub mod slider;
+pub mod tab_widget;
+pub mod textbox;
+pub mod theme;
+pub mod widget;
 
 #[macro_export]
 macro_rules! sarga_main {

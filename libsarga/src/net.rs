@@ -1,8 +1,8 @@
 //! Networking operations and socket management.
 
 use crate::errno::Error;
-use alloc::vec::Vec;
 use crate::io;
+use alloc::vec::Vec;
 
 /// Socket domain.
 #[repr(u64)]
@@ -42,8 +42,19 @@ pub struct PollFd {
 /// Waits for events on multiple file descriptors.
 pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> Result<i32, Error> {
     // SAFETY: poll syscall is safe here
-    let r = unsafe { crate::syscall::syscall3(7, fds.as_mut_ptr() as u64, fds.len() as u64, timeout_ms as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            7,
+            fds.as_mut_ptr() as u64,
+            fds.len() as u64,
+            timeout_ms as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as i32)
+    }
 }
 
 /// IPv4 Socket Address structure.
@@ -67,7 +78,9 @@ impl SockAddrIn {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>()) }
+        unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>())
+        }
     }
 }
 
@@ -94,7 +107,9 @@ impl SockAddrIn6 {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>()) }
+        unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>())
+        }
     }
 }
 
@@ -142,7 +157,9 @@ impl SockAddrStorage {
 /// Parses an IPv6 address from a string (e.g. "fe80::1").
 pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
     let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() < 2 || parts.len() > 8 { return None; }
+    if parts.len() < 2 || parts.len() > 8 {
+        return None;
+    }
 
     // prefix before ::
     let mut idx = 0;
@@ -153,26 +170,35 @@ pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
     }
     let p_len = idx;
     // consume :: empty slots
-    while idx < parts.len() && parts[idx].is_empty() { idx += 1; }
+    while idx < parts.len() && parts[idx].is_empty() {
+        idx += 1;
+    }
     let has_dc = idx > p_len;
     // suffix after ::
     let mut suffix = [0u16; 8];
     let mut s_len = 0;
     while idx < parts.len() {
         suffix[s_len] = u16::from_str_radix(parts[idx], 16).ok()?;
-        s_len += 1; idx += 1;
+        s_len += 1;
+        idx += 1;
     }
-    if p_len + s_len > 8 || (!has_dc && p_len + s_len != 8) { return None; }
+    if p_len + s_len > 8 || (!has_dc && p_len + s_len != 8) {
+        return None;
+    }
 
     let mut out = [0u16; 8];
-    for i in 0..p_len { out[i] = prefix[i]; }
-    for i in 0..s_len { out[8 - s_len + i] = suffix[i]; }
+    for i in 0..p_len {
+        out[i] = prefix[i];
+    }
+    for i in 0..s_len {
+        out[8 - s_len + i] = suffix[i];
+    }
     // ponytail: fixed-endian, no scope-id parsing
 
     let mut addr = [0u8; 16];
     for i in 0..8 {
-        addr[i*2] = (out[i] >> 8) as u8;
-        addr[i*2+1] = out[i] as u8;
+        addr[i * 2] = (out[i] >> 8) as u8;
+        addr[i * 2 + 1] = out[i] as u8;
     }
     Some(addr)
 }
@@ -185,8 +211,13 @@ pub fn resolve(name: &str, out_ip: &mut [u8; 4]) -> Result<(), Error> {
     buf[..len].copy_from_slice(&bytes[..len]);
     buf[len] = 0;
     // SAFETY: resolve syscall is safe here
-    let r = unsafe { crate::syscall::syscall2(200, buf.as_ptr() as u64, out_ip.as_mut_ptr() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r =
+        unsafe { crate::syscall::syscall2(200, buf.as_ptr() as u64, out_ip.as_mut_ptr() as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// A network socket.
@@ -198,36 +229,68 @@ impl Socket {
     /// Creates a new socket.
     pub fn new(domain: SocketDomain, stype: SocketType, protocol: i32) -> Result<Self, Error> {
         // SAFETY: socket syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(41, domain as u64, stype as u64, protocol as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok(Socket { fd: r }) }
+        let r =
+            unsafe { crate::syscall::syscall3(41, domain as u64, stype as u64, protocol as u64) };
+        if r < 0 {
+            Err(Error::from_i64(r))
+        } else {
+            Ok(Socket { fd: r })
+        }
     }
 
     /// Binds the socket to a local address.
     pub fn bind(&self, addr: &[u8]) -> Result<(), Error> {
         // SAFETY: bind syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(49, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+        let r = unsafe {
+            crate::syscall::syscall3(49, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64)
+        };
+        if r < 0 {
+            Err(Error::from_i64(r))
+        } else {
+            Ok(())
+        }
     }
 
     /// Listens for incoming connections.
     pub fn listen(&self, backlog: i32) -> Result<(), Error> {
         // SAFETY: listen syscall is safe here
         let r = unsafe { crate::syscall::syscall2(50, self.fd as u64, backlog as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+        if r < 0 {
+            Err(Error::from_i64(r))
+        } else {
+            Ok(())
+        }
     }
 
     /// Accepts a new connection on the socket.
     pub fn accept(&self, addr: &mut [u8], addrlen: &mut u32) -> Result<Socket, Error> {
         // SAFETY: accept syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(43, self.fd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok(Socket { fd: r }) }
+        let r = unsafe {
+            crate::syscall::syscall3(
+                43,
+                self.fd as u64,
+                addr.as_mut_ptr() as u64,
+                addrlen as *mut u32 as u64,
+            )
+        };
+        if r < 0 {
+            Err(Error::from_i64(r))
+        } else {
+            Ok(Socket { fd: r })
+        }
     }
 
     /// Connects the socket to a remote address.
     pub fn connect(&self, addr: &[u8]) -> Result<(), Error> {
         // SAFETY: connect syscall is safe here
-        let r = unsafe { crate::syscall::syscall3(42, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
-        if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+        let r = unsafe {
+            crate::syscall::syscall3(42, self.fd as u64, addr.as_ptr() as u64, addr.len() as u64)
+        };
+        if r < 0 {
+            Err(Error::from_i64(r))
+        } else {
+            Ok(())
+        }
     }
 
     /// Reads from the socket.
@@ -255,31 +318,60 @@ impl Drop for Socket {
 /// Convenience functions for sockets.
 pub fn socket(domain: u64, stype: u64, protocol: i32) -> Result<i64, Error> {
     let r = unsafe { crate::syscall::syscall3(41, domain, stype, protocol as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
+    }
 }
 
 /// Binds a raw file descriptor to an address.
 pub fn bind(fd: i64, addr: &[u8]) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(49, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r =
+        unsafe { crate::syscall::syscall3(49, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Listens on a raw file descriptor.
 pub fn listen(fd: i64, backlog: i32) -> Result<(), Error> {
     let r = unsafe { crate::syscall::syscall2(50, fd as u64, backlog as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Accepts a connection on a raw file descriptor.
 pub fn accept(fd: i64, addr: &mut [u8], addrlen: &mut u32) -> Result<i64, Error> {
-    let r = unsafe { crate::syscall::syscall3(43, fd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            43,
+            fd as u64,
+            addr.as_mut_ptr() as u64,
+            addrlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
+    }
 }
 
 /// Connects a raw file descriptor to an address.
 pub fn connect(fd: i64, addr: &[u8]) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(42, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r =
+        unsafe { crate::syscall::syscall3(42, fd as u64, addr.as_ptr() as u64, addr.len() as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Sends data through a raw socket file descriptor.
@@ -302,7 +394,9 @@ pub const SOCK_STREAM: u64 = 1;
 /// Parses an IPv4 address from a string.
 pub fn parse_ipv4(ip: &str) -> Option<u32> {
     let parts: Vec<&str> = ip.split('.').collect();
-    if parts.len() != 4 { return None; }
+    if parts.len() != 4 {
+        return None;
+    }
     let mut addr = 0u32;
     for (i, part) in parts.iter().enumerate() {
         let val: u8 = part.parse().ok()?;
@@ -405,7 +499,7 @@ mod tests {
     #[test]
     fn test_sockaddr_storage_as_in() {
         let mut bytes = [0u8; 32];
-        bytes[0] = 2;  // AF_INET
+        bytes[0] = 2; // AF_INET
         bytes[2..4].copy_from_slice(&0x1f90u16.to_be_bytes());
         bytes[4..8].copy_from_slice(&[192, 168, 1, 1]);
         let storage = SockAddrStorage { bytes };
@@ -431,3 +525,91 @@ mod tests {
 // HttpClient is defined in libsarga/src/libskyos/net_ext.rs or elsewhere if needed.
 // Duplicate removed here to avoid compilation issues.
 
+/// Simple HTTP client for making HTTP GET requests
+pub struct HttpClient {
+    socket: Socket,
+}
+
+impl HttpClient {
+    /// Creates a new HTTP client
+    pub fn new() -> Result<Self, Error> {
+        let socket = Socket::new(SocketDomain::Inet, SocketType::Stream, 0)?;
+        Ok(HttpClient { socket })
+    }
+
+    /// Performs an HTTP GET request to the specified URL
+    /// Returns the response body as bytes
+    pub fn get(url: &str) -> Result<alloc::vec::Vec<u8>, Error> {
+        // Parse URL (simplified - assumes http:// format)
+        if !url.starts_with("http://") {
+            return Err(Error::from_i64(-22)); // EINVAL
+        }
+
+        let url_without_scheme = &url[7..]; // Remove "http://"
+        let parts: alloc::vec::Vec<&str> = url_without_scheme.split('/').collect();
+        if parts.is_empty() {
+            return Err(Error::from_i64(-22));
+        }
+
+        let host = parts[0];
+        let path = if parts.len() > 1 {
+            let mut path_str = alloc::string::String::from("/");
+            for i in 1..parts.len() {
+                path_str.push_str(parts[i]);
+                if i < parts.len() - 1 {
+                    path_str.push('/');
+                }
+            }
+            path_str
+        } else {
+            alloc::string::String::from("/")
+        };
+
+        // Resolve hostname
+        let mut ip = [0u8; 4];
+        resolve(host, &mut ip)?;
+
+        // Connect to server (port 80 for HTTP)
+        let addr = SockAddrIn::new(ip, 80);
+        let client = Self::new()?;
+        client.socket.connect(addr.as_bytes())?;
+
+        // Send HTTP GET request
+        let request = alloc::format!(
+            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            path,
+            host
+        );
+        client.socket.write(request.as_bytes())?;
+
+        // Read response
+        let mut response = alloc::vec::Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            match client.socket.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => response.extend_from_slice(&buffer[..n]),
+                Err(_) => break,
+            }
+        }
+
+        // Skip HTTP headers (find double CRLF)
+        if let Some(header_end) = find_double_crlf(&response) {
+            let body = response[header_end + 4..].to_vec();
+            Ok(body)
+        } else {
+            Ok(response)
+        }
+    }
+}
+
+/// Find the position of \r\n\r\n in a byte slice
+fn find_double_crlf(data: &[u8]) -> Option<usize> {
+    for i in 0..data.len().saturating_sub(3) {
+        if data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
+        {
+            return Some(i);
+        }
+    }
+    None
+}

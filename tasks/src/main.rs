@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
+use libsarga::{gui::Window, sarga_main, theme::Theme, version::SKYOS_VERSION};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Tasks", 400, 500).expect("Window::create failed");
@@ -12,7 +12,7 @@ fn user_main() -> i32 {
         ("Performance tuning", false),
         ("Bug fixes", false),
         ("Write documentation", true),
-        ("Release v0.5.0", false),
+        (&alloc::format!("Release v{}", SKYOS_VERSION), false),
     ];
 
     loop {
@@ -36,7 +36,9 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 100_000_000u64);
+        }
     }
 }
 

@@ -64,44 +64,96 @@ pub struct SigAction {
 
 impl SigAction {
     pub const fn default() -> Self {
-        SigAction { sa_handler: 0, sa_flags: 0, sa_restorer: 0, sa_mask: 0 }
+        SigAction {
+            sa_handler: 0,
+            sa_flags: 0,
+            sa_restorer: 0,
+            sa_mask: 0,
+        }
     }
 
     pub fn handler(handler: u64) -> Self {
-        SigAction { sa_handler: handler, sa_flags: 0, sa_restorer: 0, sa_mask: 0 }
+        SigAction {
+            sa_handler: handler,
+            sa_flags: 0,
+            sa_restorer: 0,
+            sa_mask: 0,
+        }
     }
 }
 
 pub type SigSet = u64;
 
-pub fn sigemptyset() -> SigSet { 0 }
-pub fn sigfillset() -> SigSet { !0u64 }
+pub fn sigemptyset() -> SigSet {
+    0
+}
+pub fn sigfillset() -> SigSet {
+    !0u64
+}
 pub fn sigaddset(set: SigSet, sig: u32) -> SigSet {
-    if sig == 0 || sig > 64 { return set; }
+    if sig == 0 || sig > 64 {
+        return set;
+    }
     set | (1u64 << (sig - 1))
 }
 pub fn sigdelset(set: SigSet, sig: u32) -> SigSet {
-    if sig == 0 || sig > 64 { return set; }
+    if sig == 0 || sig > 64 {
+        return set;
+    }
     set & !(1u64 << (sig - 1))
 }
 pub fn sigismember(set: SigSet, sig: u32) -> bool {
-    if sig == 0 || sig > 64 { return false; }
+    if sig == 0 || sig > 64 {
+        return false;
+    }
     (set & (1u64 << (sig - 1))) != 0
 }
 
-pub fn rt_sigaction(sig: u32, act: Option<&SigAction>, oldact: Option<&mut SigAction>) -> Result<(), Error> {
-    let act_ptr = act.map(|a| a as *const SigAction as *const u64).unwrap_or(core::ptr::null());
-    let old_ptr = oldact.map(|a| a as *mut SigAction as *mut u64).unwrap_or(core::ptr::null_mut());
-    let r = unsafe { syscall4(SYS_RT_SIGACTION, sig as u64, act_ptr as u64, old_ptr as u64, 8) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+pub fn rt_sigaction(
+    sig: u32,
+    act: Option<&SigAction>,
+    oldact: Option<&mut SigAction>,
+) -> Result<(), Error> {
+    let act_ptr = act
+        .map(|a| a as *const SigAction as *const u64)
+        .unwrap_or(core::ptr::null());
+    let old_ptr = oldact
+        .map(|a| a as *mut SigAction as *mut u64)
+        .unwrap_or(core::ptr::null_mut());
+    let r = unsafe {
+        syscall4(
+            SYS_RT_SIGACTION,
+            sig as u64,
+            act_ptr as u64,
+            old_ptr as u64,
+            8,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
-pub fn rt_sigprocmask(how: i32, set: Option<SigSet>, oldset: Option<&mut SigSet>) -> Result<(), Error> {
+pub fn rt_sigprocmask(
+    how: i32,
+    set: Option<SigSet>,
+    oldset: Option<&mut SigSet>,
+) -> Result<(), Error> {
     let set_val = set.unwrap_or(0);
-    let set_ptr = if set.is_some() { &set_val as *const u64 as u64 } else { 0 };
+    let set_ptr = if set.is_some() {
+        &set_val as *const u64 as u64
+    } else {
+        0
+    };
     let old_ptr = oldset.map(|o| o as *mut SigSet as u64).unwrap_or(0);
     let r = unsafe { syscall3(309, how as u64, set_ptr, old_ptr) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn kill(pid: i64, sig: u32) -> Result<(), Error> {

@@ -1,12 +1,15 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Paint", 800, 600).expect("Window::create failed");
     let theme = Theme::dark();
-    let mut colors = [0xFFFFFFFF, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF, 0xFF000000];
+    let mut colors = [
+        0xFFFFFFFF, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF,
+        0xFF000000,
+    ];
     let mut selected_color = 0;
 
     win.clear(0xFFFFFFFF); // Canvas
@@ -15,12 +18,23 @@ fn user_main() -> i32 {
         let mouse = win.get_mouse();
         if mouse.buttons & 1 != 0 {
             if mouse.y > 60 {
-                win.draw_rounded_rect(mouse.x as u32 - 4, mouse.y as u32 - 4, 8, 8, 4, colors[selected_color]);
+                win.draw_rounded_rect(
+                    mouse.x as u32 - 4,
+                    mouse.y as u32 - 4,
+                    8,
+                    8,
+                    4,
+                    colors[selected_color],
+                );
             } else {
                 // Toolbar click
                 for i in 0..8 {
                     let cx = 10 + i as u32 * 50;
-                    if mouse.x >= cx as u64 && mouse.x < (cx + 40) as u64 && mouse.y >= 10 && mouse.y < 50 {
+                    if mouse.x >= cx as u64
+                        && mouse.x < (cx + 40) as u64
+                        && mouse.y >= 10
+                        && mouse.y < 50
+                    {
                         selected_color = i;
                     }
                 }
@@ -40,7 +54,9 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 10_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 10_000_000u64);
+        }
     }
 }
 

@@ -15,7 +15,14 @@ pub struct MenuBar {
 
 impl MenuBar {
     pub fn new(x: i32, y: i32, width: u32) -> Self {
-        MenuBar { x, y, width, height: 24, menus: Vec::new(), open_menu: None }
+        MenuBar {
+            x,
+            y,
+            width,
+            height: 24,
+            menus: Vec::new(),
+            open_menu: None,
+        }
     }
 
     pub fn add_menu(&mut self, name: &str, items: &[&str]) {
@@ -23,19 +30,31 @@ impl MenuBar {
         self.menus.push((String::from(name), menu_items));
     }
 
-    pub fn active_menu(&self) -> Option<usize> { self.open_menu }
+    pub fn active_menu(&self) -> Option<usize> {
+        self.open_menu
+    }
 }
 
 impl Widget for MenuBar {
     fn render(&self, win: &mut Window, theme: &Theme) {
         // Menu bar background
-        win.draw_rect(self.x as u32, self.y as u32, self.width, self.height, theme.bg_surface);
+        win.draw_rect(
+            self.x as u32,
+            self.y as u32,
+            self.width,
+            self.height,
+            theme.bg_surface,
+        );
 
         let mut cx = self.x as u32;
         for (i, (name, _)) in self.menus.iter().enumerate() {
             let w = name.len() as u32 * 8 + 16;
             let active = self.open_menu == Some(i);
-            let bg = if active { theme.accent } else { theme.bg_surface };
+            let bg = if active {
+                theme.accent
+            } else {
+                theme.bg_surface
+            };
             win.draw_rect(cx, self.y as u32, w, self.height, bg);
             win.draw_string(cx + 8, self.y as u32 + 4, name, theme.text, 0);
             cx += w;
@@ -53,10 +72,21 @@ impl Widget for MenuBar {
                 let max_w: u32 = 160;
 
                 // Dropdown background
-                win.draw_rect(dx, dy, max_w, item_h * items.len() as u32, theme.bg_elevated);
+                win.draw_rect(
+                    dx,
+                    dy,
+                    max_w,
+                    item_h * items.len() as u32,
+                    theme.bg_elevated,
+                );
                 win.draw_line_h(dx, dy, max_w, theme.border);
                 win.draw_line_v(dx, dy, item_h * items.len() as u32, theme.border);
-                win.draw_line_v(dx + max_w - 1, dy, item_h * items.len() as u32, theme.border);
+                win.draw_line_v(
+                    dx + max_w - 1,
+                    dy,
+                    item_h * items.len() as u32,
+                    theme.border,
+                );
 
                 for (j, item) in items.iter().enumerate() {
                     let iy = dy + j as u32 * item_h;
@@ -77,7 +107,11 @@ impl Widget for MenuBar {
             for (i, (name, _)) in self.menus.iter().enumerate() {
                 let w = name.len() as i32 * 8 + 16;
                 if x >= cx && x < cx + w {
-                    self.open_menu = if self.open_menu == Some(i) { None } else { Some(i) };
+                    self.open_menu = if self.open_menu == Some(i) {
+                        None
+                    } else {
+                        Some(i)
+                    };
                     return true;
                 }
                 cx += w;
@@ -104,7 +138,14 @@ impl Widget for MenuBar {
         false
     }
 
-    fn bounds(&self) -> (i32, i32, u32, u32) { (self.x, self.y, self.width, self.height) }
-    fn set_position(&mut self, x: i32, y: i32) { self.x = x; self.y = y; }
-    fn set_size(&mut self, w: u32, _h: u32) { self.width = w; }
+    fn bounds(&self) -> (i32, i32, u32, u32) {
+        (self.x, self.y, self.width, self.height)
+    }
+    fn set_position(&mut self, x: i32, y: i32) {
+        self.x = x;
+        self.y = y;
+    }
+    fn set_size(&mut self, w: u32, _h: u32) {
+        self.width = w;
+    }
 }

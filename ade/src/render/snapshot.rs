@@ -1,13 +1,14 @@
 //! Render snapshot — read-only capture of desktop state for the frame renderer.
 
-use crate::window::AppWindow;
 use crate::app_db::AppDb;
 use crate::app_registry::AppRegistry;
-use crate::start_menu::StartMenuState;
-use crate::desktop_icons::DesktopIcon;
-use crate::notification::Notification;
 use crate::clipboard_service::ClipboardService;
+use crate::desktop_icons::DesktopIcon;
+use crate::explorer::ExplorerState;
+use crate::notification::Notification;
 use crate::settings::SettingsState;
+use crate::start_menu::StartMenuState;
+use crate::window::AppWindow;
 
 pub struct RenderSnapshot<'a> {
     pub screen_w: u32,
@@ -31,6 +32,7 @@ pub struct RenderSnapshot<'a> {
     pub settings: Option<&'a SettingsState>,
     #[allow(dead_code)]
     pub app_reg: Option<&'a AppRegistry>,
+    pub(crate) explorers: &'a [ExplorerState],
 }
 
 impl<'a> RenderSnapshot<'a> {

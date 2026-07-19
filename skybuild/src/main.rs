@@ -6,11 +6,14 @@ extern crate libsarga;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use libsarga::sarga_main;
 use libsarga::io;
 use libsarga::process;
+use libsarga::sarga_main;
 
-fn puts(s: &str) { io::print_str(s); io::print_str("\n"); }
+fn puts(s: &str) {
+    io::print_str(s);
+    io::print_str("\n");
+}
 
 fn read_file(path: &str) -> String {
     io::read_to_string(path).unwrap_or_default()
@@ -22,17 +25,21 @@ fn run_cmd(cmd: &str, args: &[&str]) -> i64 {
             let _ = process::execve(cmd, args, &[]);
             0
         }
-        Ok(pid) => {
-            process::wait(pid).unwrap_or(-1) as i64
-        }
+        Ok(pid) => process::wait(pid).unwrap_or(-1) as i64,
         Err(_) => -1,
     }
 }
 
 fn cmd_build(args: &[&str]) {
-    if args.is_empty() { puts("Usage: skybuild <recipe>"); return; }
+    if args.is_empty() {
+        puts("Usage: skybuild <recipe>");
+        return;
+    }
     let recipe = read_file(args[0]);
-    if recipe.is_empty() { puts("Cannot read recipe"); return; }
+    if recipe.is_empty() {
+        puts("Cannot read recipe");
+        return;
+    }
     puts(&alloc::format!("Building from: {}", args[0]));
     puts("Running skypkg build...");
     let status = run_cmd("/bin/skypkg", &["build", args[0]]);
@@ -90,7 +97,11 @@ fn cmd_info(_args: &[&str]) {
 fn user_main() -> i32 {
     let mut args = Vec::new();
     for i in 1..libsarga::args::argc() {
-        args.push(libsarga::args::get(i as usize).unwrap_or_default().to_string());
+        args.push(
+            libsarga::args::get(i as usize)
+                .unwrap_or_default()
+                .to_string(),
+        );
     }
     let args_str: Vec<&str> = args.iter().map(|s: &String| s.as_str()).collect();
     let cmd = args_str.first().copied().unwrap_or("");

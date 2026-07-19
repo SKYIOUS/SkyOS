@@ -3,24 +3,31 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, println, args, io, syscall};
+use libsarga::{args, io, println, sarga_main, syscall};
 
 fn user_main() -> i32 {
     let mut append = false;
     let mut files = Vec::new();
     for i in 1..args::argc() {
         if let Some(s) = args::get(i as usize) {
-            if s == "-a" { append = true; }
-            else if s.starts_with('-') { continue; }
-            else { files.push(String::from(s)); }
+            if s == "-a" {
+                append = true;
+            } else if s.starts_with('-') {
+                continue;
+            } else {
+                files.push(String::from(s));
+            }
         }
     }
     let mut fds = Vec::new();
     for f in &files {
         let flags = if append { 0x401 } else { 0x100 | 0x42 };
         let fd = unsafe { syscall::syscall2(2, f.as_ptr() as u64, flags) };
-        if (fd as i64) < 0 { println!("tee: {}: open failed", f); }
-        else { fds.push(fd); }
+        if (fd as i64) < 0 {
+            println!("tee: {}: open failed", f);
+        } else {
+            fds.push(fd);
+        }
     }
     let mut buf = [0u8; 4096];
     loop {
@@ -31,10 +38,14 @@ fn user_main() -> i32 {
         };
         io::write_all(1, &buf[..n]).ok();
         for &fd in &fds {
-            unsafe { syscall::syscall3(1, fd as u64, buf.as_ptr() as u64, n as u64); }
+            unsafe {
+                syscall::syscall3(1, fd as u64, buf.as_ptr() as u64, n as u64);
+            }
         }
     }
-    for &fd in &fds { let _ = io::close(fd); }
+    for &fd in &fds {
+        let _ = io::close(fd);
+    }
     0
 }
 

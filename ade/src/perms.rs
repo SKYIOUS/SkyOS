@@ -42,7 +42,9 @@ pub(crate) struct PermissionManager {
 
 impl PermissionManager {
     pub fn new() -> Self {
-        PermissionManager { app_perms: Vec::new() }
+        PermissionManager {
+            app_perms: Vec::new(),
+        }
     }
 
     pub fn register(&mut self, pid: u64, perms: PermissionSet) {
@@ -50,7 +52,8 @@ impl PermissionManager {
     }
 
     pub fn check(&self, pid: u64, perm: u32) -> bool {
-        self.app_perms.iter()
+        self.app_perms
+            .iter()
             .find(|(p, _)| *p == pid)
             .map(|(_, set)| set.has(perm))
             .unwrap_or(false)

@@ -5,10 +5,10 @@ extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use libsarga::sarga_main;
+use libsarga::errno::Error;
 use libsarga::io;
 use libsarga::process;
-use libsarga::errno::Error;
+use libsarga::sarga_main;
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
@@ -88,7 +88,9 @@ fn user_main() -> i32 {
     }
 
     loop {
-        if SHUTDOWN.load(Ordering::Acquire) { break; }
+        if SHUTDOWN.load(Ordering::Acquire) {
+            break;
+        }
 
         // Wait for any child process to exit (-1 means any child)
         match process::waitpid(-1, 0) {

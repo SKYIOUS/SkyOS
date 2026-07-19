@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, io, args};
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let target = if args::argc() > 1 {
@@ -28,12 +28,18 @@ fn user_main() -> i32 {
                 let _ = io::close(fd);
             }
             Err(_) => {
-                println!("64 bytes from {}: icmp_seq={} ttl=64 time=0.5ms (emulated)", target, i);
+                println!(
+                    "64 bytes from {}: icmp_seq={} ttl=64 time=0.5ms (emulated)",
+                    target, i
+                );
             }
         }
     }
     println!("--- {} ping statistics ---", target);
-    println!("{} packets transmitted, {} received, 0% packet loss", count, count);
+    println!(
+        "{} packets transmitted, {} received, 0% packet loss",
+        count, count
+    );
 
     0
 }

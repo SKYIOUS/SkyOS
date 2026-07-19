@@ -1,9 +1,9 @@
 //! Desktop icons — selection, multi-select, move, delete, rectangle selection.
 
-use alloc::vec::Vec;
-use alloc::string::String;
-use libsarga::gui::Window;
 use crate::geometry::{Point, Rect};
+use alloc::string::String;
+use alloc::vec::Vec;
+use libsarga::gui::Window;
 
 pub(crate) struct DesktopIcon {
     pub name: String,
@@ -31,10 +31,16 @@ impl DesktopIcons {
         for &(name, x, y) in entries {
             icons.push(DesktopIcon {
                 name: String::from(name),
-                x, y, selected: false,
+                x,
+                y,
+                selected: false,
             });
         }
-        DesktopIcons { icons, drag_icon: false, rubber: None }
+        DesktopIcons {
+            icons,
+            drag_icon: false,
+            rubber: None,
+        }
     }
 
     pub fn icon_at(&self, mx: i32, my: i32) -> Option<usize> {
@@ -64,7 +70,9 @@ impl DesktopIcons {
             let ry = y1.min(y2);
             let rw = (x1 - x2).abs() as u32;
             let rh = (y1 - y2).abs() as u32;
-            if rw < 4 && rh < 4 { return selected; } // click, not drag
+            if rw < 4 && rh < 4 {
+                return selected;
+            } // click, not drag
             let rr = Rect::new(rx, ry, rw, rh);
             for (i, ic) in self.icons.iter().enumerate() {
                 if rr.intersects(&Rect::new(ic.x, ic.y, 48, 56)) {
@@ -85,13 +93,35 @@ impl DesktopIcons {
     }
 }
 
-pub(crate) fn draw(win: &mut Window, icons: &[DesktopIcon], theme: &libsarga::theme::Theme, rubber: Option<(i32, i32, i32, i32)>) {
+pub(crate) fn draw(
+    win: &mut Window,
+    icons: &[DesktopIcon],
+    theme: &libsarga::theme::Theme,
+    rubber: Option<(i32, i32, i32, i32)>,
+) {
     for ic in icons {
         if ic.selected {
-            win.draw_rounded_rect_outline(ic.x as u32 - 2, ic.y as u32 - 2, 52, 60, 6, theme.accent);
+            win.draw_rounded_rect_outline(
+                ic.x as u32 - 2,
+                ic.y as u32 - 2,
+                52,
+                60,
+                6,
+                theme.accent,
+            );
         }
         win.draw_rounded_rect(ic.x as u32 + 8, ic.y as u32 + 2, 32, 32, 8, 0xFF3D5AFE);
-        win.draw_string(ic.x as u32 + 4, ic.y as u32 + 40, if ic.name.len() > 8 { &ic.name[..8] } else { &ic.name }, theme.text, 0);
+        win.draw_string(
+            ic.x as u32 + 4,
+            ic.y as u32 + 40,
+            if ic.name.len() > 8 {
+                &ic.name[..8]
+            } else {
+                &ic.name
+            },
+            theme.text,
+            0,
+        );
     }
     if let Some((x1, y1, x2, y2)) = rubber {
         let rx = x1.min(x2) as u32;

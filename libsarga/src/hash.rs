@@ -1,7 +1,7 @@
 //! Cryptographic hashing and PBKDF2.
 
-use crate::syscall::*;
 use crate::errno::Error;
+use crate::syscall::*;
 
 /// System call number for hashing operations.
 pub const SYS_HASH: u64 = 401;

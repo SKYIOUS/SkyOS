@@ -2,8 +2,8 @@
 #![no_main]
 extern crate alloc;
 
-use libsarga::{sarga_main, println};
 use core::sync::atomic::{AtomicBool, Ordering};
+use libsarga::{println, sarga_main};
 
 mod raw {
     pub fn rt_sigaction(sig: u64, act: *const u8, oldact: *mut u8, setsize: u64) -> i64 {
@@ -40,7 +40,9 @@ core::arch::global_asm!(
     "mov rax, 15",
     "syscall"
 );
-extern "C" { fn sigalrm_restorer(); }
+extern "C" {
+    fn sigalrm_restorer();
+}
 
 fn main_test() -> i32 {
     let sa = SigAction {
@@ -50,7 +52,10 @@ fn main_test() -> i32 {
         sa_mask: 0,
     };
     let res = raw::rt_sigaction(14, &sa as *const _ as *const u8, core::ptr::null_mut(), 8);
-    if res < 0 { println!("FAIL: rt_sigaction(SIGALRM)"); return 1; }
+    if res < 0 {
+        println!("FAIL: rt_sigaction(SIGALRM)");
+        return 1;
+    }
     println!("Registered SIGALRM handler");
 
     // Self-signal while sleeping — nanosleep should return EINTR
@@ -62,7 +67,10 @@ fn main_test() -> i32 {
     let got = GOT_ALRM.load(Ordering::Acquire);
 
     if got && ret != 0 {
-        println!("PASS: SIGALRM handler invoked, nanosleep returned EINTR ({})", ret);
+        println!(
+            "PASS: SIGALRM handler invoked, nanosleep returned EINTR ({})",
+            ret
+        );
         0
     } else if got {
         println!("PARTIAL: handler ran but nanosleep returned {}", ret);
@@ -73,5 +81,7 @@ fn main_test() -> i32 {
     }
 }
 
-fn user_main() -> i32 { main_test() }
+fn user_main() -> i32 {
+    main_test()
+}
 sarga_main!(user_main);

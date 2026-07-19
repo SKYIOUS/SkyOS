@@ -3,9 +3,17 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, print, println, args, io};
+use libsarga::{args, io, print, println, sarga_main};
 
-fn grep_lines(lines: &[&str], pattern: &str, show_filename: bool, filename: &str, case_insensitive: bool, invert: bool, line_num: bool) {
+fn grep_lines(
+    lines: &[&str],
+    pattern: &str,
+    show_filename: bool,
+    filename: &str,
+    case_insensitive: bool,
+    invert: bool,
+    line_num: bool,
+) {
     for (idx, line) in lines.iter().enumerate() {
         let matched = if case_insensitive {
             line.to_lowercase().contains(&pattern.to_lowercase())
@@ -15,8 +23,12 @@ fn grep_lines(lines: &[&str], pattern: &str, show_filename: bool, filename: &str
 
         let show = matched ^ invert;
         if show {
-            if show_filename { print!("{}:", filename); }
-            if line_num { print!("{}:", idx + 1); }
+            if show_filename {
+                print!("{}:", filename);
+            }
+            if line_num {
+                print!("{}:", idx + 1);
+            }
             println!("{}", line);
         }
     }
@@ -33,7 +45,7 @@ fn grep_recursive(dir: &str, pattern: &str, case_insensitive: bool, invert: bool
             Ok(n) if n > 0 => {
                 let mut offset = 0;
                 while offset < n {
-                    let reclen = u16::from_ne_bytes([buf[offset+16], buf[offset+17]]) as usize;
+                    let reclen = u16::from_ne_bytes([buf[offset + 16], buf[offset + 17]]) as usize;
                     let name_len = buf[offset + 18] as usize;
                     if name_len > 0 {
                         let name_bytes = &buf[offset + 19..offset + 19 + name_len];
@@ -46,13 +58,34 @@ fn grep_recursive(dir: &str, pattern: &str, case_insensitive: bool, invert: bool
                                     alloc::format!("{}/{}", dir, name)
                                 };
                                 let mut st = [0u64; 32];
-                                if unsafe { libsarga::syscall::syscall2(4, full_path.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0 {
+                                if unsafe {
+                                    libsarga::syscall::syscall2(
+                                        4,
+                                        full_path.as_ptr() as u64,
+                                        st.as_mut_ptr() as u64,
+                                    )
+                                } == 0
+                                {
                                     if (st[1] & 0o170000) == 0o040000 {
-                                        grep_recursive(&full_path, pattern, case_insensitive, invert, line_num);
+                                        grep_recursive(
+                                            &full_path,
+                                            pattern,
+                                            case_insensitive,
+                                            invert,
+                                            line_num,
+                                        );
                                     } else {
                                         if let Ok(text) = io::read_to_string(&full_path) {
                                             let lines: Vec<&str> = text.lines().collect();
-                                            grep_lines(&lines, pattern, true, &full_path, case_insensitive, invert, line_num);
+                                            grep_lines(
+                                                &lines,
+                                                pattern,
+                                                true,
+                                                &full_path,
+                                                case_insensitive,
+                                                invert,
+                                                line_num,
+                                            );
                                         }
                                     }
                                 }
@@ -79,13 +112,20 @@ fn user_main() -> i32 {
 
     while i < args::argc() {
         if let Some(s) = args::get(i as usize) {
-            if s == "-r" || s == "-R" { recursive = true; }
-            else if s == "-i" { case_insensitive = true; }
-            else if s == "-v" { invert = true; }
-            else if s == "-n" { line_num = true; }
-            else if s.starts_with('-') { }
-            else if pattern.is_empty() { pattern = String::from(s); }
-            else { files.push(String::from(s)); }
+            if s == "-r" || s == "-R" {
+                recursive = true;
+            } else if s == "-i" {
+                case_insensitive = true;
+            } else if s == "-v" {
+                invert = true;
+            } else if s == "-n" {
+                line_num = true;
+            } else if s.starts_with('-') {
+            } else if pattern.is_empty() {
+                pattern = String::from(s);
+            } else {
+                files.push(String::from(s));
+            }
         }
         i += 1;
     }
@@ -104,27 +144,54 @@ fn user_main() -> i32 {
             loop {
                 match io::read(0, &mut buf) {
                     Ok(0) => break,
-                    Ok(n) => { if let Ok(s) = core::str::from_utf8(&buf[..n]) { text.push_str(s); } }
+                    Ok(n) => {
+                        if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                            text.push_str(s);
+                        }
+                    }
                     Err(_) => break,
                 }
             }
             let lines: Vec<&str> = text.lines().collect();
-            grep_lines(&lines, &pattern, false, "stdin", case_insensitive, invert, line_num);
+            grep_lines(
+                &lines,
+                &pattern,
+                false,
+                "stdin",
+                case_insensitive,
+                invert,
+                line_num,
+            );
         }
     } else {
         let show_filename = files.len() > 1 || recursive;
         for file in &files {
             let mut st = [0u64; 32];
-            let is_dir = unsafe { libsarga::syscall::syscall2(4, file.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0
+            let is_dir = unsafe {
+                libsarga::syscall::syscall2(4, file.as_ptr() as u64, st.as_mut_ptr() as u64)
+            } == 0
                 && (st[1] & 0o170000) == 0o040000;
             if is_dir {
-                if recursive { grep_recursive(file, &pattern, case_insensitive, invert, line_num); }
-                else { println!("grep: {}: Is a directory", file); }
+                if recursive {
+                    grep_recursive(file, &pattern, case_insensitive, invert, line_num);
+                } else {
+                    println!("grep: {}: Is a directory", file);
+                }
             } else {
                 if let Ok(text) = io::read_to_string(file) {
                     let lines: Vec<&str> = text.lines().collect();
-                    grep_lines(&lines, &pattern, show_filename, file, case_insensitive, invert, line_num);
-                } else { println!("grep: {}: not found", file); }
+                    grep_lines(
+                        &lines,
+                        &pattern,
+                        show_filename,
+                        file,
+                        case_insensitive,
+                        invert,
+                        line_num,
+                    );
+                } else {
+                    println!("grep: {}: not found", file);
+                }
             }
         }
     }

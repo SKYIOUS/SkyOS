@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("System Monitor", 500, 400).expect("Window::create failed");
@@ -32,12 +32,20 @@ fn user_main() -> i32 {
             }
         }
 
-        win.draw_string(20, 320, "Memory: 128MB / 512MB (25%)", theme.text_secondary, 0);
+        win.draw_string(
+            20,
+            320,
+            "Memory: 128MB / 512MB (25%)",
+            theme.text_secondary,
+            0,
+        );
         win.draw_rounded_rect(20, 340, 460, 10, 5, theme.bg_elevated);
         win.draw_rounded_rect(20, 340, 115, 10, 5, theme.accent);
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 100_000_000u64);
+        }
     }
 }
 

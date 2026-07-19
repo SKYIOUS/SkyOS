@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, io, syscall::*};
+use libsarga::{io, println, sarga_main, syscall::*};
 
 fn copy_ctl_to_proc(ctl_path: &str, proc_path: &str) {
     if let Ok(data) = io::read_to_string(ctl_path) {
@@ -26,7 +26,9 @@ fn user_main() -> i32 {
         copy_ctl_to_proc("/ctl/sys/net/stat", "/proc/net/sockstat");
 
         // Sleep 2 seconds between updates
-        unsafe { syscall2(35, 2, 0); }
+        unsafe {
+            syscall2(35, 2, 0);
+        }
     }
 }
 

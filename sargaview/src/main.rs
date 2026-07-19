@@ -2,12 +2,12 @@
 #![no_main]
 extern crate alloc;
 use alloc::vec::Vec;
-use libsarga::sarga_main;
+use libsarga::args;
 use libsarga::gui::Window;
 use libsarga::io::{self, clipboard_write};
-use libsarga::theme::Theme;
-use libsarga::args;
 use libsarga::png;
+use libsarga::sarga_main;
+use libsarga::theme::Theme;
 
 struct Image {
     width: u32,
@@ -34,13 +34,20 @@ fn read_file(path: &str) -> Vec<u8> {
 }
 
 fn u16_le(data: &[u8], off: usize) -> u16 {
-    if off + 2 > data.len() { return 0; }
+    if off + 2 > data.len() {
+        return 0;
+    }
     data[off] as u16 | (data[off + 1] as u16) << 8
 }
 
 fn u32_le(data: &[u8], off: usize) -> u32 {
-    if off + 4 > data.len() { return 0; }
-    data[off] as u32 | (data[off + 1] as u32) << 8 | (data[off + 2] as u32) << 16 | (data[off + 3] as u32) << 24
+    if off + 4 > data.len() {
+        return 0;
+    }
+    data[off] as u32
+        | (data[off + 1] as u32) << 8
+        | (data[off + 2] as u32) << 16
+        | (data[off + 3] as u32) << 24
 }
 
 fn i32_le(data: &[u8], off: usize) -> i32 {
@@ -48,18 +55,42 @@ fn i32_le(data: &[u8], off: usize) -> i32 {
 }
 
 fn parse_bmp(data: &[u8]) -> Option<Image> {
-    if data.len() < 54 { return None; }
-    if data[0] != b'B' || data[1] != b'M' { return None; }
+    if data.len() < 54 {
+        return None;
+    }
+    if data[0] != b'B' || data[1] != b'M' {
+        return None;
+    }
 
     let pixel_offset = u32_le(data, 10) as usize;
     let header_size = u32_le(data, 14);
-    let width = if header_size >= 12 { i32_le(data, 18) } else { return None };
-    let height_raw = if header_size >= 12 { i32_le(data, 22) } else { return None };
-    let bpp = if header_size >= 12 { u16_le(data, 28) } else { 24 };
-    let compression = if header_size >= 40 { u32_le(data, 30) } else { 0 };
+    let width = if header_size >= 12 {
+        i32_le(data, 18)
+    } else {
+        return None;
+    };
+    let height_raw = if header_size >= 12 {
+        i32_le(data, 22)
+    } else {
+        return None;
+    };
+    let bpp = if header_size >= 12 {
+        u16_le(data, 28)
+    } else {
+        24
+    };
+    let compression = if header_size >= 40 {
+        u32_le(data, 30)
+    } else {
+        0
+    };
 
-    if compression != 0 { return None; } // Only uncompressed BMP
-    if bpp != 24 && bpp != 32 { return None; }
+    if compression != 0 {
+        return None;
+    } // Only uncompressed BMP
+    if bpp != 24 && bpp != 32 {
+        return None;
+    }
 
     let h = height_raw.abs() as u32;
     let w = width.abs() as u32;
@@ -82,24 +113,38 @@ fn parse_bmp(data: &[u8]) -> Option<Image> {
             let b = data[px] as u32;
             let g = data[px + 1] as u32;
             let r = data[px + 2] as u32;
-            let a = if bytes_pp == 4 { data[px + 3] as u32 } else { 0xFF };
+            let a = if bytes_pp == 4 {
+                data[px + 3] as u32
+            } else {
+                0xFF
+            };
             // Store as 0xAARRGGBB (kernel format)
             pixels.push((a << 24) | (r << 16) | (g << 8) | b);
         }
     }
 
-    Some(Image { width: w, height: h, pixels })
+    Some(Image {
+        width: w,
+        height: h,
+        pixels,
+    })
 }
 
 fn parse_ppm(data: &[u8]) -> Option<Image> {
     // P6 format: "P6\nWIDTH HEIGHT MAXVAL\n<pixel data>"
-    if data.len() < 4 { return None; }
-    if data[0] != b'P' || data[1] != b'6' { return None; }
+    if data.len() < 4 {
+        return None;
+    }
+    if data[0] != b'P' || data[1] != b'6' {
+        return None;
+    }
 
     let mut offset = 3; // Skip "P6\n"
-    // Skip comments
+                        // Skip comments
     while offset < data.len() && data[offset] == b'#' {
-        while offset < data.len() && data[offset] != b'\n' { offset += 1; }
+        while offset < data.len() && data[offset] != b'\n' {
+            offset += 1;
+        }
         offset += 1;
     }
 
@@ -120,11 +165,15 @@ fn parse_ppm(data: &[u8]) -> Option<Image> {
     offset += 1; // Skip whitespace
 
     // Parse maxval (skip)
-    while offset < data.len() && data[offset].is_ascii_digit() { offset += 1; }
+    while offset < data.len() && data[offset].is_ascii_digit() {
+        offset += 1;
+    }
     offset += 1; // Skip newline
 
     let pixel_data_len = width as usize * height as usize * 3;
-    if offset + pixel_data_len > data.len() { return None; }
+    if offset + pixel_data_len > data.len() {
+        return None;
+    }
 
     let mut pixels = Vec::with_capacity((width * height) as usize);
     for _ in 0..(width * height) {
@@ -135,13 +184,21 @@ fn parse_ppm(data: &[u8]) -> Option<Image> {
         offset += 3;
     }
 
-    Some(Image { width, height, pixels })
+    Some(Image {
+        width,
+        height,
+        pixels,
+    })
 }
 
 fn parse_image(data: &[u8]) -> Option<Image> {
     // Try PNG
     if data.len() > 8 && data[0] == 0x89 && data[1] == b'P' && data[2] == b'N' && data[3] == b'G' {
-        return png::decode_png(data).map(|p| Image { width: p.width, height: p.height, pixels: p.pixels });
+        return png::decode_png(data).map(|p| Image {
+            width: p.width,
+            height: p.height,
+            pixels: p.pixels,
+        });
     }
     // Try BMP
     if data.len() > 2 && data[0] == b'B' && data[1] == b'M' {
@@ -160,12 +217,18 @@ fn parse_image(data: &[u8]) -> Option<Image> {
 
 fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
     // P3: "P3\nWIDTH HEIGHT MAXVAL\n<values separated by whitespace>"
-    if data.len() < 4 { return None; }
-    if data[0] != b'P' || data[1] != b'3' { return None; }
+    if data.len() < 4 {
+        return None;
+    }
+    if data[0] != b'P' || data[1] != b'3' {
+        return None;
+    }
 
     let mut offset = 3;
     while offset < data.len() && data[offset] == b'#' {
-        while offset < data.len() && data[offset] != b'\n' { offset += 1; }
+        while offset < data.len() && data[offset] != b'\n' {
+            offset += 1;
+        }
         offset += 1;
     }
 
@@ -183,7 +246,9 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
     }
     offset += 1;
 
-    while offset < data.len() && data[offset].is_ascii_digit() { offset += 1; }
+    while offset < data.len() && data[offset].is_ascii_digit() {
+        offset += 1;
+    }
     offset += 1;
 
     let mut pixels = Vec::with_capacity((width * height) as usize);
@@ -194,10 +259,14 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
 
     while offset < data.len() && values_read < total {
         // Skip whitespace
-        while offset < data.len() && (data[offset] == b' ' || data[offset] == b'\n' || data[offset] == b'\t') {
+        while offset < data.len()
+            && (data[offset] == b' ' || data[offset] == b'\n' || data[offset] == b'\t')
+        {
             offset += 1;
         }
-        if offset >= data.len() { break; }
+        if offset >= data.len() {
+            break;
+        }
 
         let mut val: u32 = 0;
         while offset < data.len() && data[offset].is_ascii_digit() {
@@ -220,7 +289,11 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
         values_read += 1;
     }
 
-    Some(Image { width, height, pixels })
+    Some(Image {
+        width,
+        height,
+        pixels,
+    })
 }
 
 fn user_main() -> i32 {
@@ -248,7 +321,11 @@ fn user_main() -> i32 {
         }
     };
 
-    io::print_str(&alloc::format!("skyview: {}x{} image loaded\n", image.width, image.height));
+    io::print_str(&alloc::format!(
+        "skyview: {}x{} image loaded\n",
+        image.width,
+        image.height
+    ));
 
     let win_w = (image.width + 16).min(1024);
     let win_h = (image.height + 40).min(768);
@@ -270,16 +347,28 @@ fn user_main() -> i32 {
         let scroll = mouse.scroll;
 
         // Zoom with scroll wheel
-        if scroll > 0 { zoom = (zoom * 1.2).min(8.0); }
-        if scroll < 0 { zoom = (zoom / 1.2).max(0.1); }
+        if scroll > 0 {
+            zoom = (zoom * 1.2).min(8.0);
+        }
+        if scroll < 0 {
+            zoom = (zoom / 1.2).max(0.1);
+        }
 
         // Keyboard
         while let Some(key) = win.get_key() {
             match key {
                 b'q' | b'Q' => return 0,
-                b'+' | b'=' => { zoom = (zoom * 1.2).min(8.0); }
-                b'-' => { zoom = (zoom / 1.2).max(0.1); }
-                b'0' => { zoom = 1.0; scroll_x = 0; scroll_y = 0; }
+                b'+' | b'=' => {
+                    zoom = (zoom * 1.2).min(8.0);
+                }
+                b'-' => {
+                    zoom = (zoom / 1.2).max(0.1);
+                }
+                b'0' => {
+                    zoom = 1.0;
+                    scroll_x = 0;
+                    scroll_y = 0;
+                }
                 b'c' | b'C' => {
                     // Copy image info
                     let info = alloc::format!("{}x{}", image.width, image.height);
@@ -321,8 +410,13 @@ fn user_main() -> i32 {
         }
 
         // Title bar info
-        let info = alloc::format!("{}x{} | Zoom: {:.0}% | {}",
-            image.width, image.height, zoom * 100.0, path);
+        let info = alloc::format!(
+            "{}x{} | Zoom: {:.0}% | {}",
+            image.width,
+            image.height,
+            zoom * 100.0,
+            path
+        );
         win.draw_rect(0, 0, win_w, 20, theme.bg_surface);
         win.draw_string(8, 4, &info, theme.text_secondary, theme.bg_surface);
 
@@ -330,18 +424,38 @@ fn user_main() -> i32 {
         if disp_w > 0 && disp_h > 0 {
             let bx = off_x.max(0) as u32;
             let by = off_y.max(0) as u32;
-            win.draw_rect(bx.saturating_sub(1), by.saturating_sub(1), disp_w + 2, 1, theme.border);
-            win.draw_rect(bx.saturating_sub(1), by + disp_h, disp_w + 2, 1, theme.border);
+            win.draw_rect(
+                bx.saturating_sub(1),
+                by.saturating_sub(1),
+                disp_w + 2,
+                1,
+                theme.border,
+            );
+            win.draw_rect(
+                bx.saturating_sub(1),
+                by + disp_h,
+                disp_w + 2,
+                1,
+                theme.border,
+            );
             win.draw_rect(bx.saturating_sub(1), by, 1, disp_h, theme.border);
             win.draw_rect(bx + disp_w, by, 1, disp_h, theme.border);
         }
 
         // Help text
         win.draw_rect(0, win_h - 20, win_w, 20, theme.bg_surface);
-        win.draw_string(8, win_h - 16, "Q:Quit +/-:Zoom 0:Reset", theme.text_disabled, theme.bg_surface);
+        win.draw_string(
+            8,
+            win_h - 16,
+            "Q:Quit +/-:Zoom 0:Reset",
+            theme.text_disabled,
+            theme.bg_surface,
+        );
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 16_666_000); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 16_666_000);
+        }
     }
 }
 

@@ -15,14 +15,16 @@ pub(crate) struct ShortcutManager {
 
 impl ShortcutManager {
     pub fn new() -> Self {
-        ShortcutManager { bindings: [
-            (23, ShortcutAction::CloseFocused), // Ctrl+W
-            (17, ShortcutAction::Quit),          // Ctrl+Q
-            (20, ShortcutAction::CycleTiling),   // Ctrl+T
-            (5,  ShortcutAction::CycleWindow),   // Ctrl+E
-            (1,  ShortcutAction::ToggleAot),     // Ctrl+A
-            (2,  ShortcutAction::ClipboardPanel),// Ctrl+B
-        ]}
+        ShortcutManager {
+            bindings: [
+                (23, ShortcutAction::CloseFocused),  // Ctrl+W
+                (17, ShortcutAction::Quit),          // Ctrl+Q
+                (20, ShortcutAction::CycleTiling),   // Ctrl+T
+                (5, ShortcutAction::CycleWindow),    // Ctrl+E
+                (1, ShortcutAction::ToggleAot),      // Ctrl+A
+                (2, ShortcutAction::ClipboardPanel), // Ctrl+B
+            ],
+        }
     }
 
     pub fn handle(&self, key: u8) -> Option<&ShortcutAction> {

@@ -2,8 +2,7 @@
 //! These are the ONLY place in Sarga OS that uses inline asm for syscalls.
 
 #[inline(always)]
-pub unsafe fn syscall6(n: u64, a1: u64, a2: u64, a3: u64,
-                       a4: u64, a5: u64, a6: u64) -> i64 {
+pub unsafe fn syscall6(n: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) -> i64 {
     let ret: i64;
     core::arch::asm!(
         "syscall",
@@ -16,12 +15,30 @@ pub unsafe fn syscall6(n: u64, a1: u64, a2: u64, a3: u64,
     ret
 }
 
-#[inline(always)] pub unsafe fn syscall0(n: u64) -> i64 { syscall6(n,0,0,0,0,0,0) }
-#[inline(always)] pub unsafe fn syscall1(n: u64, a1: u64) -> i64 { syscall6(n,a1,0,0,0,0,0) }
-#[inline(always)] pub unsafe fn syscall2(n: u64, a1: u64, a2: u64) -> i64 { syscall6(n,a1,a2,0,0,0,0) }
-#[inline(always)] pub unsafe fn syscall3(n: u64, a1: u64, a2: u64, a3: u64) -> i64 { syscall6(n,a1,a2,a3,0,0,0) }
-#[inline(always)] pub unsafe fn syscall4(n: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 { syscall6(n,a1,a2,a3,a4,0,0) }
-#[inline(always)] pub unsafe fn syscall5(n: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 { syscall6(n,a1,a2,a3,a4,a5,0) }
+#[inline(always)]
+pub unsafe fn syscall0(n: u64) -> i64 {
+    syscall6(n, 0, 0, 0, 0, 0, 0)
+}
+#[inline(always)]
+pub unsafe fn syscall1(n: u64, a1: u64) -> i64 {
+    syscall6(n, a1, 0, 0, 0, 0, 0)
+}
+#[inline(always)]
+pub unsafe fn syscall2(n: u64, a1: u64, a2: u64) -> i64 {
+    syscall6(n, a1, a2, 0, 0, 0, 0)
+}
+#[inline(always)]
+pub unsafe fn syscall3(n: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+    syscall6(n, a1, a2, a3, 0, 0, 0)
+}
+#[inline(always)]
+pub unsafe fn syscall4(n: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64 {
+    syscall6(n, a1, a2, a3, a4, 0, 0)
+}
+#[inline(always)]
+pub unsafe fn syscall5(n: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
+    syscall6(n, a1, a2, a3, a4, a5, 0)
+}
 
 pub const SYS_READ: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
@@ -79,20 +96,53 @@ pub const SYS_SETGID: u64 = 304;
 pub const SYS_GETEUID: u64 = 305;
 pub const SYS_GETEGID: u64 = 306;
 
-pub unsafe fn read(fd: i64, buf: *mut u8, len: usize) -> i64 { syscall3(SYS_READ, fd as u64, buf as u64, len as u64) }
-pub unsafe fn write(fd: i64, buf: *const u8, len: usize) -> i64 { syscall3(SYS_WRITE, fd as u64, buf as u64, len as u64) }
-pub unsafe fn open(path: *const u8, flags: i32) -> i64 { syscall2(SYS_OPEN, path as u64, flags as u64) }
-pub unsafe fn close(fd: i64) -> i64 { syscall1(SYS_CLOSE, fd as u64) }
-pub unsafe fn fork() -> i64 { syscall0(SYS_FORK) }
-pub unsafe fn execve(path: *const u8, argv: *const *const u8, envp: *const *const u8) -> i64 { syscall3(SYS_EXECVE, path as u64, argv as u64, envp as u64) }
-pub unsafe fn exit(code: i32) -> ! { syscall1(SYS_EXIT, code as u64); loop {} }
-pub unsafe fn wait4(pid: i64, status: *mut i32, options: i32, rusage: *mut u8) -> i64 { syscall4(SYS_WAIT4, pid as u64, status as u64, options as u64, rusage as u64) }
-pub unsafe fn getdents64(fd: i64, buf: *mut u8, len: usize) -> i64 { syscall3(SYS_GETDENTS64, fd as u64, buf as u64, len as u64) }
-pub unsafe fn unlink(path: *const u8) -> i64 { syscall1(SYS_UNLINK, path as u64) }
-pub unsafe fn mkdir(path: *const u8, mode: u32) -> i64 { syscall2(SYS_MKDIR, path as u64, mode as u64) }
-pub unsafe fn fstat(fd: i64, buf: *mut u8) -> i64 { syscall2(SYS_FSTAT, fd as u64, buf as u64) }
+pub unsafe fn read(fd: i64, buf: *mut u8, len: usize) -> i64 {
+    syscall3(SYS_READ, fd as u64, buf as u64, len as u64)
+}
+pub unsafe fn write(fd: i64, buf: *const u8, len: usize) -> i64 {
+    syscall3(SYS_WRITE, fd as u64, buf as u64, len as u64)
+}
+pub unsafe fn open(path: *const u8, flags: i32) -> i64 {
+    syscall2(SYS_OPEN, path as u64, flags as u64)
+}
+pub unsafe fn close(fd: i64) -> i64 {
+    syscall1(SYS_CLOSE, fd as u64)
+}
+pub unsafe fn fork() -> i64 {
+    syscall0(SYS_FORK)
+}
+pub unsafe fn execve(path: *const u8, argv: *const *const u8, envp: *const *const u8) -> i64 {
+    syscall3(SYS_EXECVE, path as u64, argv as u64, envp as u64)
+}
+pub unsafe fn exit(code: i32) -> ! {
+    syscall1(SYS_EXIT, code as u64);
+    loop {}
+}
+pub unsafe fn wait4(pid: i64, status: *mut i32, options: i32, rusage: *mut u8) -> i64 {
+    syscall4(
+        SYS_WAIT4,
+        pid as u64,
+        status as u64,
+        options as u64,
+        rusage as u64,
+    )
+}
+pub unsafe fn getdents64(fd: i64, buf: *mut u8, len: usize) -> i64 {
+    syscall3(SYS_GETDENTS64, fd as u64, buf as u64, len as u64)
+}
+pub unsafe fn unlink(path: *const u8) -> i64 {
+    syscall1(SYS_UNLINK, path as u64)
+}
+pub unsafe fn mkdir(path: *const u8, mode: u32) -> i64 {
+    syscall2(SYS_MKDIR, path as u64, mode as u64)
+}
+pub unsafe fn fstat(fd: i64, buf: *mut u8) -> i64 {
+    syscall2(SYS_FSTAT, fd as u64, buf as u64)
+}
 
-pub unsafe fn beep(freq: u32, duration: u32) -> i64 { syscall2(SYS_BEEP, freq as u64, duration as u64) }
+pub unsafe fn beep(freq: u32, duration: u32) -> i64 {
+    syscall2(SYS_BEEP, freq as u64, duration as u64)
+}
 
 // Futex operations
 pub const FUTEX_WAIT: u32 = 0;
@@ -101,8 +151,23 @@ pub const FUTEX_WAKE: u32 = 1;
 /// Futex syscall wrapper.
 /// Matches the kernel's SYS_FUTEX (202) ABI:
 ///   uaddr, op, val, timeout, uaddr2, val3
-pub unsafe fn sys_futex(uaddr: usize, op: u32, val: usize, timeout: usize, uaddr2: usize, val3: usize) -> i64 {
-    syscall6(SYS_FUTEX, uaddr as u64, op as u64, val as u64, timeout as u64, uaddr2 as u64, val3 as u64)
+pub unsafe fn sys_futex(
+    uaddr: usize,
+    op: u32,
+    val: usize,
+    timeout: usize,
+    uaddr2: usize,
+    val3: usize,
+) -> i64 {
+    syscall6(
+        SYS_FUTEX,
+        uaddr as u64,
+        op as u64,
+        val as u64,
+        timeout as u64,
+        uaddr2 as u64,
+        val3 as u64,
+    )
 }
 
 /// Get current thread ID.

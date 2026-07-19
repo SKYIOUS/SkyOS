@@ -4,12 +4,12 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::io::{self, open, read, close};
-use libsarga::process::{setuid, setgid, execve};
-use libsarga::errno::Error;
-use libsarga::sarga_main;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use libsarga::errno::Error;
+use libsarga::io::{self, close, open, read};
+use libsarga::process::{execve, setgid, setuid};
+use libsarga::sarga_main;
 
 const PASSWD_PATH: &str = "/etc/passwd";
 const SHADOW_PATH: &str = "/etc/shadow";
@@ -19,8 +19,12 @@ fn read_line(fd: i64) -> Result<Vec<u8>, Error> {
     let mut byte = [0u8; 1];
     loop {
         let n = read(fd, &mut byte)?;
-        if n == 0 { break; }
-        if byte[0] == b'\n' || byte[0] == b'\r' { break; }
+        if n == 0 {
+            break;
+        }
+        if byte[0] == b'\n' || byte[0] == b'\r' {
+            break;
+        }
         buf.push(byte[0]);
     }
     Ok(buf)
@@ -32,7 +36,9 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
     let mut tmp = [0u8; 512];
     loop {
         let n = read(fd, &mut tmp)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
     }
     let _ = close(fd);
@@ -42,7 +48,9 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
 fn lookup_user(username: &str) -> Option<(u32, u32, Vec<u8>, Vec<u8>)> {
     let data = read_whole_file(PASSWD_PATH).ok()?;
     for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let mut parts = line.splitn(7, |&b| b == b':');
         let name = parts.next()?;
         if name == username.as_bytes() {
@@ -61,7 +69,9 @@ fn lookup_user(username: &str) -> Option<(u32, u32, Vec<u8>, Vec<u8>)> {
 }
 
 fn hex_decode(s: &[u8]) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 { return None; }
+    if s.len() % 2 != 0 {
+        return None;
+    }
     let mut out = Vec::with_capacity(s.len() / 2);
     for chunk in s.chunks(2) {
         let hi = (chunk[0] as char).to_digit(16)? as u8;
@@ -77,7 +87,9 @@ fn verify_password(username: &str, password: &str) -> bool {
         Err(_) => return false,
     };
     for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let mut parts = line.splitn(2, |&b| b == b':');
         let name = parts.next().unwrap_or(b"");
         if name == username.as_bytes() {
@@ -101,7 +113,7 @@ fn verify_password(username: &str, password: &str) -> bool {
                 let mut iterations: u32 = 10000;
                 if let Some(pos) = rest3.iter().position(|&b| b == b':') {
                     dk_hex = &rest3[..pos];
-                    let iter_str = core::str::from_utf8(&rest3[pos+1..]).unwrap_or("10000");
+                    let iter_str = core::str::from_utf8(&rest3[pos + 1..]).unwrap_or("10000");
                     iterations = iter_str.parse().unwrap_or(10000);
                 }
                 let stored_dk = match hex_decode(dk_hex) {
@@ -134,8 +146,12 @@ fn user_main() -> i32 {
             Ok(b) => b,
             Err(_) => libsarga::process::exit(1),
         };
-        if name_bytes.is_empty() { return 1; }
-        core::str::from_utf8(&name_bytes).unwrap_or("root").to_string()
+        if name_bytes.is_empty() {
+            return 1;
+        }
+        core::str::from_utf8(&name_bytes)
+            .unwrap_or("root")
+            .to_string()
     };
 
     let (uid, gid, _home, _shell) = match lookup_user(&username) {
@@ -179,7 +195,10 @@ fn user_main() -> i32 {
         alloc::format!("SHELL={}", shell_name),
         "TERM=xterm-256color".to_string(),
     ];
-    let env_refs: Vec<&str> = env.iter().map(|s: &alloc::string::String| s.as_str()).collect();
+    let env_refs: Vec<&str> = env
+        .iter()
+        .map(|s: &alloc::string::String| s.as_str())
+        .collect();
 
     let _ = execve(shell_name, &[], &env_refs);
     return 1;

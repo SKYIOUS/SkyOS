@@ -1,7 +1,7 @@
-use crate::gui::{Window, alpha_blend};
+use crate::alloc::string::String;
+use crate::gui::{alpha_blend, Window};
 use crate::theme::Theme;
 use crate::widget::Widget;
-use crate::alloc::string::String;
 
 pub struct Button {
     x: i32,
@@ -17,9 +17,14 @@ pub struct Button {
 impl Button {
     pub fn new(x: i32, y: i32, width: u32, height: u32, label: &str) -> Self {
         Button {
-            x, y, width, height,
+            x,
+            y,
+            width,
+            height,
             label: String::from(label),
-            pressed: false, hovered: false, enabled: true,
+            pressed: false,
+            hovered: false,
+            enabled: true,
         }
     }
 
@@ -41,14 +46,35 @@ impl Widget for Button {
         };
 
         // Button background with rounded corners
-        win.draw_rounded_rect(self.x as u32, self.y as u32, self.width, self.height, theme.border_radius, color);
+        win.draw_rounded_rect(
+            self.x as u32,
+            self.y as u32,
+            self.width,
+            self.height,
+            theme.border_radius,
+            color,
+        );
 
         // Button border
-        win.draw_line_h(self.x as u32, self.y as u32, self.width, alpha_blend(color, 0xFFFFFFFF, 30));
-        win.draw_line_h(self.x as u32, self.y as u32 + self.height - 1, self.width, alpha_blend(color, 0x00000000, 60));
+        win.draw_line_h(
+            self.x as u32,
+            self.y as u32,
+            self.width,
+            alpha_blend(color, 0xFFFFFFFF, 30),
+        );
+        win.draw_line_h(
+            self.x as u32,
+            self.y as u32 + self.height - 1,
+            self.width,
+            alpha_blend(color, 0x00000000, 60),
+        );
 
         // Centered text
-        let text_color = if self.enabled { 0xFFFFFFFF } else { theme.text_disabled };
+        let text_color = if self.enabled {
+            0xFFFFFFFF
+        } else {
+            theme.text_disabled
+        };
         let text_w = win.measure_text(&self.label);
         let text_x = self.x as u32 + (self.width.saturating_sub(text_w)) / 2;
         let text_y = self.y as u32 + (self.height - theme.font_size) / 2;

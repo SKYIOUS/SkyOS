@@ -2,10 +2,13 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::String;
-use libsarga::{sarga_main, println, args};
+use libsarga::{args, println, sarga_main};
 
 fn user_main() -> i32 {
-    if args::argc() < 2 { println!("Usage: dirname <path>"); return 0; }
+    if args::argc() < 2 {
+        println!("Usage: dirname <path>");
+        return 0;
+    }
     let path = args::get(1).unwrap_or("");
     let dir = match path.rfind('/') {
         Some(0) => String::from("/"),

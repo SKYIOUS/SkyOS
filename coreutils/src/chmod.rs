@@ -4,7 +4,7 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::io::{self, open, close, fchmod};
+use libsarga::io::{self, close, fchmod, open};
 use libsarga::sarga_main;
 
 fn parse_mode(s: &str) -> Option<u32> {

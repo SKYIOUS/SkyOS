@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, args, syscall::*};
+use libsarga::{args, println, sarga_main, syscall::*};
 
 fn user_main() -> i32 {
     if args::argc() < 2 {

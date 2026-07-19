@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, args, io};
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let mut lines = 0u64;
@@ -18,7 +18,9 @@ fn user_main() -> i32 {
         bytes += n as u64;
         let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
         for c in s.chars() {
-            if c == '\n' { lines += 1; }
+            if c == '\n' {
+                lines += 1;
+            }
         }
         let mut in_word = false;
         for c in s.chars() {
@@ -30,7 +32,13 @@ fn user_main() -> i32 {
             }
         }
     }
-    println!("{} {} {} {}", lines, words, bytes, args::get(1).unwrap_or(""));
+    println!(
+        "{} {} {} {}",
+        lines,
+        words,
+        bytes,
+        args::get(1).unwrap_or("")
+    );
 
     0
 }

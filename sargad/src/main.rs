@@ -3,8 +3,8 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
+use libsarga::io::{self, getdents64, notify};
 use libsarga::sarga_main;
-use libsarga::io::{self, notify, getdents64};
 
 const NOTIFY_DIR: &str = "/tmp/notify_inbox";
 const NOTIFY_LOG: &str = "/tmp/notifications.log";
@@ -32,7 +32,8 @@ fn read_file(path: &str) -> String {
 }
 
 fn write_log(entry: &str) {
-    if let Ok(fd) = io::open(NOTIFY_LOG, 0x2 | 0x40 | 0x200) { // O_WRONLY|O_CREAT|O_APPEND
+    if let Ok(fd) = io::open(NOTIFY_LOG, 0x2 | 0x40 | 0x200) {
+        // O_WRONLY|O_CREAT|O_APPEND
         let _ = io::write_all(fd, entry.as_bytes());
         let _ = io::close(fd);
     }
@@ -50,11 +51,18 @@ fn list_notify_files() -> Vec<String> {
             Ok(n) if n > 0 => {
                 let mut offset = 0;
                 while offset < n {
-                    if offset + 19 > n { break; }
-                    let ino = u64::from_ne_bytes(buf[offset..offset + 8].try_into().unwrap_or([0; 8]));
-                    let reclen = u16::from_ne_bytes(buf[offset + 16..offset + 18].try_into().unwrap_or([0; 2])) as usize;
+                    if offset + 19 > n {
+                        break;
+                    }
+                    let ino =
+                        u64::from_ne_bytes(buf[offset..offset + 8].try_into().unwrap_or([0; 8]));
+                    let reclen = u16::from_ne_bytes(
+                        buf[offset + 16..offset + 18].try_into().unwrap_or([0; 2]),
+                    ) as usize;
                     let name_len = buf[offset + 18] as usize;
-                    if reclen == 0 || offset + reclen > n { break; }
+                    if reclen == 0 || offset + reclen > n {
+                        break;
+                    }
                     if ino != 0 && name_len > 0 && name_len < 256 {
                         let name_bytes = &buf[offset + 19..offset + 19 + name_len];
                         let name_end = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_len);
@@ -112,7 +120,9 @@ fn user_main() -> i32 {
         }
 
         // Sleep 500ms
-        unsafe { libsarga::syscall::syscall2(35, 0, 500_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 500_000_000u64);
+        }
     }
 }
 

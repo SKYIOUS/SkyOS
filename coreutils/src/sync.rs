@@ -3,7 +3,9 @@
 use libsarga::{sarga_main, syscall};
 
 fn user_main() -> i32 {
-    unsafe { syscall::syscall0(36); }
+    unsafe {
+        syscall::syscall0(36);
+    }
     0
 }
 

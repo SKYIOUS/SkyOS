@@ -1,8 +1,8 @@
 //! Application database — desktop entries, categories, pinned/recent tracking.
 
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::collections::VecDeque;
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AppCategory {
@@ -26,35 +26,99 @@ pub(crate) struct AppEntry {
 }
 
 pub(crate) static APPS: &[AppEntry] = &[
-    AppEntry { name: "Terminal",      cat: AppCategory::System,       exec: "/bin/sash" },
-    AppEntry { name: "File Manager",  cat: AppCategory::System,       exec: "/bin/skyfiles" },
-    AppEntry { name: "SkyStore",      cat: AppCategory::Utilities,    exec: "/bin/skystore" },
-    AppEntry { name: "System Info",   cat: AppCategory::System,       exec: "/bin/uname" },
-    AppEntry { name: "Calculator",    cat: AppCategory::Utilities,    exec: "/bin/calculator" },
-    AppEntry { name: "SkyEdit",       cat: AppCategory::Development,  exec: "/bin/skyedit" },
-    AppEntry { name: "Settings",      cat: AppCategory::System,       exec: "/bin/skysettings" },
-    AppEntry { name: "System Monitor",cat: AppCategory::System,       exec: "/bin/sysmon" },
-    AppEntry { name: "Calendar",      cat: AppCategory::Office,       exec: "/bin/calendar" },
-    AppEntry { name: "Notes",         cat: AppCategory::Office,       exec: "/bin/notes" },
-    AppEntry { name: "Paint",         cat: AppCategory::Graphics,     exec: "/bin/paint" },
-    AppEntry { name: "Clock",         cat: AppCategory::Utilities,    exec: "/bin/clock" },
-    AppEntry { name: "Tasks",         cat: AppCategory::Office,       exec: "/bin/tasks" },
-    AppEntry { name: "Search",        cat: AppCategory::Utilities,    exec: "/bin/search" },
-    AppEntry { name: "File Browser",  cat: AppCategory::System,       exec: "/bin/skyfiles" },
-    AppEntry { name: "About SARGA",   cat: AppCategory::System,       exec: "" },
+    AppEntry {
+        name: "Terminal",
+        cat: AppCategory::System,
+        exec: "/bin/sash",
+    },
+    AppEntry {
+        name: "File Manager",
+        cat: AppCategory::System,
+        exec: "/bin/skyfiles",
+    },
+    AppEntry {
+        name: "SkyStore",
+        cat: AppCategory::Utilities,
+        exec: "/bin/skystore",
+    },
+    AppEntry {
+        name: "System Info",
+        cat: AppCategory::System,
+        exec: "/bin/uname",
+    },
+    AppEntry {
+        name: "Calculator",
+        cat: AppCategory::Utilities,
+        exec: "/bin/calculator",
+    },
+    AppEntry {
+        name: "SkyEdit",
+        cat: AppCategory::Development,
+        exec: "/bin/skyedit",
+    },
+    AppEntry {
+        name: "Settings",
+        cat: AppCategory::System,
+        exec: "/bin/skysettings",
+    },
+    AppEntry {
+        name: "System Monitor",
+        cat: AppCategory::System,
+        exec: "/bin/sysmon",
+    },
+    AppEntry {
+        name: "Calendar",
+        cat: AppCategory::Office,
+        exec: "/bin/calendar",
+    },
+    AppEntry {
+        name: "Notes",
+        cat: AppCategory::Office,
+        exec: "/bin/notes",
+    },
+    AppEntry {
+        name: "Paint",
+        cat: AppCategory::Graphics,
+        exec: "/bin/paint",
+    },
+    AppEntry {
+        name: "Clock",
+        cat: AppCategory::Utilities,
+        exec: "/bin/clock",
+    },
+    AppEntry {
+        name: "Tasks",
+        cat: AppCategory::Office,
+        exec: "/bin/tasks",
+    },
+    AppEntry {
+        name: "Search",
+        cat: AppCategory::Utilities,
+        exec: "/bin/search",
+    },
+    AppEntry {
+        name: "File Browser",
+        cat: AppCategory::System,
+        exec: "/bin/skyfiles",
+    },
+    AppEntry {
+        name: "About SARGA",
+        cat: AppCategory::System,
+        exec: "",
+    },
 ];
 
 pub(crate) static CATEGORIES: &[(&str, AppCategory)] = &[
-    ("All",         AppCategory::All),
-    ("Favorites",   AppCategory::Favorites),
-    ("System",      AppCategory::System),
+    ("All", AppCategory::All),
+    ("Favorites", AppCategory::Favorites),
+    ("System", AppCategory::System),
     ("Development", AppCategory::Development),
-    ("Office",      AppCategory::Office),
-    ("Graphics",    AppCategory::Graphics),
-    ("Network",     AppCategory::Network),
-    ("Multimedia",  AppCategory::Multimedia),
-    ("Games",       AppCategory::Games),
-    ("Utilities",   AppCategory::Utilities),
+    ("Office", AppCategory::Office),
+    ("Graphics", AppCategory::Graphics),
+    ("Network", AppCategory::Network),
+    ("Multimedia", AppCategory::Multimedia),
+    ("Games", AppCategory::Games),
+    ("Utilities", AppCategory::Utilities),
 ];
 
 pub(crate) struct AppDb {
@@ -97,8 +161,15 @@ impl AppDb {
                 continue;
             }
             if !query_lower.is_empty() {
-                let name_lower: Vec<u8> = APPS[i].name.bytes().map(|b| b.to_ascii_lowercase()).collect();
-                if !name_lower.windows(query_lower.len()).any(|w| w == &query_lower[..]) {
+                let name_lower: Vec<u8> = APPS[i]
+                    .name
+                    .bytes()
+                    .map(|b| b.to_ascii_lowercase())
+                    .collect();
+                if !name_lower
+                    .windows(query_lower.len())
+                    .any(|w| w == &query_lower[..])
+                {
                     continue;
                 }
             }

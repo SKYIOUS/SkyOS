@@ -1,9 +1,9 @@
-use crate::syscall::*;
-use alloc::boxed::Box;
-use core::sync::atomic::{AtomicU32, Ordering};
-use alloc::alloc::{alloc, Layout};
-use alloc::vec::Vec;
 use crate::sync::Mutex as SargaMutex;
+use crate::syscall::*;
+use alloc::alloc::{alloc, Layout};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 fn futex(uaddr: *mut u32, op: u32, val: u32) -> i64 {
     // SAFETY: uaddr is a valid pointer to an AtomicU32, syscall3 is safe for futex operations
@@ -56,13 +56,20 @@ pub fn spawn(f: fn()) -> Thread {
         res as u32
     };
 
-    Thread { _tid: tid, clear_tid }
+    Thread {
+        _tid: tid,
+        clear_tid,
+    }
 }
 
 impl Thread {
     pub fn join(self) {
         while self.clear_tid.load(Ordering::Acquire) != 0 {
-            futex(self.clear_tid.as_ptr() as *mut u32, crate::syscall::FUTEX_WAIT, 1);
+            futex(
+                self.clear_tid.as_ptr() as *mut u32,
+                crate::syscall::FUTEX_WAIT,
+                1,
+            );
         }
     }
 }
@@ -77,7 +84,8 @@ pub unsafe fn spawn_raw(
     let stack_size = 1024 * 1024;
     let stack_ptr = {
         // SAFETY: Layout is valid (size and alignment are powers of 2), alloc returns null on failure
-        let layout = Layout::from_size_align(stack_size, 4096).expect("Invalid thread stack layout");
+        let layout =
+            Layout::from_size_align(stack_size, 4096).expect("Invalid thread stack layout");
         alloc(layout)
     };
     let stack_top = stack_ptr as u64 + stack_size as u64;
@@ -152,7 +160,9 @@ pub struct Mutex {
 
 impl Mutex {
     pub const fn new() -> Self {
-        Mutex { state: AtomicU32::new(0) }
+        Mutex {
+            state: AtomicU32::new(0),
+        }
     }
 
     pub fn lock(&self) {

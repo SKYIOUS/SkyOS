@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
 use alloc::format;
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Calendar", 400, 350).expect("Window::create failed");
@@ -25,11 +25,19 @@ fn user_main() -> i32 {
             if is_today {
                 win.draw_rounded_rect(x - 5, y - 5, 30, 30, 15, theme.accent);
             }
-            win.draw_string(x, y, &format!("{}", i + 1), if is_today { 0xFFFFFFFF } else { theme.text }, 0);
+            win.draw_string(
+                x,
+                y,
+                &format!("{}", i + 1),
+                if is_today { 0xFFFFFFFF } else { theme.text },
+                0,
+            );
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 100_000_000u64);
+        }
     }
 }
 

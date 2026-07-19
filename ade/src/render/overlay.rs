@@ -7,7 +7,9 @@ pub(crate) fn draw_clipboard(win: &mut libsarga::gui::Window, snap: &RenderSnaps
         Some(c) => c,
         None => return,
     };
-    if !cb.panel_open { return; }
+    if !cb.panel_open {
+        return;
+    }
     let pw = 280u32;
     let ph = (cb.history.len() as u32 * 28 + 16).min(300);
     let px = (snap.screen_w - pw) / 2;
@@ -18,11 +20,18 @@ pub(crate) fn draw_clipboard(win: &mut libsarga::gui::Window, snap: &RenderSnaps
     win.draw_string(px + 10, py + 6, "Clipboard History", 0xFFFFFFFF, 0);
     for (i, entry) in cb.history.iter().enumerate() {
         let iy = py + 30 + i as u32 * 28;
-        if iy + 24 > py + ph { break; }
-        let hover = crate::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24).hit_test(snap.mouse);
+        if iy + 24 > py + ph {
+            break;
+        }
+        let hover =
+            crate::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24).hit_test(snap.mouse);
         let bg = if hover { 0xFF3A3A5C } else { 0xFF2D2D2D };
         win.draw_rounded_rect(px + 4, iy, pw - 8, 24, 4, bg);
-        let txt = if entry.text.len() > 28 { &entry.text[..28] } else { &entry.text };
+        let txt = if entry.text.len() > 28 {
+            &entry.text[..28]
+        } else {
+            &entry.text
+        };
         win.draw_string(px + 10, iy + 5, txt, 0xFFD0D0D0, 0);
         if entry.pinned {
             win.draw_char(px + pw - 22, iy + 5, 'P', 0xFFFFAA00, 0);
@@ -33,24 +42,36 @@ pub(crate) fn draw_clipboard(win: &mut libsarga::gui::Window, snap: &RenderSnaps
 pub(crate) fn draw_notifications(win: &mut libsarga::gui::Window, snap: &RenderSnapshot) {
     let mut ny = 10i32;
     for n in snap.notifications {
-        let c = if n.priority >= 2 { 0xFFFF4444u32 } else { snap.theme.accent };
+        let c = if n.priority >= 2 {
+            0xFFFF4444u32
+        } else {
+            snap.theme.accent
+        };
         win.draw_rounded_rect(snap.screen_w - 310, ny as u32, 300, 64, 8, 0xFF2D2D2D);
         win.draw_rounded_rect_outline(snap.screen_w - 310, ny as u32, 300, 64, 8, c);
         win.draw_string(snap.screen_w - 302, ny as u32 + 6, &n.title, 0xFFFFFFFF, 0);
-        let body = if n.body.len() > 36 { &n.body[..36] } else { &n.body };
+        let body = if n.body.len() > 36 {
+            &n.body[..36]
+        } else {
+            &n.body
+        };
         win.draw_string(snap.screen_w - 302, ny as u32 + 26, body, 0xFFB0B0B0, 0);
         if n.timeout > 0 {
             let frac = n.ticks_left.max(1) as u32 * 290 / n.timeout;
             win.draw_rect(snap.screen_w - 305, ny as u32 + 56, frac, 3, c);
         }
         ny += 72;
-        if ny > 300 { break; }
+        if ny > 300 {
+            break;
+        }
     }
 }
 
 pub(crate) fn draw_switcher(win: &mut libsarga::gui::Window, snap: &RenderSnapshot) {
     let n = snap.windows.len();
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
     let bw = 300u32;
     let bh = (n as u32 * 32 + 16).min(snap.screen_h / 2);
     let bx = (snap.screen_w - bw) / 2;
@@ -67,8 +88,18 @@ pub(crate) fn draw_switcher(win: &mut libsarga::gui::Window, snap: &RenderSnapsh
         if selected {
             win.draw_rounded_rect(bx + 4, iy, bw - 8, 28, 4, 0xFF4A6FA5);
         }
-        let label = if aw.title.len() > 28 { &aw.title[..28] } else { &aw.title };
-        win.draw_string(bx + 12, iy + 6, label, if selected { 0xFFFFFFFF } else { 0xFFAAAAAA }, 0);
+        let label = if aw.title.len() > 28 {
+            &aw.title[..28]
+        } else {
+            &aw.title
+        };
+        win.draw_string(
+            bx + 12,
+            iy + 6,
+            label,
+            if selected { 0xFFFFFFFF } else { 0xFFAAAAAA },
+            0,
+        );
     }
 }
 

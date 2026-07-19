@@ -1,8 +1,8 @@
 //! File association engine — extension/mime → application mapping.
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use crate::app_db::APPS;
+use alloc::vec::Vec;
 
 pub(crate) struct FileAssoc {
     pub ext: &'static str,
@@ -17,16 +17,56 @@ pub(crate) struct FileAssociationEngine {
 impl FileAssociationEngine {
     pub fn new() -> Self {
         let mut assocs = Vec::new();
-        assocs.push(FileAssoc { ext: "txt", mime: "text/plain", app_exec: "/bin/skyedit" });
-        assocs.push(FileAssoc { ext: "md",  mime: "text/markdown", app_exec: "/bin/skyedit" });
-        assocs.push(FileAssoc { ext: "rs",  mime: "text/rust", app_exec: "/bin/skyedit" });
-        assocs.push(FileAssoc { ext: "c",   mime: "text/x-c", app_exec: "/bin/skyedit" });
-        assocs.push(FileAssoc { ext: "h",   mime: "text/x-c-header", app_exec: "/bin/skyedit" });
-        assocs.push(FileAssoc { ext: "png", mime: "image/png", app_exec: "/bin/paint" });
-        assocs.push(FileAssoc { ext: "jpg", mime: "image/jpeg", app_exec: "/bin/paint" });
-        assocs.push(FileAssoc { ext: "bmp", mime: "image/bmp", app_exec: "/bin/paint" });
-        assocs.push(FileAssoc { ext: "sh",  mime: "text/x-shell", app_exec: "/bin/sash" });
-        assocs.push(FileAssoc { ext: "calc", mime: "application/x-calc", app_exec: "/bin/calculator" });
+        assocs.push(FileAssoc {
+            ext: "txt",
+            mime: "text/plain",
+            app_exec: "/bin/skyedit",
+        });
+        assocs.push(FileAssoc {
+            ext: "md",
+            mime: "text/markdown",
+            app_exec: "/bin/skyedit",
+        });
+        assocs.push(FileAssoc {
+            ext: "rs",
+            mime: "text/rust",
+            app_exec: "/bin/skyedit",
+        });
+        assocs.push(FileAssoc {
+            ext: "c",
+            mime: "text/x-c",
+            app_exec: "/bin/skyedit",
+        });
+        assocs.push(FileAssoc {
+            ext: "h",
+            mime: "text/x-c-header",
+            app_exec: "/bin/skyedit",
+        });
+        assocs.push(FileAssoc {
+            ext: "png",
+            mime: "image/png",
+            app_exec: "/bin/paint",
+        });
+        assocs.push(FileAssoc {
+            ext: "jpg",
+            mime: "image/jpeg",
+            app_exec: "/bin/paint",
+        });
+        assocs.push(FileAssoc {
+            ext: "bmp",
+            mime: "image/bmp",
+            app_exec: "/bin/paint",
+        });
+        assocs.push(FileAssoc {
+            ext: "sh",
+            mime: "text/x-shell",
+            app_exec: "/bin/sash",
+        });
+        assocs.push(FileAssoc {
+            ext: "calc",
+            mime: "application/x-calc",
+            app_exec: "/bin/calculator",
+        });
         FileAssociationEngine { assocs }
     }
 

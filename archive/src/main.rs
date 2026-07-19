@@ -1,17 +1,12 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme};
+use libsarga::{gui::Window, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("Archive Manager", 500, 400).expect("Window::create failed");
     let theme = Theme::dark();
-    let files = [
-        "backup.tar",
-        "photos.zip",
-        "docs.7z",
-        "source_code.tar.gz",
-    ];
+    let files = ["backup.tar", "photos.zip", "docs.7z", "source_code.tar.gz"];
 
     loop {
         win.clear(theme.bg_primary);
@@ -26,7 +21,9 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 100_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 100_000_000u64);
+        }
     }
 }
 

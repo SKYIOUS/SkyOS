@@ -1,19 +1,19 @@
 #![no_std]
 #![no_main]
-use libsarga::sarga_main;
 use libsarga::println;
+use libsarga::sarga_main;
 extern crate alloc;
-use libsarga::sync::Mutex;
-use alloc::vec::Vec;
+use alloc::ffi::CString;
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::ffi::CString;
+use alloc::vec::Vec;
+use libsarga::posix::{WNOHANG, WUNTRACED};
 use libsarga::signal::*;
-use libsarga::posix::{WUNTRACED, WNOHANG};
+use libsarga::sync::Mutex;
 
-mod parser;
-mod executor;
 mod builtins;
+mod executor;
+mod parser;
 mod readline;
 mod scripting;
 
@@ -25,7 +25,11 @@ struct AliasTable(Mutex<Vec<(String, String)>>);
 static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 
 #[derive(Clone, Copy, PartialEq)]
-enum JobStatus { Running, Stopped, Done }
+enum JobStatus {
+    Running,
+    Stopped,
+    Done,
+}
 
 struct JobEntry {
     pid: u64,
@@ -68,7 +72,10 @@ pub fn set_env(name: &str, val: &str) {
     let mut env_slot = SHELL_ENV.0.lock();
     if let Some(ref mut env) = *env_slot {
         for i in 0..env.len() {
-            if env[i].starts_with(name) && env[i].len() > name.len() && env[i].as_bytes()[name.len()] == b'=' {
+            if env[i].starts_with(name)
+                && env[i].len() > name.len()
+                && env[i].as_bytes()[name.len()] == b'='
+            {
                 env[i] = entry;
                 return;
             }
@@ -80,7 +87,9 @@ pub fn set_env(name: &str, val: &str) {
 pub fn unset_env(name: &str) {
     let mut env_slot = SHELL_ENV.0.lock();
     if let Some(ref mut env) = *env_slot {
-        env.retain(|e| !(e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'='));
+        env.retain(|e| {
+            !(e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'=')
+        });
     }
 }
 
@@ -89,7 +98,7 @@ pub fn get_env_all() -> Vec<(String, String)> {
     if let Some(ref env) = *SHELL_ENV.0.lock() {
         for e in env.iter() {
             if let Some(idx) = e.find('=') {
-                out.push((e[..idx].to_string(), e[idx+1..].to_string()));
+                out.push((e[..idx].to_string(), e[idx + 1..].to_string()));
             }
         }
     }
@@ -107,7 +116,10 @@ pub fn get_env_refs() -> Vec<String> {
 pub fn set_alias(name: &str, val: &str) {
     let mut tbl = ALIAS_TABLE.0.lock();
     for (k, v) in tbl.iter_mut() {
-        if k == name { *v = val.to_string(); return; }
+        if k == name {
+            *v = val.to_string();
+            return;
+        }
     }
     tbl.push((name.to_string(), val.to_string()));
 }
@@ -127,18 +139,28 @@ pub fn get_aliases() -> Vec<(String, String)> {
 pub fn get_alias(name: &str) -> Option<String> {
     let tbl = ALIAS_TABLE.0.lock();
     for (k, v) in tbl.iter() {
-        if k == name { return Some(v.clone()); }
+        if k == name {
+            return Some(v.clone());
+        }
     }
     None
 }
 
 pub fn add_job(pid: u64, cmd: &parser::Command) {
     let cmd_str = cmd.args.join(" ");
-    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd_str, status: JobStatus::Running });
+    JOB_TABLE.0.lock().push(JobEntry {
+        pid,
+        cmd: cmd_str,
+        status: JobStatus::Running,
+    });
 }
 
 pub fn add_job_cmd(pid: u64, cmd: &str) {
-    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd.to_string(), status: JobStatus::Running });
+    JOB_TABLE.0.lock().push(JobEntry {
+        pid,
+        cmd: cmd.to_string(),
+        status: JobStatus::Running,
+    });
 }
 
 pub fn print_jobs() {
@@ -146,12 +168,27 @@ pub fn print_jobs() {
     let any_stopped = tbl.iter().any(|j| j.status == JobStatus::Stopped);
     for (i, job) in tbl.iter().enumerate() {
         let marker = match job.status {
-            JobStatus::Running => if any_stopped { "Running" } else { "" },
+            JobStatus::Running => {
+                if any_stopped {
+                    "Running"
+                } else {
+                    ""
+                }
+            }
             JobStatus::Stopped => "Stopped",
             JobStatus::Done => "Done",
         };
-        println!("[{}] {} {}{}", i + 1, job.pid, job.cmd,
-            if marker.is_empty() { alloc::string::String::new() } else { alloc::format!(" ({})", marker) });
+        println!(
+            "[{}] {} {}{}",
+            i + 1,
+            job.pid,
+            job.cmd,
+            if marker.is_empty() {
+                alloc::string::String::new()
+            } else {
+                alloc::format!(" ({})", marker)
+            }
+        );
     }
 }
 
@@ -169,14 +206,20 @@ pub fn reap_child(pid: u64, status: i32) {
 }
 
 pub fn add_stopped_job(pid: u64, cmd: &str) {
-    JOB_TABLE.0.lock().push(JobEntry { pid, cmd: cmd.to_string(), status: JobStatus::Stopped });
+    JOB_TABLE.0.lock().push(JobEntry {
+        pid,
+        cmd: cmd.to_string(),
+        status: JobStatus::Stopped,
+    });
 }
 
 pub fn wait_for_job(pid: u64) -> i64 {
     loop {
         let mut st = 0i32;
         let r = unsafe { libsarga::syscall::syscall4(61, pid, &mut st as *mut i32 as u64, 0, 0) };
-        if r < 0 { break; }
+        if r < 0 {
+            break;
+        }
         if r > 0 {
             reap_child(r as u64, st);
             if (st & 0x7f) == 0 {
@@ -191,7 +234,10 @@ pub fn wait_for_job(pid: u64) -> i64 {
 
 pub fn fg_job(id: usize) -> i64 {
     let mut tbl = JOB_TABLE.0.lock();
-    if id == 0 || id > tbl.len() { println!("fg: job not found"); return 1; }
+    if id == 0 || id > tbl.len() {
+        println!("fg: job not found");
+        return 1;
+    }
     let job = tbl.remove(id - 1);
     drop(tbl);
 
@@ -203,21 +249,36 @@ pub fn fg_job(id: usize) -> i64 {
     // Bring to foreground and wait
     loop {
         let mut st = 0i32;
-        let r = unsafe { libsarga::syscall::syscall4(61, job.pid, &mut st as *mut i32 as u64,
-            WUNTRACED as u64, 0) };
-        if r < 0 { break; }
+        let r = unsafe {
+            libsarga::syscall::syscall4(
+                61,
+                job.pid,
+                &mut st as *mut i32 as u64,
+                WUNTRACED as u64,
+                0,
+            )
+        };
+        if r < 0 {
+            break;
+        }
         if r as u64 == job.pid {
             if WIFSTOPPED(st) {
                 // Stopped again — add back to job table
                 let mut tbl = JOB_TABLE.0.lock();
-                tbl.push(JobEntry { pid: job.pid, cmd: job.cmd.clone(), status: JobStatus::Stopped });
+                tbl.push(JobEntry {
+                    pid: job.pid,
+                    cmd: job.cmd.clone(),
+                    status: JobStatus::Stopped,
+                });
                 return 0;
             }
             if (st & 0x7f) == 0 {
                 return (st >> 8) as i64;
             }
             let sig = WTERMSIG(st);
-            if sig != 0 { return 128 + sig as i64; }
+            if sig != 0 {
+                return 128 + sig as i64;
+            }
             return 0;
         }
     }
@@ -226,7 +287,10 @@ pub fn fg_job(id: usize) -> i64 {
 
 pub fn bg_job(id: usize) -> i64 {
     let tbl = JOB_TABLE.0.lock();
-    if id == 0 || id > tbl.len() { println!("bg: job not found"); return 1; }
+    if id == 0 || id > tbl.len() {
+        println!("bg: job not found");
+        return 1;
+    }
     println!("[{}] {} &", id, tbl[id - 1].pid);
     0
 }
@@ -255,7 +319,10 @@ static FUNC_TABLE: FuncTable = FuncTable(Mutex::new(Vec::new()));
 pub fn define_function(name: &str, body: &[String]) {
     let mut tbl = FUNC_TABLE.0.lock();
     for (k, v) in tbl.iter_mut() {
-        if k == name { *v = body.to_vec(); return; }
+        if k == name {
+            *v = body.to_vec();
+            return;
+        }
     }
     tbl.push((name.to_string(), body.to_vec()));
 }
@@ -263,7 +330,9 @@ pub fn define_function(name: &str, body: &[String]) {
 pub fn get_function(name: &str) -> Option<Vec<String>> {
     let tbl = FUNC_TABLE.0.lock();
     for (k, v) in tbl.iter() {
-        if k == name { return Some(v.clone()); }
+        if k == name {
+            return Some(v.clone());
+        }
     }
     None
 }
@@ -285,7 +354,11 @@ pub fn save_history_on_exit() {
 pub fn open_file(path: &str, flags: u64) -> Result<i64, ()> {
     let c_str = CString::new(path.as_bytes()).map_err(|_| ())?;
     let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, flags) };
-    if fd < 0 { Err(()) } else { Ok(fd) }
+    if fd < 0 {
+        Err(())
+    } else {
+        Ok(fd)
+    }
 }
 
 sarga_main!(user_main);
@@ -305,7 +378,10 @@ fn make_prompt() -> String {
                 'n' => out.push('\n'),
                 '\\' => out.push('\\'),
                 '$' => out.push(if get_last_exit() == 0 { '$' } else { '#' }),
-                c => { out.push('\\'); out.push(c); }
+                c => {
+                    out.push('\\');
+                    out.push(c);
+                }
             }
             i += 2;
         } else {
@@ -327,7 +403,10 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
             let mut in_double = false;
             let mut is_escaped = false;
             for c in trimmed.chars() {
-                if is_escaped { is_escaped = false; continue; }
+                if is_escaped {
+                    is_escaped = false;
+                    continue;
+                }
                 match c {
                     '\\' => is_escaped = true,
                     '\'' if !in_double => in_single = !in_single,
@@ -369,8 +448,18 @@ fn user_main() -> i32 {
         // Reap any finished background jobs before showing prompt
         loop {
             let mut st = 0i32;
-            let r = unsafe { libsarga::syscall::syscall4(61, -1i64 as u64, &mut st as *mut i32 as u64, WNOHANG as u64, 0) };
-            if r <= 0 { break; }
+            let r = unsafe {
+                libsarga::syscall::syscall4(
+                    61,
+                    -1i64 as u64,
+                    &mut st as *mut i32 as u64,
+                    WNOHANG as u64,
+                    0,
+                )
+            };
+            if r <= 0 {
+                break;
+            }
             reap_child(r as u64, st);
         }
 
@@ -387,22 +476,32 @@ fn user_main() -> i32 {
         }
 
         let trimmed = input.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         // Alias expansion
-        let expanded = if let Some(alias) = get_alias(trimmed.split_whitespace().next().unwrap_or("")) {
-            let rest = trimmed.splitn(2, ' ').nth(1).unwrap_or("");
-            if rest.is_empty() { alias } else { alloc::format!("{} {}", alias, rest) }
-        } else {
-            trimmed.to_string()
-        };
+        let expanded =
+            if let Some(alias) = get_alias(trimmed.split_whitespace().next().unwrap_or("")) {
+                let rest = trimmed.splitn(2, ' ').nth(1).unwrap_or("");
+                if rest.is_empty() {
+                    alias
+                } else {
+                    alloc::format!("{} {}", alias, rest)
+                }
+            } else {
+                trimmed.to_string()
+            };
 
         // Variable expansion (use global $?)
         let expanded = expand_shell_vars(&expanded);
 
         let tokens = match parser::tokenize(&expanded) {
             Ok(t) => t,
-            Err(e) => { println!("sash: {}", e); continue; }
+            Err(e) => {
+                println!("sash: {}", e);
+                continue;
+            }
         };
         let pipelines = parser::parse(&tokens);
         let exit_code = executor::execute_pipelines(pipelines);
@@ -418,22 +517,35 @@ fn expand_shell_vars(s: &str) -> String {
         if chars[pos] == '$' && pos + 1 < chars.len() {
             match chars[pos + 1] {
                 '{' => {
-                    if let Some(end) = s[pos+2..].find('}') {
-                        let var = &s[pos+2..pos+2+end];
+                    if let Some(end) = s[pos + 2..].find('}') {
+                        let var = &s[pos + 2..pos + 2 + end];
                         out.push_str(&get_env(var).unwrap_or_default());
                         pos += 3 + end;
-                    } else { out.push(chars[pos]); pos += 1; }
+                    } else {
+                        out.push(chars[pos]);
+                        pos += 1;
+                    }
                 }
-                '?' => { out.push_str(&alloc::format!("{}", get_last_exit())); pos += 2; }
-                '$' => { pos += 2; }
+                '?' => {
+                    out.push_str(&alloc::format!("{}", get_last_exit()));
+                    pos += 2;
+                }
+                '$' => {
+                    pos += 2;
+                }
                 c if c.is_alphabetic() || c == '_' => {
                     let start = pos + 1;
                     let mut end = start;
-                    while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') { end += 1; }
+                    while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
+                        end += 1;
+                    }
                     out.push_str(&get_env(&s[start..end]).unwrap_or_default());
                     pos = end;
                 }
-                _ => { out.push(chars[pos]); pos += 1; }
+                _ => {
+                    out.push(chars[pos]);
+                    pos += 1;
+                }
             }
         } else {
             out.push(chars[pos]);
@@ -451,9 +563,14 @@ fn read_raw_line() -> String {
             Ok(0) => break,
             Ok(n) => {
                 for &c in &buf[..n] {
-                    if c == b'\n' || c == b'\r' { return input; }
-                    if c == 0x7f || c == 0x08 { input.pop(); }
-                    else { input.push(c as char); }
+                    if c == b'\n' || c == b'\r' {
+                        return input;
+                    }
+                    if c == 0x7f || c == 0x08 {
+                        input.pop();
+                    } else {
+                        input.push(c as char);
+                    }
                 }
             }
             Err(_) => break,

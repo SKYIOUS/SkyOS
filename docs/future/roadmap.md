@@ -17,6 +17,7 @@ SkyOS development is organized into eight phases, each building on the previous.
 
 ## Current Milestones
 
+- **v0.0.1**: Initial development release - kernel, basic userspace, GUI compositor
 - **v0.1.0**: Bootable kernel with serial console, basic memory management, and scheduler
 - **v0.2.0**: Filesystem support (tmpfs, ext2), syscall interface, and process management
 - **v0.3.0**: Network stack (TCP/IP), socket API, and driver framework

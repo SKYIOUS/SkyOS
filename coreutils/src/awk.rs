@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
 use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn user_main() -> i32 {
     let mut action = "";
@@ -13,7 +13,9 @@ fn user_main() -> i32 {
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
         if arg.starts_with("-F") {
-            let f = if arg.len() > 2 { &arg[2..] } else {
+            let f = if arg.len() > 2 {
+                &arg[2..]
+            } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
             };

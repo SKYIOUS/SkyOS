@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
 use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn user_main() -> i32 {
     let mut expr = "";

@@ -1,10 +1,10 @@
+use alloc::ffi::CString;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloc::ffi::CString;
-use alloc::format;
-use libsarga::println;
 use libsarga::print;
+use libsarga::println;
 
 pub struct History {
     entries: Vec<String>,
@@ -14,15 +14,23 @@ pub struct History {
 
 impl History {
     pub fn new(max: usize) -> Self {
-        let mut h = History { entries: Vec::new(), pos: 0, max };
+        let mut h = History {
+            entries: Vec::new(),
+            pos: 0,
+            max,
+        };
         h.load();
         h
     }
 
     pub fn add(&mut self, line: &str) {
         let trimmed = line.trim();
-        if trimmed.is_empty() { return; }
-        if self.entries.last().map_or(false, |e| e == trimmed) { return; }
+        if trimmed.is_empty() {
+            return;
+        }
+        if self.entries.last().map_or(false, |e| e == trimmed) {
+            return;
+        }
         self.entries.push(trimmed.to_string());
         if self.entries.len() > self.max {
             self.entries.remove(0);
@@ -31,15 +39,21 @@ impl History {
     }
 
     pub fn prev(&mut self) -> Option<&str> {
-        if self.pos == 0 { return None; }
+        if self.pos == 0 {
+            return None;
+        }
         self.pos -= 1;
         self.entries.get(self.pos).map(|s| s.as_str())
     }
 
     pub fn next(&mut self) -> Option<&str> {
-        if self.pos >= self.entries.len() { return None; }
+        if self.pos >= self.entries.len() {
+            return None;
+        }
         self.pos += 1;
-        if self.pos >= self.entries.len() { return None; }
+        if self.pos >= self.entries.len() {
+            return None;
+        }
         self.entries.get(self.pos).map(|s| s.as_str())
     }
 
@@ -62,7 +76,11 @@ impl History {
     }
 
     pub fn print(&self, n: usize) {
-        let start = if n >= self.entries.len() { 0 } else { self.entries.len() - n };
+        let start = if n >= self.entries.len() {
+            0
+        } else {
+            self.entries.len() - n
+        };
         for i in start..self.entries.len() {
             println!("  {}  {}", i + 1, self.entries[i]);
         }
@@ -80,12 +98,16 @@ impl History {
             Err(_) => return,
         };
         let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, 0u64) };
-        if fd < 0 { return; }
+        if fd < 0 {
+            return;
+        }
         let mut buf = [0u8; 4096];
         let mut content = String::new();
         loop {
             let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             content.push_str(core::str::from_utf8(&buf[..n]).unwrap_or(""));
         }
         let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
@@ -106,7 +128,9 @@ impl History {
             Err(_) => return,
         };
         let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, 0x241u64) };
-        if fd < 0 { return; }
+        if fd < 0 {
+            return;
+        }
         for entry in &self.entries {
             let mut line = entry.clone();
             line.push('\n');
@@ -142,23 +166,32 @@ impl Completer {
             Err(_) => return,
         };
         let fd = unsafe { libsarga::syscall::syscall2(257, c_str.as_ptr() as u64, 0x100000u64) };
-        if fd < 0 { return; }
+        if fd < 0 {
+            return;
+        }
         let mut buf = [0u8; 4096];
         loop {
-            let n = unsafe { libsarga::syscall::syscall3(217, fd as u64, buf.as_mut_ptr() as u64, 4096u64) };
-            if n <= 0 { break; }
+            let n = unsafe {
+                libsarga::syscall::syscall3(217, fd as u64, buf.as_mut_ptr() as u64, 4096u64)
+            };
+            if n <= 0 {
+                break;
+            }
             let mut offset = 0;
             while offset < n as usize {
-                let reclen_bytes = &buf[offset+16..offset+18];
+                let reclen_bytes = &buf[offset + 16..offset + 18];
                 let reclen = u16::from_ne_bytes([reclen_bytes[0], reclen_bytes[1]]) as usize;
-                let namelen = &buf[offset+18..offset+20];
+                let namelen = &buf[offset + 18..offset + 20];
                 let namelen = u16::from_ne_bytes([namelen[0], namelen[1]]) as usize;
-                let name = core::str::from_utf8(&buf[offset+20..offset+20+namelen]).unwrap_or("");
+                let name =
+                    core::str::from_utf8(&buf[offset + 20..offset + 20 + namelen]).unwrap_or("");
                 if name.starts_with(prefix) && name != "." && name != ".." {
                     matches.push(name.to_string());
                 }
                 offset += reclen;
-                if reclen == 0 { break; }
+                if reclen == 0 {
+                    break;
+                }
             }
         }
         let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
@@ -188,7 +221,11 @@ impl Completer {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Mode { Insert, Command, Visual }
+enum Mode {
+    Insert,
+    Command,
+    Visual,
+}
 
 fn is_word_sep(b: u8) -> bool {
     matches!(b, b' ' | b'\t')
@@ -200,46 +237,78 @@ fn is_word_char(b: u8) -> bool {
 
 fn motion_word_right(input: &str, cursor: usize) -> usize {
     let bytes = input.as_bytes();
-    if cursor >= bytes.len() { return cursor; }
+    if cursor >= bytes.len() {
+        return cursor;
+    }
     let mut j = cursor;
     if is_word_char(bytes[j]) {
-        while j < bytes.len() && is_word_char(bytes[j]) { j += 1; }
+        while j < bytes.len() && is_word_char(bytes[j]) {
+            j += 1;
+        }
     }
-    while j < bytes.len() && is_word_sep(bytes[j]) { j += 1; }
+    while j < bytes.len() && is_word_sep(bytes[j]) {
+        j += 1;
+    }
     j
 }
 
 fn motion_word_left(input: &str, cursor: usize) -> usize {
     let bytes = input.as_bytes();
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let mut j = cursor;
-    while j > 0 && is_word_sep(bytes[j - 1]) { j -= 1; }
-    while j > 0 && is_word_char(bytes[j - 1]) { j -= 1; }
+    while j > 0 && is_word_sep(bytes[j - 1]) {
+        j -= 1;
+    }
+    while j > 0 && is_word_char(bytes[j - 1]) {
+        j -= 1;
+    }
     j
 }
 
 fn motion_end_word(input: &str, cursor: usize) -> usize {
     let bytes = input.as_bytes();
-    if cursor >= bytes.len() { return bytes.len(); }
+    if cursor >= bytes.len() {
+        return bytes.len();
+    }
     let mut j = cursor;
-    while j < bytes.len() && is_word_sep(bytes[j]) { j += 1; }
-    while j + 1 < bytes.len() && is_word_char(bytes[j + 1]) { j += 1; }
-    if j < bytes.len() && is_word_char(bytes[j]) { j } else { cursor }
+    while j < bytes.len() && is_word_sep(bytes[j]) {
+        j += 1;
+    }
+    while j + 1 < bytes.len() && is_word_char(bytes[j + 1]) {
+        j += 1;
+    }
+    if j < bytes.len() && is_word_char(bytes[j]) {
+        j
+    } else {
+        cursor
+    }
 }
 
 fn motion_first_nonws(input: &str) -> usize {
     let bytes = input.as_bytes();
     let mut j = 0;
-    while j < bytes.len() && is_word_sep(bytes[j]) { j += 1; }
+    while j < bytes.len() && is_word_sep(bytes[j]) {
+        j += 1;
+    }
     j
 }
 
 fn motion_word_end_big(input: &str, cursor: usize) -> usize {
     let bytes = input.as_bytes();
-    if cursor >= bytes.len() { return bytes.len(); }
+    if cursor >= bytes.len() {
+        return bytes.len();
+    }
     let mut j = cursor;
-    while j < bytes.len() && !(bytes[j] == b' ' || bytes[j] == b'\t') { j += 1; }
-    if j > cursor { j - 1 } else { cursor }
+    while j < bytes.len() && !(bytes[j] == b' ' || bytes[j] == b'\t') {
+        j += 1;
+    }
+    if j > cursor {
+        j - 1
+    } else {
+        cursor
+    }
 }
 
 fn motion_find_char(input: &str, cursor: usize, c: u8, dir: bool, before: bool) -> Option<usize> {
@@ -257,7 +326,9 @@ fn motion_find_char(input: &str, cursor: usize, c: u8, dir: bool, before: bool) 
             if bytes[i] == c {
                 return Some(if before { i + 1 } else { i });
             }
-            if i == 0 { break; }
+            if i == 0 {
+                break;
+            }
             i -= 1;
         }
     }
@@ -266,7 +337,9 @@ fn motion_find_char(input: &str, cursor: usize, c: u8, dir: bool, before: bool) 
 
 fn motion_match_bracket(input: &str, cursor: usize) -> Option<usize> {
     let bytes = input.as_bytes();
-    if cursor >= bytes.len() { return None; }
+    if cursor >= bytes.len() {
+        return None;
+    }
     let open = bytes[cursor];
     let (op, cl) = match open {
         b'(' => (b'(', b')'),
@@ -280,16 +353,30 @@ fn motion_match_bracket(input: &str, cursor: usize) -> Option<usize> {
     if op == b'(' || op == b'{' || op == b'[' {
         let mut depth = 1i32;
         for i in (cursor + 1)..bytes.len() {
-            if bytes[i] == cl { depth -= 1; if depth == 0 { return Some(i); } }
-            else if bytes[i] == op { depth += 1; }
+            if bytes[i] == cl {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            } else if bytes[i] == op {
+                depth += 1;
+            }
         }
     } else {
         let mut depth = 1i32;
         let mut i = cursor.wrapping_sub(1);
         loop {
-            if bytes[i] == cl { depth -= 1; if depth == 0 { return Some(i); } }
-            else if bytes[i] == op { depth += 1; }
-            if i == 0 { break; }
+            if bytes[i] == cl {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            } else if bytes[i] == op {
+                depth += 1;
+            }
+            if i == 0 {
+                break;
+            }
             i -= 1;
         }
     }
@@ -297,7 +384,9 @@ fn motion_match_bracket(input: &str, cursor: usize) -> Option<usize> {
 }
 
 fn recompute_suggestion(input: &str, history: &History, completer: &Completer) -> Option<String> {
-    if input.is_empty() { return None; }
+    if input.is_empty() {
+        return None;
+    }
     for entry in history.entries_rev() {
         if entry.len() > input.len() && entry.starts_with(input) {
             return Some(entry[input.len()..].to_string());
@@ -307,7 +396,9 @@ fn recompute_suggestion(input: &str, history: &History, completer: &Completer) -
         if !is_word_sep(last) {
             let bytes = input.as_bytes();
             let mut start = bytes.len();
-            while start > 0 && !is_word_sep(bytes[start - 1]) { start -= 1; }
+            while start > 0 && !is_word_sep(bytes[start - 1]) {
+                start -= 1;
+            }
             let word = &input[start..];
             if is_command_position(input, start) {
                 if let Some(full) = completer.suggest_first_word(word) {
@@ -322,10 +413,14 @@ fn recompute_suggestion(input: &str, history: &History, completer: &Completer) -
 }
 
 fn is_command_position(input: &str, start: usize) -> bool {
-    if start == 0 { return true; }
+    if start == 0 {
+        return true;
+    }
     let prefix = &input[..start];
     let trimmed = prefix.trim_end();
-    if trimmed.is_empty() { return true; }
+    if trimmed.is_empty() {
+        return true;
+    }
     let ends_with_op = trimmed.ends_with('|')
         || trimmed.ends_with(';')
         || trimmed.ends_with("&&")
@@ -344,17 +439,27 @@ struct Highlighter {
 }
 
 fn is_number(s: &str) -> bool {
-    if s.is_empty() { return false; }
+    if s.is_empty() {
+        return false;
+    }
     s.chars().all(|c| c >= '0' && c <= '9')
 }
 
 impl Highlighter {
     fn new() -> Self {
-        Highlighter { out: String::new(), cmd_position: true, in_single: false, in_double: false, word: String::new() }
+        Highlighter {
+            out: String::new(),
+            cmd_position: true,
+            in_single: false,
+            in_double: false,
+            word: String::new(),
+        }
     }
 
     fn flush_word(&mut self) {
-        if self.word.is_empty() { return; }
+        if self.word.is_empty() {
+            return;
+        }
         let color = if is_number(&self.word) {
             "33"
         } else if self.word.starts_with('-') && self.word.len() > 1 {
@@ -397,7 +502,11 @@ fn highlight(input: &str) -> String {
         if !h.in_single && !h.in_double && (c == '\'' || c == '"') {
             h.flush_word();
             let quote = c;
-            if quote == '\'' { h.in_single = true; } else { h.in_double = true; }
+            if quote == '\'' {
+                h.in_single = true;
+            } else {
+                h.in_double = true;
+            }
             h.out.push_str("\x1b[35m");
             h.out.push(c);
             i += 1;
@@ -427,7 +536,10 @@ fn highlight(input: &str) -> String {
                             h.out.push(bytes[i]);
                             i += 1;
                         }
-                        if i < bytes.len() { h.out.push('}'); i += 1; }
+                        if i < bytes.len() {
+                            h.out.push('}');
+                            i += 1;
+                        }
                     } else {
                         while i < bytes.len() && (bytes[i].is_alphanumeric() || bytes[i] == '_') {
                             h.out.push(bytes[i]);
@@ -489,7 +601,10 @@ fn highlight(input: &str) -> String {
                     h.out.push(bytes[i]);
                     i += 1;
                 }
-                if i < bytes.len() { h.out.push('}'); i += 1; }
+                if i < bytes.len() {
+                    h.out.push('}');
+                    i += 1;
+                }
             } else {
                 while i < bytes.len() && (bytes[i].is_alphanumeric() || bytes[i] == '_') {
                     h.out.push(bytes[i]);
@@ -517,9 +632,15 @@ fn visible_len(s: &str) -> usize {
     while i < bytes.len() {
         if bytes[i] == 0x1b {
             i += 1;
-            if i < bytes.len() && bytes[i] == b'[' { i += 1; }
-            while i < bytes.len() && !((bytes[i] >= 0x40 && bytes[i] <= 0x7e)) { i += 1; }
-            if i < bytes.len() { i += 1; }
+            if i < bytes.len() && bytes[i] == b'[' {
+                i += 1;
+            }
+            while i < bytes.len() && !(bytes[i] >= 0x40 && bytes[i] <= 0x7e) {
+                i += 1;
+            }
+            if i < bytes.len() {
+                i += 1;
+            }
         } else {
             count += 1;
             i += 1;
@@ -546,7 +667,9 @@ fn mode_gutter(mode: Mode) -> &'static str {
 
 #[allow(unused_assignments)]
 fn inject_selection(highlighted: &str, sel_start: usize, sel_end: usize) -> String {
-    if sel_start >= sel_end { return highlighted.to_string(); }
+    if sel_start >= sel_end {
+        return highlighted.to_string();
+    }
     let h_bytes = highlighted.as_bytes();
     let mut start_pos = 0;
     let mut end_pos = 0;
@@ -555,9 +678,15 @@ fn inject_selection(highlighted: &str, sel_start: usize, sel_end: usize) -> Stri
     while i < h_bytes.len() && visible < sel_start {
         if h_bytes[i] == 0x1b {
             i += 1;
-            if i < h_bytes.len() && h_bytes[i] == b'[' { i += 1; }
-            while i < h_bytes.len() && !(h_bytes[i] >= 0x40 && h_bytes[i] <= 0x7e) { i += 1; }
-            if i < h_bytes.len() { i += 1; }
+            if i < h_bytes.len() && h_bytes[i] == b'[' {
+                i += 1;
+            }
+            while i < h_bytes.len() && !(h_bytes[i] >= 0x40 && h_bytes[i] <= 0x7e) {
+                i += 1;
+            }
+            if i < h_bytes.len() {
+                i += 1;
+            }
         } else {
             visible += 1;
             i += 1;
@@ -567,9 +696,15 @@ fn inject_selection(highlighted: &str, sel_start: usize, sel_end: usize) -> Stri
     while i < h_bytes.len() && visible < sel_end {
         if h_bytes[i] == 0x1b {
             i += 1;
-            if i < h_bytes.len() && h_bytes[i] == b'[' { i += 1; }
-            while i < h_bytes.len() && !(h_bytes[i] >= 0x40 && h_bytes[i] <= 0x7e) { i += 1; }
-            if i < h_bytes.len() { i += 1; }
+            if i < h_bytes.len() && h_bytes[i] == b'[' {
+                i += 1;
+            }
+            while i < h_bytes.len() && !(h_bytes[i] >= 0x40 && h_bytes[i] <= 0x7e) {
+                i += 1;
+            }
+            if i < h_bytes.len() {
+                i += 1;
+            }
         } else {
             visible += 1;
             i += 1;
@@ -585,7 +720,14 @@ fn inject_selection(highlighted: &str, sel_start: usize, sel_end: usize) -> Stri
     out
 }
 
-fn redraw_with_mode(prompt: &str, input: &str, cursor: usize, suggestion: Option<&str>, mode: Mode, selection: Option<(usize, usize)>) {
+fn redraw_with_mode(
+    prompt: &str,
+    input: &str,
+    cursor: usize,
+    suggestion: Option<&str>,
+    mode: Mode,
+    selection: Option<(usize, usize)>,
+) {
     let mp = mode_prefix(mode);
     let gutter = mode_gutter(mode);
     let mp_visible = visible_len(mp);
@@ -607,8 +749,12 @@ fn redraw_with_mode(prompt: &str, input: &str, cursor: usize, suggestion: Option
     print!("\r{}{}{}{}{}", mp, gutter, prompt, display, ghost);
     print!("\x1b[K");
 
-    let total_visible = mp_visible + gutter_visible + prompt_visible + input_visible + visible_len(&ghost);
-    let cursor_col = mp_visible + gutter_visible + prompt_visible + visible_len(&display[..byte_index(&display, cursor)]);
+    let total_visible =
+        mp_visible + gutter_visible + prompt_visible + input_visible + visible_len(&ghost);
+    let cursor_col = mp_visible
+        + gutter_visible
+        + prompt_visible
+        + visible_len(&display[..byte_index(&display, cursor)]);
     let back = total_visible.saturating_sub(cursor_col);
     if back > 0 {
         print!("\x1b[{}D", back);
@@ -622,9 +768,15 @@ fn byte_index(highlighted: &str, n: usize) -> usize {
     while i < bytes.len() && visible < n {
         if bytes[i] == 0x1b {
             i += 1;
-            if i < bytes.len() && bytes[i] == b'[' { i += 1; }
-            while i < bytes.len() && !(bytes[i] >= 0x40 && bytes[i] <= 0x7e) { i += 1; }
-            if i < bytes.len() { i += 1; }
+            if i < bytes.len() && bytes[i] == b'[' {
+                i += 1;
+            }
+            while i < bytes.len() && !(bytes[i] >= 0x40 && bytes[i] <= 0x7e) {
+                i += 1;
+            }
+            if i < bytes.len() {
+                i += 1;
+            }
         } else {
             visible += 1;
             i += 1;
@@ -659,7 +811,9 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
     let mut buf = [0u8; 4096];
     loop {
         let n = unsafe { libsarga::syscall::syscall3(0, 0u64, buf.as_mut_ptr() as u64, 4096u64) };
-        if n <= 0 { break; }
+        if n <= 0 {
+            break;
+        }
         let mut i = 0;
         while i < n as usize {
             let c = buf[i];
@@ -717,9 +871,21 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
             }
 
             if mode == Mode::Command {
-                let consumed = handle_command_key(c, prompt, &mut input, &mut cursor, &mut mode,
-                    unsafe { &mut *hist_ptr }, &mut suggestion, &completer, &mut undo_stack,
-                    &mut redo_stack, &mut yank_buf, &mut visual_start, &mut last_search);
+                let consumed = handle_command_key(
+                    c,
+                    prompt,
+                    &mut input,
+                    &mut cursor,
+                    &mut mode,
+                    unsafe { &mut *hist_ptr },
+                    &mut suggestion,
+                    &completer,
+                    &mut undo_stack,
+                    &mut redo_stack,
+                    &mut yank_buf,
+                    &mut visual_start,
+                    &mut last_search,
+                );
                 if consumed {
                     i += 1;
                     continue;
@@ -768,15 +934,36 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                         if matches.len() == 1 {
                             input = matches[0].clone();
                             cursor = input.len();
-                            suggestion = do_suggestion(&input, unsafe { &mut *hist_ptr }, &completer);
-                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                            suggestion =
+                                do_suggestion(&input, unsafe { &mut *hist_ptr }, &completer);
+                            redraw_with_mode(
+                                prompt,
+                                &input,
+                                cursor,
+                                suggestion.as_deref(),
+                                mode,
+                                None,
+                            );
                         } else if !matches.is_empty() {
                             print!("\n");
                             let mut line = String::new();
-                            for m in &matches { line.push_str(m); line.push(' '); }
-                            if line.len() > 60 { line.truncate(60); line.push_str("..."); }
+                            for m in &matches {
+                                line.push_str(m);
+                                line.push(' ');
+                            }
+                            if line.len() > 60 {
+                                line.truncate(60);
+                                line.push_str("...");
+                            }
                             print!("{}\n", line);
-                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                            redraw_with_mode(
+                                prompt,
+                                &input,
+                                cursor,
+                                suggestion.as_deref(),
+                                mode,
+                                None,
+                            );
                         }
                     }
                 }
@@ -789,16 +976,30 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                 cursor -= 1;
                                 print!("\x1b[D");
                             }
-                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                            redraw_with_mode(
+                                prompt,
+                                &input,
+                                cursor,
+                                suggestion.as_deref(),
+                                mode,
+                                None,
+                            );
                         } else if mode == Mode::Visual {
                             mode = Mode::Command;
-                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                            redraw_with_mode(
+                                prompt,
+                                &input,
+                                cursor,
+                                suggestion.as_deref(),
+                                mode,
+                                None,
+                            );
                         }
                         i += 1;
                         continue;
                     }
                     if i + 2 < n as usize {
-                        match buf[i+2] {
+                        match buf[i + 2] {
                             b'A' => {
                                 let h = unsafe { &mut *hist_ptr };
                                 if let Some(prev) = h.prev() {
@@ -806,7 +1007,14 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                     input = prev.to_string();
                                     cursor = input.len();
                                     suggestion = do_suggestion(&input, h, &completer);
-                                    redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                                    redraw_with_mode(
+                                        prompt,
+                                        &input,
+                                        cursor,
+                                        suggestion.as_deref(),
+                                        mode,
+                                        None,
+                                    );
                                 }
                             }
                             b'B' => {
@@ -816,7 +1024,14 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                     input = next.to_string();
                                     cursor = input.len();
                                     suggestion = do_suggestion(&input, h, &completer);
-                                    redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                                    redraw_with_mode(
+                                        prompt,
+                                        &input,
+                                        cursor,
+                                        suggestion.as_deref(),
+                                        mode,
+                                        None,
+                                    );
                                 } else {
                                     input.clear();
                                     cursor = 0;
@@ -838,27 +1053,62 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                 if cursor < input.len() {
                                     cursor += 1;
                                     if mode == Mode::Visual {
-                                        redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, Some((visual_start.min(cursor), visual_start.max(cursor))));
-                                    } else { print!("\x1b[C"); }
+                                        redraw_with_mode(
+                                            prompt,
+                                            &input,
+                                            cursor,
+                                            suggestion.as_deref(),
+                                            mode,
+                                            Some((
+                                                visual_start.min(cursor),
+                                                visual_start.max(cursor),
+                                            )),
+                                        );
+                                    } else {
+                                        print!("\x1b[C");
+                                    }
                                 }
                             }
                             b'D' => {
                                 if cursor > 0 {
                                     cursor -= 1;
                                     if mode == Mode::Visual {
-                                        redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, Some((visual_start.min(cursor), visual_start.max(cursor))));
-                                    } else { print!("\x1b[D"); }
+                                        redraw_with_mode(
+                                            prompt,
+                                            &input,
+                                            cursor,
+                                            suggestion.as_deref(),
+                                            mode,
+                                            Some((
+                                                visual_start.min(cursor),
+                                                visual_start.max(cursor),
+                                            )),
+                                        );
+                                    } else {
+                                        print!("\x1b[D");
+                                    }
                                 }
                             }
                             b'H' | b'1' => {
-                                if i + 3 < n as usize && buf[i+3] == b';' {
-                                    let ctrl_right = i + 4 < n as usize && buf[i+4] == b'5' && i + 5 < n as usize && buf[i+5] == b'C';
+                                if i + 3 < n as usize && buf[i + 3] == b';' {
+                                    let ctrl_right = i + 4 < n as usize
+                                        && buf[i + 4] == b'5'
+                                        && i + 5 < n as usize
+                                        && buf[i + 5] == b'C';
                                     if ctrl_right && mode == Mode::Insert && cursor == input.len() {
                                         if let Some(ref sug) = suggestion.clone() {
                                             let bytes = sug.as_bytes();
                                             let mut word_end = 0;
-                                            while word_end < bytes.len() && is_word_sep(bytes[word_end]) { word_end += 1; }
-                                            while word_end < bytes.len() && is_word_char(bytes[word_end]) { word_end += 1; }
+                                            while word_end < bytes.len()
+                                                && is_word_sep(bytes[word_end])
+                                            {
+                                                word_end += 1;
+                                            }
+                                            while word_end < bytes.len()
+                                                && is_word_char(bytes[word_end])
+                                            {
+                                                word_end += 1;
+                                            }
                                             let accept = &sug[..word_end];
                                             input.push_str(accept);
                                             cursor = input.len();
@@ -867,17 +1117,39 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                             } else {
                                                 suggestion = Some(sug[word_end..].to_string());
                                             }
-                                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                                            redraw_with_mode(
+                                                prompt,
+                                                &input,
+                                                cursor,
+                                                suggestion.as_deref(),
+                                                mode,
+                                                None,
+                                            );
                                             i += 5;
                                             continue;
                                         }
                                     }
-                                    let ctrl_left = i + 4 < n as usize && buf[i+4] == b'5' && i + 5 < n as usize && buf[i+5] == b'D';
+                                    let ctrl_left = i + 4 < n as usize
+                                        && buf[i + 4] == b'5'
+                                        && i + 5 < n as usize
+                                        && buf[i + 5] == b'D';
                                     if ctrl_left {
                                         cursor = motion_word_left(&input, cursor);
                                         if mode == Mode::Visual {
-                                            redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, Some((visual_start.min(cursor), visual_start.max(cursor))));
-                                        } else { print!("\x1b[{}D", 1); }
+                                            redraw_with_mode(
+                                                prompt,
+                                                &input,
+                                                cursor,
+                                                suggestion.as_deref(),
+                                                mode,
+                                                Some((
+                                                    visual_start.min(cursor),
+                                                    visual_start.max(cursor),
+                                                )),
+                                            );
+                                        } else {
+                                            print!("\x1b[{}D", 1);
+                                        }
                                         i += 5;
                                         continue;
                                     }
@@ -886,7 +1158,17 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                     print!("\x1b[{}D", cursor);
                                     cursor = 0;
                                     if mode == Mode::Visual {
-                                        redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, Some((visual_start.min(cursor), visual_start.max(cursor))));
+                                        redraw_with_mode(
+                                            prompt,
+                                            &input,
+                                            cursor,
+                                            suggestion.as_deref(),
+                                            mode,
+                                            Some((
+                                                visual_start.min(cursor),
+                                                visual_start.max(cursor),
+                                            )),
+                                        );
                                     }
                                 }
                             }
@@ -905,15 +1187,38 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                                 if dist > 0 {
                                     cursor = input.len();
                                     if mode == Mode::Visual {
-                                        redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, Some((visual_start.min(cursor), visual_start.max(cursor))));
-                                    } else { print!("\x1b[{}C", dist); }
+                                        redraw_with_mode(
+                                            prompt,
+                                            &input,
+                                            cursor,
+                                            suggestion.as_deref(),
+                                            mode,
+                                            Some((
+                                                visual_start.min(cursor),
+                                                visual_start.max(cursor),
+                                            )),
+                                        );
+                                    } else {
+                                        print!("\x1b[{}C", dist);
+                                    }
                                 }
                             }
                             b'3' => {
                                 if cursor < input.len() && mode == Mode::Insert {
                                     input.remove(cursor);
-                                    suggestion = do_suggestion(&input, unsafe { &mut *hist_ptr }, &completer);
-                                    redraw_with_mode(prompt, &input, cursor, suggestion.as_deref(), mode, None);
+                                    suggestion = do_suggestion(
+                                        &input,
+                                        unsafe { &mut *hist_ptr },
+                                        &completer,
+                                    );
+                                    redraw_with_mode(
+                                        prompt,
+                                        &input,
+                                        cursor,
+                                        suggestion.as_deref(),
+                                        mode,
+                                        None,
+                                    );
                                 }
                             }
                             _ => {}
@@ -1014,7 +1319,14 @@ fn handle_command_key(
                 *cursor -= 1;
             }
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
@@ -1023,7 +1335,14 @@ fn handle_command_key(
                 *cursor += 1;
             }
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
@@ -1069,7 +1388,8 @@ fn handle_command_key(
             } else if *cursor < input.len() {
                 undo_stack.push(input.clone());
                 let removed = input.remove(*cursor);
-                let mut s = String::new(); s.push(removed);
+                let mut s = String::new();
+                s.push(removed);
                 *yank_buf = s;
                 libsarga::io::clipboard_write(yank_buf.as_bytes());
                 *suggestion = recompute_suggestion(input, history, completer);
@@ -1080,49 +1400,98 @@ fn handle_command_key(
         b'0' => {
             *cursor = 0;
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'^' => {
             *cursor = motion_first_nonws(input);
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'$' => {
             *cursor = input.len();
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'w' => {
             *cursor = motion_word_right(input, *cursor);
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'b' => {
             *cursor = motion_word_left(input, *cursor);
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'e' => {
             *cursor = motion_end_word(input, *cursor);
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'E' => {
             *cursor = motion_word_end_big(input, *cursor);
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
@@ -1130,7 +1499,14 @@ fn handle_command_key(
             if *mode == Mode::Command {
                 *mode = Mode::Visual;
                 *visual_start = *cursor;
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
@@ -1151,17 +1527,21 @@ fn handle_command_key(
                 true
             } else {
                 let mut sub_buf = [0u8; 16];
-                let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+                let sn = unsafe {
+                    libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64)
+                };
                 if sn > 0 {
                     match sub_buf[0] {
-                        b'd' => { // dd
+                        b'd' => {
+                            // dd
                             undo_stack.push(input.clone());
                             *yank_buf = input.clone();
                             libsarga::io::clipboard_write(yank_buf.as_bytes());
                             input.clear();
                             *cursor = 0;
                         }
-                        b'w' => { // dw
+                        b'w' => {
+                            // dw
                             undo_stack.push(input.clone());
                             let end = motion_word_right(input, *cursor);
                             if end > *cursor {
@@ -1170,13 +1550,15 @@ fn handle_command_key(
                                 input.drain(*cursor..end);
                             }
                         }
-                        b'$' => { // d$
+                        b'$' => {
+                            // d$
                             undo_stack.push(input.clone());
                             *yank_buf = input[*cursor..].to_string();
                             libsarga::io::clipboard_write(yank_buf.as_bytes());
                             input.truncate(*cursor);
                         }
-                        b'0' => { // d0
+                        b'0' => {
+                            // d0
                             undo_stack.push(input.clone());
                             *yank_buf = input[..*cursor].to_string();
                             libsarga::io::clipboard_write(yank_buf.as_bytes());
@@ -1203,7 +1585,9 @@ fn handle_command_key(
                 redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, None);
             } else {
                 let mut sub_buf = [0u8; 16];
-                let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+                let sn = unsafe {
+                    libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64)
+                };
                 if sn > 0 && sub_buf[0] == b'y' {
                     undo_stack.push(input.clone());
                     *yank_buf = input.clone();
@@ -1230,7 +1614,9 @@ fn handle_command_key(
                 true
             } else {
                 let mut sub_buf = [0u8; 16];
-                let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+                let sn = unsafe {
+                    libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64)
+                };
                 if sn > 0 && sub_buf[0] == b'c' {
                     undo_stack.push(input.clone());
                     *yank_buf = input.clone();
@@ -1274,7 +1660,13 @@ fn handle_command_key(
             } else {
                 let mut clip_buf = [0u8; 4096];
                 let n = libsarga::io::clipboard_read(&mut clip_buf);
-                if n > 0 { core::str::from_utf8(&clip_buf[..n]).unwrap_or("").to_string() } else { String::new() }
+                if n > 0 {
+                    core::str::from_utf8(&clip_buf[..n])
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    String::new()
+                }
             };
             if !clip.is_empty() {
                 undo_stack.push(input.clone());
@@ -1295,17 +1687,19 @@ fn handle_command_key(
             }
             true
         }
-        b'.' => {
-            true
-        }
+        b'.' => true,
         b'/' => {
             // Inline search mode
             print!("\r\x1b[K\x1b[36m/\x1b[0m");
             let mut sq = String::new();
             let mut sub_buf = [0u8; 4096];
             loop {
-                let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 4096u64) };
-                if sn <= 0 { break; }
+                let sn = unsafe {
+                    libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 4096u64)
+                };
+                if sn <= 0 {
+                    break;
+                }
                 let mut si = 0;
                 while si < sn as usize {
                     let sc = sub_buf[si];
@@ -1319,11 +1713,25 @@ fn handle_command_key(
                                 *suggestion = None;
                             }
                         }
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, None);
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            None,
+                        );
                         return true;
                     }
                     if sc == 0x1b {
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, None);
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            None,
+                        );
                         return true;
                     }
                     if (sc == 0x7f || sc == 0x08) && !sq.is_empty() {
@@ -1353,20 +1761,32 @@ fn handle_command_key(
             }
             true
         }
-        b'N' => {
-            true
-        }
+        b'N' => true,
         b'g' => {
             *cursor = 0;
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
         b'G' => {
             *cursor = input.len();
             if *mode == Mode::Visual {
-                redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                redraw_with_mode(
+                    prompt,
+                    input,
+                    *cursor,
+                    suggestion.as_deref(),
+                    *mode,
+                    Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                );
             }
             true
         }
@@ -1374,20 +1794,35 @@ fn handle_command_key(
             if let Some(pos) = motion_match_bracket(input, *cursor) {
                 *cursor = pos;
                 if *mode == Mode::Visual {
-                    redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                    redraw_with_mode(
+                        prompt,
+                        input,
+                        *cursor,
+                        suggestion.as_deref(),
+                        *mode,
+                        Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                    );
                 }
             }
             true
         }
         b'f' => {
             let mut sub_buf = [0u8; 16];
-            let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+            let sn =
+                unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
             if sn > 0 {
                 let fc = sub_buf[0];
                 if let Some(pos) = motion_find_char(input, *cursor, fc, true, false) {
                     *cursor = pos;
                     if *mode == Mode::Visual {
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                        );
                     }
                 }
             }
@@ -1395,13 +1830,21 @@ fn handle_command_key(
         }
         b'F' => {
             let mut sub_buf = [0u8; 16];
-            let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+            let sn =
+                unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
             if sn > 0 {
                 let fc = sub_buf[0];
                 if let Some(pos) = motion_find_char(input, *cursor, fc, false, false) {
                     *cursor = pos;
                     if *mode == Mode::Visual {
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                        );
                     }
                 }
             }
@@ -1409,13 +1852,21 @@ fn handle_command_key(
         }
         b't' => {
             let mut sub_buf = [0u8; 16];
-            let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+            let sn =
+                unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
             if sn > 0 {
                 let fc = sub_buf[0];
                 if let Some(pos) = motion_find_char(input, *cursor, fc, true, true) {
                     *cursor = pos;
                     if *mode == Mode::Visual {
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                        );
                     }
                 }
             }
@@ -1423,13 +1874,21 @@ fn handle_command_key(
         }
         b'T' => {
             let mut sub_buf = [0u8; 16];
-            let sn = unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
+            let sn =
+                unsafe { libsarga::syscall::syscall3(0, 0u64, sub_buf.as_mut_ptr() as u64, 16u64) };
             if sn > 0 {
                 let fc = sub_buf[0];
                 if let Some(pos) = motion_find_char(input, *cursor, fc, false, true) {
                     *cursor = pos;
                     if *mode == Mode::Visual {
-                        redraw_with_mode(prompt, input, *cursor, suggestion.as_deref(), *mode, Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))));
+                        redraw_with_mode(
+                            prompt,
+                            input,
+                            *cursor,
+                            suggestion.as_deref(),
+                            *mode,
+                            Some(((*visual_start).min(*cursor), (*visual_start).max(*cursor))),
+                        );
                     }
                 }
             }

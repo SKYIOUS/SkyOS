@@ -1,6 +1,6 @@
-use crate::syscall::*;
-use crate::alloc::vec::Vec;
 use crate::alloc::collections::BTreeMap;
+use crate::alloc::vec::Vec;
+use crate::syscall::*;
 use alloc::format;
 use alloc::vec;
 
@@ -36,7 +36,10 @@ pub struct GlyphCache {
 
 impl GlyphCache {
     pub fn new(max_entries: usize) -> Self {
-        GlyphCache { entries: BTreeMap::new(), max_entries }
+        GlyphCache {
+            entries: BTreeMap::new(),
+            max_entries,
+        }
     }
 
     pub fn get(&self, glyph_id: u16, size: u16) -> Option<&CacheEntry> {
@@ -74,7 +77,11 @@ struct OutlineBuilder {
 
 impl OutlineBuilder {
     fn new() -> Self {
-        OutlineBuilder { contours: Vec::new(), current: Vec::new(), first: None }
+        OutlineBuilder {
+            contours: Vec::new(),
+            current: Vec::new(),
+            first: None,
+        }
     }
 
     fn push(&mut self, p: OutlinePoint) {
@@ -104,7 +111,11 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
 
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
         // Subdivide quadratic bezier into line segments
-        let last = self.current.last().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+        let last = self
+            .current
+            .last()
+            .map(|p| (p.x, p.y))
+            .unwrap_or((0.0, 0.0));
         let steps = 8u32;
         for i in 1..=steps {
             let t = i as f32 / steps as f32;
@@ -118,7 +129,11 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
     }
 
     fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
-        let last = self.current.last().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+        let last = self
+            .current
+            .last()
+            .map(|p| (p.x, p.y))
+            .unwrap_or((0.0, 0.0));
         let steps = 12u32;
         for i in 1..=steps {
             let t = i as f32 / steps as f32;
@@ -135,11 +150,16 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
     fn close(&mut self) {
         if let Some(ref first) = self.first {
             // Only add closing point if current endpoint differs from first
-            let should_close = self.current.last().map(|last| {
-                (last.x - first.x).abs() > 0.001 || (last.y - first.y).abs() > 0.001
-            }).unwrap_or(false);
+            let should_close = self
+                .current
+                .last()
+                .map(|last| (last.x - first.x).abs() > 0.001 || (last.y - first.y).abs() > 0.001)
+                .unwrap_or(false);
             if should_close {
-                self.push(OutlinePoint { x: first.x, y: first.y });
+                self.push(OutlinePoint {
+                    x: first.x,
+                    y: first.y,
+                });
             }
         }
         self.finish_contour();
@@ -148,7 +168,9 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
 
 fn outline_rasterize(contours: &[OutlineContour], scale: f32, width: u32, height: u32) -> Vec<u8> {
     let mut bitmap = vec![0u8; (width * height) as usize];
-    if width == 0 || height == 0 { return bitmap; }
+    if width == 0 || height == 0 {
+        return bitmap;
+    }
 
     // Even-odd scanline rasterization
     for y in 0..height {
@@ -163,7 +185,11 @@ fn outline_rasterize(contours: &[OutlineContour], scale: f32, width: u32, height
                 let (ymin, ymax) = if y1 < y2 { (y1, y2) } else { (y2, y1) };
                 if yf >= ymin && yf < ymax && (ymax - ymin).abs() > 0.001 {
                     let t = (yf - ymin) / (ymax - ymin);
-                    let x_intersect = if y1 < y2 { x1 + t * (x2 - x1) } else { x2 + t * (x1 - x2) };
+                    let x_intersect = if y1 < y2 {
+                        x1 + t * (x2 - x1)
+                    } else {
+                        x2 + t * (x1 - x2)
+                    };
                     hits.push(x_intersect);
                 }
             }
@@ -204,7 +230,11 @@ impl TtfFont {
     pub fn from_bytes(data: Vec<u8>) -> Option<Self> {
         let data: &'static [u8] = data.leak();
         let font = ttf_parser::Face::parse(data, 0).ok()?;
-        Some(TtfFont { data, font, cache: GlyphCache::new(2048) })
+        Some(TtfFont {
+            data,
+            font,
+            cache: GlyphCache::new(2048),
+        })
     }
 
     pub fn glyph_id(&self, ch: char) -> Option<u16> {
@@ -214,7 +244,10 @@ impl TtfFont {
     pub fn advance(&self, glyph_id: u16, size: u32) -> u32 {
         let units_per_em = self.font.units_per_em() as f32;
         let scale = size as f32 / units_per_em;
-        let advance = self.font.glyph_hor_advance(ttf_parser::GlyphId(glyph_id)).unwrap_or(0);
+        let advance = self
+            .font
+            .glyph_hor_advance(ttf_parser::GlyphId(glyph_id))
+            .unwrap_or(0);
         (advance as f32 * scale) as u32
     }
 
@@ -226,7 +259,12 @@ impl TtfFont {
             let y_min = (bbox.y_min as f32 * scale) as i32;
             let x_max = (bbox.x_max as f32 * scale) as i32;
             let y_max = (bbox.y_max as f32 * scale) as i32;
-            (x_min, y_min, (x_max - x_min).max(0) as u32, (y_max - y_min).max(0) as u32)
+            (
+                x_min,
+                y_min,
+                (x_max - x_min).max(0) as u32,
+                (y_max - y_min).max(0) as u32,
+            )
         } else {
             (0, 0, 0, 0)
         }
@@ -247,14 +285,25 @@ impl TtfFont {
     }
 
     /// Get the glyph bitmap for rendering. Returns (width, height, bearing_x, bearing_y, advance, alpha_data)
-    pub fn render_glyph(&mut self, ch: char, size: u32) -> Option<(u32, u32, i32, i32, u32, Vec<u8>)> {
+    pub fn render_glyph(
+        &mut self,
+        ch: char,
+        size: u32,
+    ) -> Option<(u32, u32, i32, i32, u32, Vec<u8>)> {
         let gid = self.glyph_id(ch)?;
         let advance = self.advance(gid, size);
         let (bx, by, w, h) = self.bounding_box(gid, size);
 
         // Check cache
         if let Some(cached) = self.cache.get(gid, size as u16) {
-            return Some((cached.width as u32, cached.height as u32, cached.bearing_x as i32, cached.bearing_y as i32, cached.advance as u32, cached.data.clone()));
+            return Some((
+                cached.width as u32,
+                cached.height as u32,
+                cached.bearing_x as i32,
+                cached.bearing_y as i32,
+                cached.advance as u32,
+                cached.data.clone(),
+            ));
         }
 
         let upm = self.font.units_per_em() as f32;
@@ -262,7 +311,8 @@ impl TtfFont {
 
         // Build outline
         let mut builder = OutlineBuilder::new();
-        self.font.outline_glyph(ttf_parser::GlyphId(gid), &mut builder);
+        self.font
+            .outline_glyph(ttf_parser::GlyphId(gid), &mut builder);
         builder.finish_contour();
 
         let gw = w.max(1) as u32;
@@ -270,14 +320,18 @@ impl TtfFont {
         let data = outline_rasterize(&builder.contours, scale, gw, gh);
 
         // Cache the result
-        self.cache.insert(gid, size as u16, CacheEntry {
-            width: gw as u16,
-            height: gh as u16,
-            bearing_x: bx as i16,
-            bearing_y: by as i16,
-            advance: advance as u16,
-            data: data.clone(),
-        });
+        self.cache.insert(
+            gid,
+            size as u16,
+            CacheEntry {
+                width: gw as u16,
+                height: gh as u16,
+                bearing_x: bx as i16,
+                bearing_y: by as i16,
+                advance: advance as u16,
+                data: data.clone(),
+            },
+        );
 
         Some((gw, gh, bx, by, advance, data))
     }
@@ -297,7 +351,9 @@ impl Font {
         TtfFont::from_bytes(data).map(Font::Ttf)
     }
 
-    pub fn bitmap() -> Self { Font::Bitmap }
+    pub fn bitmap() -> Self {
+        Font::Bitmap
+    }
 
     pub fn advance(&self, ch: char, size: u32) -> u32 {
         match self {
@@ -334,8 +390,12 @@ impl Font {
 
 #[inline]
 pub fn alpha_blend(bg: u32, fg: u32, alpha: u8) -> u32 {
-    if alpha == 0 { return bg; }
-    if alpha == 255 { return fg; }
+    if alpha == 0 {
+        return bg;
+    }
+    if alpha == 255 {
+        return fg;
+    }
     let a = alpha as u32;
     let inv_a = 255 - a;
     let r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * inv_a) / 255;
@@ -360,35 +420,70 @@ pub struct Window {
 impl Window {
     pub fn create(title: &str, width: u32, height: u32) -> Result<Self, i64> {
         let title_c = format!("{}\0", title);
-        let id = unsafe { syscall3(SYS_GUI_CREATE_WINDOW,
-            title_c.as_ptr() as u64, width as u64, height as u64) };
-        if id < 0 { return Err(-id); }
+        let id = unsafe {
+            syscall3(
+                SYS_GUI_CREATE_WINDOW,
+                title_c.as_ptr() as u64,
+                width as u64,
+                height as u64,
+            )
+        };
+        if id < 0 {
+            return Err(-id);
+        }
         let id = id as u64;
 
         let buf_ptr = unsafe { syscall1(SYS_GUI_MAP_BUFFER, id) } as *mut u32;
-        if buf_ptr.is_null() { return Err(5); }
+        if buf_ptr.is_null() {
+            return Err(5);
+        }
         let len = (width * height) as usize;
         let buffer = unsafe { core::slice::from_raw_parts_mut(buf_ptr, len) };
-        Ok(Window { id, width, height, buffer, font: None, font_size: 14 })
+        Ok(Window {
+            id,
+            width,
+            height,
+            buffer,
+            font: None,
+            font_size: 14,
+        })
     }
 
-    pub fn set_font(&mut self, font: Font) { self.font = Some(font); }
-    pub fn set_font_size(&mut self, size: u32) { self.font_size = size; }
-    pub fn font_size(&self) -> u32 { self.font_size }
-    pub fn buffer_mut(&mut self) -> &mut [u32] { self.buffer }
+    pub fn set_font(&mut self, font: Font) {
+        self.font = Some(font);
+    }
+    pub fn set_font_size(&mut self, size: u32) {
+        self.font_size = size;
+    }
+    pub fn font_size(&self) -> u32 {
+        self.font_size
+    }
+    pub fn buffer_mut(&mut self) -> &mut [u32] {
+        self.buffer
+    }
 
     pub fn get_key(&mut self) -> Option<u8> {
         let k = unsafe { syscall1(SYS_GUI_GET_KEY, self.id) };
-        if k == 0 { None } else { Some(k as u8) }
+        if k == 0 {
+            None
+        } else {
+            Some(k as u8)
+        }
     }
 
     pub fn flush(&self) -> Result<(), i64> {
         let ret = unsafe { syscall2(SYS_GUI_FLUSH, self.id, self.buffer.as_ptr() as u64) };
-        if ret < 0 { Err(-ret) } else { Ok(()) }
+        if ret < 0 {
+            Err(-ret)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn fill(&mut self, color: u32) {
-        for px in self.buffer.iter_mut() { *px = color; }
+        for px in self.buffer.iter_mut() {
+            *px = color;
+        }
     }
 
     pub fn draw_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
@@ -408,8 +503,13 @@ impl Window {
 
     pub fn draw_rect_alpha(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
         let a = ((color >> 24) & 0xFF) as u8;
-        if a == 0 { return; }
-        if a == 255 { self.draw_rect(x, y, w, h, color); return; }
+        if a == 0 {
+            return;
+        }
+        if a == 255 {
+            self.draw_rect(x, y, w, h, color);
+            return;
+        }
         let sw = self.width as usize;
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
@@ -436,7 +536,13 @@ impl Window {
         // Draw central horizontal and vertical rectangles
         self.draw_rect(x + r as u32, y, w - 2 * r as u32, h, color);
         self.draw_rect(x, y + r as u32, r as u32, h - 2 * r as u32, color);
-        self.draw_rect(x + w - r as u32, y + r as u32, r as u32, h - 2 * r as u32, color);
+        self.draw_rect(
+            x + w - r as u32,
+            y + r as u32,
+            r as u32,
+            h - 2 * r as u32,
+            color,
+        );
 
         // Draw four corners
         for dy in 0..r {
@@ -456,13 +562,25 @@ impl Window {
                 }
                 // Bottom-right
                 if (dx) * (dx) + (dy) * (dy) <= r2 {
-                    self.draw_pixel(x + w - r as u32 + dx as u32, y + h - r as u32 + dy as u32, color);
+                    self.draw_pixel(
+                        x + w - r as u32 + dx as u32,
+                        y + h - r as u32 + dy as u32,
+                        color,
+                    );
                 }
             }
         }
     }
 
-    pub fn draw_rounded_rect_outline(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
+    pub fn draw_rounded_rect_outline(
+        &mut self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        radius: u32,
+        color: u32,
+    ) {
         let r = radius.min(w / 2).min(h / 2) as i32;
         if r <= 0 {
             self.draw_rect_outline(x, y, w, h, color);
@@ -490,11 +608,23 @@ impl Window {
             self.draw_pixel(x + (r - cx) as u32, y + h - 1 - (r - cy) as u32, color);
             self.draw_pixel(x + (r - cy) as u32, y + h - 1 - (r - cx) as u32, color);
             // Bottom-right
-            self.draw_pixel(x + w - 1 - (r - cx) as u32, y + h - 1 - (r - cy) as u32, color);
-            self.draw_pixel(x + w - 1 - (r - cy) as u32, y + h - 1 - (r - cx) as u32, color);
-            
-            if d < 0 { d += 4 * cx + 6; }
-            else { d += 4 * (cx - cy) + 10; cy -= 1; }
+            self.draw_pixel(
+                x + w - 1 - (r - cx) as u32,
+                y + h - 1 - (r - cy) as u32,
+                color,
+            );
+            self.draw_pixel(
+                x + w - 1 - (r - cy) as u32,
+                y + h - 1 - (r - cx) as u32,
+                color,
+            );
+
+            if d < 0 {
+                d += 4 * cx + 6;
+            } else {
+                d += 4 * (cx - cy) + 10;
+                cy -= 1;
+            }
             cx += 1;
         }
     }
@@ -506,7 +636,16 @@ impl Window {
         self.draw_line_v(x + w - 1, y, h, color);
     }
 
-    pub fn draw_gradient_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color1: u32, color2: u32, vertical: bool) {
+    pub fn draw_gradient_rect(
+        &mut self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        color1: u32,
+        color2: u32,
+        vertical: bool,
+    ) {
         let sw = self.width as usize;
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
@@ -557,18 +696,26 @@ impl Window {
         let sh = self.height as usize;
         let x0 = x.min(sw as u32) as usize;
         let x1 = (x + w).min(sw as u32) as usize;
-        if y as usize >= sh { return; }
+        if y as usize >= sh {
+            return;
+        }
         let row = y as usize * sw;
-        for px in x0..x1 { self.buffer[row + px] = color; }
+        for px in x0..x1 {
+            self.buffer[row + px] = color;
+        }
     }
 
     pub fn draw_line_v(&mut self, x: u32, y: u32, h: u32, color: u32) {
         let sw = self.width as usize;
         let sh = self.height as usize;
-        if x as usize >= sw { return; }
+        if x as usize >= sw {
+            return;
+        }
         let y0 = y.min(sh as u32) as usize;
         let y1 = (y + h).min(sh as u32) as usize;
-        for py in y0..y1 { self.buffer[py * sw + x as usize] = color; }
+        for py in y0..y1 {
+            self.buffer[py * sw + x as usize] = color;
+        }
     }
 
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color: u32) {
@@ -576,13 +723,17 @@ impl Window {
     }
 
     pub fn clear(&mut self, color: u32) {
-        for px in self.buffer.iter_mut() { *px = color; }
+        for px in self.buffer.iter_mut() {
+            *px = color;
+        }
     }
 
     pub fn pixel(&self, x: u32, y: u32) -> Option<u32> {
         if x < self.width && y < self.height {
             Some(self.buffer[(y * self.width + x) as usize])
-        } else { None }
+        } else {
+            None
+        }
     }
 
     pub fn draw_pixel(&mut self, x: u32, y: u32, color: u32) {
@@ -619,7 +770,11 @@ impl Window {
                 self.draw_char_scaled(cx, y, c, fg, bg, font_size);
                 let advance = match &self.font {
                     Some(Font::Ttf(f)) => {
-                        if let Some(gid) = f.glyph_id(c) { f.advance(gid, font_size) } else { font_size * 6 / 10 }
+                        if let Some(gid) = f.glyph_id(c) {
+                            f.advance(gid, font_size)
+                        } else {
+                            font_size * 6 / 10
+                        }
                     }
                     _ => 8,
                 };
@@ -638,12 +793,16 @@ impl Window {
             if let Some((gw, gh, bx, by, _advance, data)) = font.render_glyph(c, size) {
                 let ox = x.wrapping_add(bx.max(0) as u32);
                 let oy = y.wrapping_add((font.ascender(size) - by).max(0) as u32);
-        let sw = self.width as usize;
-        let sh = self.height as usize;
+                let sw = self.width as usize;
+                let sh = self.height as usize;
                 for row in 0..gh as usize {
-                    if oy as usize + row >= sh { break; }
+                    if oy as usize + row >= sh {
+                        break;
+                    }
                     for col in 0..gw as usize {
-                        if ox as usize + col >= sw { break; }
+                        if ox as usize + col >= sw {
+                            break;
+                        }
                         let alpha = data[row * gw as usize + col];
                         if alpha > 0 {
                             let idx = (oy as usize + row) * sw + (ox as usize + col);
@@ -653,8 +812,10 @@ impl Window {
                                 let a = alpha as u32;
                                 let inv_a = 255 - a;
                                 let old = self.buffer[idx];
-                                let r = (((old >> 16) & 0xFF) * inv_a + ((fg >> 16) & 0xFF) * a) / 255;
-                                let g = (((old >> 8) & 0xFF) * inv_a + ((fg >> 8) & 0xFF) * a) / 255;
+                                let r =
+                                    (((old >> 16) & 0xFF) * inv_a + ((fg >> 16) & 0xFF) * a) / 255;
+                                let g =
+                                    (((old >> 8) & 0xFF) * inv_a + ((fg >> 8) & 0xFF) * a) / 255;
                                 let b = ((old & 0xFF) * inv_a + (fg & 0xFF) * a) / 255;
                                 self.buffer[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
                             }

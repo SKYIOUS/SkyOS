@@ -63,10 +63,7 @@ impl Rect {
 
     #[allow(dead_code)]
     pub fn center(&self) -> Point {
-        Point::new(
-            self.x + self.w as i32 / 2,
-            self.y + self.h as i32 / 2,
-        )
+        Point::new(self.x + self.w as i32 / 2, self.y + self.h as i32 / 2)
     }
 
     #[allow(dead_code)]

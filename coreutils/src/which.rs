@@ -3,10 +3,13 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, println, args, syscall};
+use libsarga::{args, println, sarga_main, syscall};
 
 fn user_main() -> i32 {
-    if args::argc() < 2 { println!("Usage: which <command>..."); return 0; }
+    if args::argc() < 2 {
+        println!("Usage: which <command>...");
+        return 0;
+    }
     let path_str = String::from("/bin");
     let dirs: Vec<&str> = path_str.split(':').collect();
     for i in 1..args::argc() {
@@ -19,13 +22,18 @@ fn user_main() -> i32 {
                     alloc::format!("{}/{}", dir, cmd)
                 };
                 let mut st = [0u64; 32];
-                if unsafe { syscall::syscall2(4, full_path.as_ptr() as u64, st.as_mut_ptr() as u64) } == 0 {
+                if unsafe {
+                    syscall::syscall2(4, full_path.as_ptr() as u64, st.as_mut_ptr() as u64)
+                } == 0
+                {
                     println!("{}", full_path);
                     found = true;
                     break;
                 }
             }
-            if !found { println!("{} not found", cmd); }
+            if !found {
+                println!("{} not found", cmd);
+            }
         }
     }
     0

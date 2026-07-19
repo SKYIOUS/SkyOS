@@ -1,9 +1,9 @@
 //! Session manager — save/restore desktop state, crash-safe persistence.
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
-use alloc::string::String;
 use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use crate::desktop::Desktop;
 use crate::window::WindowState;
@@ -16,7 +16,14 @@ pub(crate) struct SessionManager;
 impl SessionManager {
     pub fn save(desktop: &Desktop) {
         let mut lines = Vec::new();
-        lines.push(format!("theme:{}", if desktop.settings.theme_dark { "dark" } else { "light" }));
+        lines.push(format!(
+            "theme:{}",
+            if desktop.settings.theme_dark {
+                "dark"
+            } else {
+                "light"
+            }
+        ));
         lines.push(format!("screen:{}x{}", desktop.screen_w, desktop.screen_h));
         for w in desktop.wm.iter() {
             let state = match w.state {
@@ -25,8 +32,10 @@ impl SessionManager {
                 WindowState::Maximized => "maximized",
                 WindowState::Fullscreen => "fullscreen",
             };
-            lines.push(format!("win:{}:{}:{}:{}:{}:{}",
-                w.title, w.x, w.y, w.w, w.h, state));
+            lines.push(format!(
+                "win:{}:{}:{}:{}:{}:{}",
+                w.title, w.x, w.y, w.w, w.h, state
+            ));
         }
         let data = lines.join("\n");
         // crash-safe: write tmp then rename
@@ -63,7 +72,10 @@ impl SessionManager {
 
     pub fn load_lines() -> Vec<String> {
         let mut result = Vec::new();
-        let fd = match libsarga::io::open(SESSION_PATH, 0) { Ok(f) => f, _ => return result };
+        let fd = match libsarga::io::open(SESSION_PATH, 0) {
+            Ok(f) => f,
+            _ => return result,
+        };
         let mut buf = [0u8; 4096];
         let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
         let _ = libsarga::io::close(fd);

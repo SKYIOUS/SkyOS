@@ -3,9 +3,11 @@
 extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use libsarga::{sarga_main, io, args};
+use libsarga::{args, io, sarga_main};
 
-fn print_str(s: &str) { let _ = io::write_all(1, s.as_bytes()); }
+fn print_str(s: &str) {
+    let _ = io::write_all(1, s.as_bytes());
+}
 
 struct PackageManifest {
     name: String,
@@ -22,10 +24,12 @@ fn parse_manifest(data: &str) -> Option<PackageManifest> {
 
     for line in data.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some(eq) = line.find('=') {
             let key = line[..eq].trim();
-            let val = line[eq+1..].trim();
+            let val = line[eq + 1..].trim();
             match key {
                 "name" => name = val.to_string(),
                 "version" => version = val.to_string(),
@@ -33,14 +37,25 @@ fn parse_manifest(data: &str) -> Option<PackageManifest> {
                 "depends" => {
                     for d in val.split(',') {
                         let d = d.trim();
-                        if !d.is_empty() { depends.push(d.to_string()); }
+                        if !d.is_empty() {
+                            depends.push(d.to_string());
+                        }
                     }
                 }
                 _ => {}
             }
         }
     }
-    if name.is_empty() { None } else { Some(PackageManifest { name, version, description, depends }) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(PackageManifest {
+            name,
+            version,
+            description,
+            depends,
+        })
+    }
 }
 
 fn parse_octal(buf: &[u8]) -> u64 {
@@ -57,11 +72,20 @@ fn extract_tar(data: &[u8]) -> Result<(), &'static str> {
     fn open_w(path: &str) -> Result<u64, ()> {
         let c = alloc::ffi::CString::new(path.as_bytes()).map_err(|_| ())?;
         let fd = unsafe { libsarga::syscall::syscall2(2, c.as_ptr() as u64, 0x42) }; // O_RDWR | O_CREAT
-        if (fd as i64) < 0 { Err(()) } else { Ok(fd as u64) }
+        if (fd as i64) < 0 {
+            Err(())
+        } else {
+            Ok(fd as u64)
+        }
     }
     fn write_fd(fd: u64, data: &[u8]) -> Result<(), ()> {
-        let r = unsafe { libsarga::syscall::syscall3(1, fd, data.as_ptr() as u64, data.len() as u64) };
-        if (r as i64) < 0 { Err(()) } else { Ok(()) }
+        let r =
+            unsafe { libsarga::syscall::syscall3(1, fd, data.as_ptr() as u64, data.len() as u64) };
+        if (r as i64) < 0 {
+            Err(())
+        } else {
+            Ok(())
+        }
     }
     fn close_fd(fd: u64) {
         let _ = unsafe { libsarga::syscall::syscall1(3, fd) };
@@ -69,7 +93,8 @@ fn extract_tar(data: &[u8]) -> Result<(), &'static str> {
     fn make_dir(path: &str) {
         let c = alloc::ffi::CString::new(path.as_bytes()).ok();
         if let Some(p) = c {
-            let _ = unsafe { libsarga::syscall::syscall2(83, p.as_ptr() as u64, 0o755) }; // SYS_MKDIR
+            let _ = unsafe { libsarga::syscall::syscall2(83, p.as_ptr() as u64, 0o755) };
+            // SYS_MKDIR
         }
     }
     fn mkparent(path: &str) {
@@ -112,7 +137,9 @@ fn extract_tar(data: &[u8]) -> Result<(), &'static str> {
             }
             b'0' | b'\0' => {
                 // Regular file
-                if file_data_end > data.len() { break; }
+                if file_data_end > data.len() {
+                    break;
+                }
                 mkparent(name);
                 if let Ok(fd) = open_w(name) {
                     let _ = write_fd(fd, &data[file_data_start..file_data_end]);
@@ -138,7 +165,9 @@ fn extract_tar(data: &[u8]) -> Result<(), &'static str> {
 }
 
 fn cmd_install(pkg_file: &str) {
-    if pkg_file.is_empty() { return; }
+    if pkg_file.is_empty() {
+        return;
+    }
     print_str(&alloc::format!("spkg: installing {}...\n", pkg_file));
 
     // Read the entire .skp file
@@ -151,7 +180,9 @@ fn cmd_install(pkg_file: &str) {
     }
 
     let mut buf = alloc::vec![0u8; 65536];
-    let n = unsafe { libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, buf.len() as u64) };
+    let n = unsafe {
+        libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, buf.len() as u64)
+    };
     let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
 
     if (n as i64) <= 0 {
@@ -172,7 +203,9 @@ fn cmd_install(pkg_file: &str) {
 }
 
 fn cmd_remove(pkg_name: &str) {
-    if pkg_name.is_empty() { return; }
+    if pkg_name.is_empty() {
+        return;
+    }
     print_str(&alloc::format!("spkg: removing {}...\n", pkg_name));
     print_str("spkg: package removed\n");
 }

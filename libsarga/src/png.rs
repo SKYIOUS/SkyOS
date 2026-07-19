@@ -19,9 +19,13 @@ pub struct PngImage {
 }
 
 fn u32_be(data: &[u8], off: usize) -> u32 {
-    if off + 4 > data.len() { return 0; }
-    (data[off] as u32) << 24 | (data[off + 1] as u32) << 16
-        | (data[off + 2] as u32) << 8 | data[off + 3] as u32
+    if off + 4 > data.len() {
+        return 0;
+    }
+    (data[off] as u32) << 24
+        | (data[off + 1] as u32) << 16
+        | (data[off + 2] as u32) << 8
+        | data[off + 3] as u32
 }
 
 fn paeth_predictor(a: u8, b: u8, c: u8) -> u8 {
@@ -32,14 +36,22 @@ fn paeth_predictor(a: u8, b: u8, c: u8) -> u8 {
     let pa = (p - a).abs();
     let pb = (p - b).abs();
     let pc = (p - c).abs();
-    if pa <= pb && pa <= pc { a as u8 }
-    else if pb <= pc { b as u8 }
-    else { c as u8 }
+    if pa <= pb && pa <= pc {
+        a as u8
+    } else if pb <= pc {
+        b as u8
+    } else {
+        c as u8
+    }
 }
 
 pub fn decode_png(data: &[u8]) -> Option<PngImage> {
-    if data.len() < 8 { return None; }
-    if &data[..8] != PNG_SIG { return None; }
+    if data.len() < 8 {
+        return None;
+    }
+    if &data[..8] != PNG_SIG {
+        return None;
+    }
 
     let mut pos = 8;
     let mut width = 0u32;
@@ -54,17 +66,23 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
         let chunk_type = &data[pos + 4..pos + 8];
         let chunk_data_start = pos + 8;
         let chunk_data_end = chunk_data_start + chunk_len;
-        if chunk_data_end > data.len() { return None; }
+        if chunk_data_end > data.len() {
+            return None;
+        }
 
         let type_str = core::str::from_utf8(chunk_type).unwrap_or("");
         match type_str {
             "IHDR" => {
-                if chunk_len < 13 { return None; }
+                if chunk_len < 13 {
+                    return None;
+                }
                 width = u32_be(data, chunk_data_start);
                 height = u32_be(data, chunk_data_start + 4);
                 let bit_depth = data[chunk_data_start + 8];
                 let ct = data[chunk_data_start + 9];
-                if bit_depth != 8 { return None; }
+                if bit_depth != 8 {
+                    return None;
+                }
                 color_type = match ct {
                     0 => ColorType::Grayscale,
                     2 => ColorType::Rgb,
@@ -76,7 +94,9 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
                 has_ihdr = true;
             }
             "PLTE" => {
-                if chunk_len % 3 != 0 { return None; }
+                if chunk_len % 3 != 0 {
+                    return None;
+                }
                 for i in 0..chunk_len / 3 {
                     let off = chunk_data_start + i * 3;
                     palette.push([data[off], data[off + 1], data[off + 2], 0xFF]);
@@ -90,15 +110,21 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
             "IDAT" => {
                 idat_chunks.push(data[chunk_data_start..chunk_data_end].to_vec());
             }
-            "IEND" => { break; }
+            "IEND" => {
+                break;
+            }
             _ => {}
         }
 
         pos = chunk_data_end + 4;
     }
 
-    if !has_ihdr { return None; }
-    if idat_chunks.is_empty() { return None; }
+    if !has_ihdr {
+        return None;
+    }
+    if idat_chunks.is_empty() {
+        return None;
+    }
 
     let mut compressed = Vec::new();
     for chunk in &idat_chunks {
@@ -117,7 +143,9 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
 
     let row_len = 1 + width as usize * bytes_per_pixel;
     let expected = row_len * height as usize;
-    if raw.len() < expected { return None; }
+    if raw.len() < expected {
+        return None;
+    }
 
     let mut pixels = Vec::with_capacity((width * height) as usize);
     let mut prev_row: Vec<u8> = alloc::vec![0u8; width as usize * bytes_per_pixel];
@@ -130,9 +158,17 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
         let mut unfiltered = Vec::with_capacity(width as usize * bytes_per_pixel);
 
         for x in 0..(width as usize * bytes_per_pixel) {
-            let a = if x >= bytes_per_pixel { unfiltered[x - bytes_per_pixel] } else { 0 };
+            let a = if x >= bytes_per_pixel {
+                unfiltered[x - bytes_per_pixel]
+            } else {
+                0
+            };
             let b = prev_row[x];
-            let c = if x >= bytes_per_pixel { prev_row[x - bytes_per_pixel] } else { 0 };
+            let c = if x >= bytes_per_pixel {
+                prev_row[x - bytes_per_pixel]
+            } else {
+                0
+            };
 
             let val = match filter {
                 0 => row[x],
@@ -171,7 +207,12 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
                     let idx = unfiltered[x] as usize;
                     if idx < palette.len() {
                         let rgba = palette[idx];
-                        pixels.push((rgba[3] as u32) << 24 | (rgba[0] as u32) << 16 | (rgba[1] as u32) << 8 | rgba[2] as u32);
+                        pixels.push(
+                            (rgba[3] as u32) << 24
+                                | (rgba[0] as u32) << 16
+                                | (rgba[1] as u32) << 8
+                                | rgba[2] as u32,
+                        );
                     } else {
                         pixels.push(0xFFFF00FF);
                     }
@@ -196,5 +237,9 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
         prev_row = unfiltered;
     }
 
-    Some(PngImage { width, height, pixels })
+    Some(PngImage {
+        width,
+        height,
+        pixels,
+    })
 }

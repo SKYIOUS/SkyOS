@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use alloc::vec::Vec;
 use alloc::string::String;
-use libsarga::{sarga_main, println, io, args};
+use alloc::vec::Vec;
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let mut lines = Vec::new();
@@ -11,7 +11,9 @@ fn user_main() -> i32 {
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
         io::open(&path, 0).unwrap_or(0)
-    } else { 0 };
+    } else {
+        0
+    };
     let mut current = String::new();
     loop {
         let n = match io::read(fd, &mut buf) {
@@ -23,13 +25,21 @@ fn user_main() -> i32 {
             if b == b'\n' {
                 lines.push(current.clone());
                 current.clear();
-            } else { current.push(b as char); }
+            } else {
+                current.push(b as char);
+            }
         }
     }
-    if !current.is_empty() { lines.push(current); }
-    if fd != 0 { let _ = io::close(fd); }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if fd != 0 {
+        let _ = io::close(fd);
+    }
     lines.sort();
-    for line in &lines { println!("{}", line); }
+    for line in &lines {
+        println!("{}", line);
+    }
     0
 }
 

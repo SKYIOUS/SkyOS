@@ -8,7 +8,11 @@ pub struct ClockCache {
 
 impl ClockCache {
     pub fn new() -> Self {
-        Self { hrs: u64::MAX, mins: u64::MAX, formatted: alloc::string::String::new() }
+        Self {
+            hrs: u64::MAX,
+            mins: u64::MAX,
+            formatted: alloc::string::String::new(),
+        }
     }
 }
 

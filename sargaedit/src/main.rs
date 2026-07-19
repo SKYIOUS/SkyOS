@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window};
-use libsarga::{io, args, fs};
 use libsarga::io::{clipboard_read, clipboard_write};
+use libsarga::{args, fs, io};
+use libsarga::{gui::Window, sarga_main};
 
 struct Editor {
     lines: alloc::vec::Vec<alloc::string::String>,
@@ -123,16 +123,28 @@ impl Editor {
     fn handle_key(&mut self, key: u8) -> Option<i32> {
         match self.mode {
             EditMode::Normal => match key {
-                b'j' => { self.cursor_y = (self.cursor_y + 1).min(self.lines.len() - 1); }
-                b'k' => { self.cursor_y = self.cursor_y.saturating_sub(1); }
-                b'h' => { self.cursor_x = self.cursor_x.saturating_sub(1); }
+                b'j' => {
+                    self.cursor_y = (self.cursor_y + 1).min(self.lines.len() - 1);
+                }
+                b'k' => {
+                    self.cursor_y = self.cursor_y.saturating_sub(1);
+                }
+                b'h' => {
+                    self.cursor_x = self.cursor_x.saturating_sub(1);
+                }
                 b'l' => {
                     let max_x = self.lines.get(self.cursor_y).map_or(0, |l| l.len());
                     self.cursor_x = (self.cursor_x + 1).min(max_x);
                 }
-                b'0' => { self.cursor_x = 0; }
-                b'$' => { self.cursor_x = self.lines.get(self.cursor_y).map_or(0, |l| l.len()); }
-                b'i' => { self.mode = EditMode::Normal; /* just enter insert for simplicity */ }
+                b'0' => {
+                    self.cursor_x = 0;
+                }
+                b'$' => {
+                    self.cursor_x = self.lines.get(self.cursor_y).map_or(0, |l| l.len());
+                }
+                b'i' => {
+                    self.mode = EditMode::Normal; /* just enter insert for simplicity */
+                }
                 b'a' => {
                     let max_x = self.lines.get(self.cursor_y).map_or(0, |l| l.len());
                     self.cursor_x = (self.cursor_x + 1).min(max_x);
@@ -158,18 +170,32 @@ impl Editor {
                         }
                     }
                 }
-                b'd' => { self.status = alloc::string::String::from("Press dd to delete line"); }
-                b':' => { self.mode = EditMode::Command; self.status = alloc::string::String::from(":"); }
-                b'q' => {
-                    if !self.modified { return Some(0); }
-                    else { self.status = alloc::string::String::from("Use :q! to quit"); }
+                b'd' => {
+                    self.status = alloc::string::String::from("Press dd to delete line");
                 }
-                b'w' => { self.save(); }
+                b':' => {
+                    self.mode = EditMode::Command;
+                    self.status = alloc::string::String::from(":");
+                }
+                b'q' => {
+                    if !self.modified {
+                        return Some(0);
+                    } else {
+                        self.status = alloc::string::String::from("Use :q! to quit");
+                    }
+                }
+                b'w' => {
+                    self.save();
+                }
                 _ => {}
             },
             EditMode::Command => match key {
-                0x0A | 0x0D => { return self.execute_command(); }
-                0x7F | 0x08 => { self.status.pop(); }
+                0x0A | 0x0D => {
+                    return self.execute_command();
+                }
+                0x7F | 0x08 => {
+                    self.status.pop();
+                }
                 c if c.is_ascii_graphic() || c == b' ' => {
                     self.status.push(c as char);
                 }
@@ -184,12 +210,22 @@ impl Editor {
         let mut result = None;
         match cmd {
             "q" | "quit" => {
-                if !self.modified { result = Some(0); }
-                else { self.status = alloc::string::String::from("Modified! Use :q!"); }
+                if !self.modified {
+                    result = Some(0);
+                } else {
+                    self.status = alloc::string::String::from("Modified! Use :q!");
+                }
             }
-            "q!" => { result = Some(0); }
-            "w" => { self.save(); }
-            "wq" => { self.save(); result = Some(0); }
+            "q!" => {
+                result = Some(0);
+            }
+            "w" => {
+                self.save();
+            }
+            "wq" => {
+                self.save();
+                result = Some(0);
+            }
             s if s.starts_with("w ") => {
                 self.filename = alloc::string::String::from(&s[2..]);
                 self.save();
@@ -198,7 +234,9 @@ impl Editor {
                 let path = &s[2..];
                 *self = Editor::open(path);
             }
-            _ => { self.status = alloc::format!("Unknown: {}", cmd); }
+            _ => {
+                self.status = alloc::format!("Unknown: {}", cmd);
+            }
         }
         self.mode = EditMode::Normal;
         result
@@ -215,7 +253,9 @@ impl Editor {
         for i in 0..max_lines {
             let line_idx = i + self.scroll_y as usize;
             let y = line_y_start + i as u32 * char_h;
-            if line_idx >= self.lines.len() { break; }
+            if line_idx >= self.lines.len() {
+                break;
+            }
 
             let line_num_str = alloc::format!("{:>4} ", line_idx + 1);
             win.draw_string(2, y, &line_num_str, 0xFF555555, C_BG);
@@ -256,7 +296,13 @@ impl Editor {
         };
         win.draw_string(8, 4, &title, 0xFFFFFFFF, 0xFF2D2D2D);
 
-        win.draw_string(win.width - 160, 4, "Ctrl+C/V/X clipboard", 0xFF888888, 0xFF2D2D2D);
+        win.draw_string(
+            win.width - 160,
+            4,
+            "Ctrl+C/V/X clipboard",
+            0xFF888888,
+            0xFF2D2D2D,
+        );
     }
 }
 
@@ -269,18 +315,91 @@ const C_DEF: u32 = 0xFFCCCCCC;
 const C_BG: u32 = 0xFF1E1E1E;
 
 fn is_kw(w: &str) -> bool {
-    matches!(w, "fn"|"let"|"if"|"else"|"while"|"for"|"return"|"struct"|"enum"|"impl"
-        |"pub"|"use"|"mod"|"match"|"break"|"continue"|"true"|"false"|"mut"|"const"
-        |"static"|"extern"|"unsafe"|"trait"|"type"|"self"|"super"|"crate"|"where"
-        |"as"|"ref"|"move"|"dyn"|"async"|"await"|"in"|"loop"
-        |"int"|"char"|"void"|"ifdef"|"endif"|"include"|"define"|"typedef"|"union"
-        |"sizeof"|"volatile"|"register"|"signed"|"unsigned"|"long"|"short")
+    matches!(
+        w,
+        "fn" | "let"
+            | "if"
+            | "else"
+            | "while"
+            | "for"
+            | "return"
+            | "struct"
+            | "enum"
+            | "impl"
+            | "pub"
+            | "use"
+            | "mod"
+            | "match"
+            | "break"
+            | "continue"
+            | "true"
+            | "false"
+            | "mut"
+            | "const"
+            | "static"
+            | "extern"
+            | "unsafe"
+            | "trait"
+            | "type"
+            | "self"
+            | "super"
+            | "crate"
+            | "where"
+            | "as"
+            | "ref"
+            | "move"
+            | "dyn"
+            | "async"
+            | "await"
+            | "in"
+            | "loop"
+            | "int"
+            | "char"
+            | "void"
+            | "ifdef"
+            | "endif"
+            | "include"
+            | "define"
+            | "typedef"
+            | "union"
+            | "sizeof"
+            | "volatile"
+            | "register"
+            | "signed"
+            | "unsigned"
+            | "long"
+            | "short"
+    )
 }
 
 fn is_ty(w: &str) -> bool {
-    matches!(w, "u8"|"u16"|"u32"|"u64"|"i8"|"i16"|"i32"|"i64"|"bool"|"char"
-        |"usize"|"isize"|"String"|"Vec"|"Option"|"Result"|"Box"|"Arc"|"Mutex"
-        |"Rc"|"RefCell"|"HashMap"|"str"|"f32"|"f64")
+    matches!(
+        w,
+        "u8" | "u16"
+            | "u32"
+            | "u64"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "bool"
+            | "char"
+            | "usize"
+            | "isize"
+            | "String"
+            | "Vec"
+            | "Option"
+            | "Result"
+            | "Box"
+            | "Arc"
+            | "Mutex"
+            | "Rc"
+            | "RefCell"
+            | "HashMap"
+            | "str"
+            | "f32"
+            | "f64"
+    )
 }
 
 fn draw_syntax_highlighted(win: &mut Window, x: u32, y: u32, line: &str) {
@@ -324,18 +443,28 @@ fn draw_tokens(win: &mut Window, x: u32, y: u32, s: &str) {
                 i += 1;
             }
         } else if c.is_ascii_digit() {
-            while (i as usize) < bytes.len() && ((bytes[i as usize] as char).is_alphanumeric() || bytes[i as usize] == b'.') {
+            while (i as usize) < bytes.len()
+                && ((bytes[i as usize] as char).is_alphanumeric() || bytes[i as usize] == b'.')
+            {
                 win.draw_char(x + i * 8, y, bytes[i as usize] as char, C_NUM, C_BG);
                 i += 1;
             }
         } else if c.is_ascii_alphabetic() || c == '_' {
             let start = i as usize;
             i += 1;
-            while (i as usize) < bytes.len() && ((bytes[i as usize] as char).is_alphanumeric() || bytes[i as usize] == b'_') {
+            while (i as usize) < bytes.len()
+                && ((bytes[i as usize] as char).is_alphanumeric() || bytes[i as usize] == b'_')
+            {
                 i += 1;
             }
             let word = &s[start..i as usize];
-            let fg = if is_kw(word) { C_KW } else if is_ty(word) { C_TY } else { C_DEF };
+            let fg = if is_kw(word) {
+                C_KW
+            } else if is_ty(word) {
+                C_TY
+            } else {
+                C_DEF
+            };
             win.draw_string(x + start as u32 * 8, y, word, fg, C_BG);
         } else {
             win.draw_char(x + i * 8, y, c, C_DEF, C_BG);
@@ -363,8 +492,12 @@ fn user_main() -> i32 {
     loop {
         while let Some(key) = win.get_key() {
             match key {
-                0x1B => { return 0; }
-                0x7F | 0x08 => { ed.delete_char(); }
+                0x1B => {
+                    return 0;
+                }
+                0x7F | 0x08 => {
+                    ed.delete_char();
+                }
                 0x0A | 0x0D => {
                     if ed.mode == EditMode::Command {
                         ed.handle_key(key);
@@ -424,22 +557,31 @@ fn user_main() -> i32 {
                     let max_x = ed.lines.get(ed.cursor_y).map_or(0, |l| l.len());
                     ed.cursor_x = (ed.cursor_x + 1).min(max_x);
                 }
-                b'i' if ed.mode == EditMode::Normal => { ed.mode = EditMode::Normal; }
+                b'i' if ed.mode == EditMode::Normal => {
+                    ed.mode = EditMode::Normal;
+                }
                 b':' if ed.mode == EditMode::Normal => {
                     ed.mode = EditMode::Command;
                     ed.status = alloc::string::String::from(":");
                 }
-                b'w' if ed.mode == EditMode::Normal => { ed.save(); }
+                b'w' if ed.mode == EditMode::Normal => {
+                    ed.save();
+                }
                 b'q' if ed.mode == EditMode::Normal => {
-                    if !ed.modified { return 0; }
-                    else { ed.status = alloc::string::String::from("Modified! Use :q!"); }
+                    if !ed.modified {
+                        return 0;
+                    } else {
+                        ed.status = alloc::string::String::from("Modified! Use :q!");
+                    }
                 }
                 c => {
                     if ed.mode == EditMode::Command || (c >= 0x20 && c < 0x7F) {
                         if c >= 0x20 && c < 0x7F {
                             ed.insert_char(c as char);
                         } else {
-                            if let Some(code) = ed.handle_key(c) { return code; }
+                            if let Some(code) = ed.handle_key(c) {
+                                return code;
+                            }
                         }
                     }
                 }
@@ -456,7 +598,9 @@ fn user_main() -> i32 {
 
         ed.render(&mut win);
         let _ = win.flush();
-        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 16_000_000u64);
+        }
     }
 }
 

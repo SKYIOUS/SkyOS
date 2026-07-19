@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
-use libsarga::args;
 use alloc::string::String;
+use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn read_stdin() -> alloc::string::String {
     let mut data = alloc::vec::Vec::new();
@@ -21,12 +21,16 @@ fn read_stdin() -> alloc::string::String {
 
 fn read_file(path: &str) -> alloc::string::String {
     let fd = unsafe { libsarga::syscall::syscall2(2, path.as_ptr() as u64, 0) };
-    if (fd as i64) < 0 { return String::new(); }
+    if (fd as i64) < 0 {
+        return String::new();
+    }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
     loop {
         let n = unsafe { libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, 4096) };
-        if (n as i64) <= 0 { break; }
+        if (n as i64) <= 0 {
+            break;
+        }
         data.extend_from_slice(&buf[..n as usize]);
     }
     let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
@@ -35,9 +39,15 @@ fn read_file(path: &str) -> alloc::string::String {
 
 fn write_file(path: &str, content: &str) -> bool {
     let flags = 0x241u64 | 0x200u64;
-    let fd = unsafe { libsarga::syscall::syscall3(2, path.as_ptr() as u64, content.as_ptr() as u64, flags) };
-    if (fd as i64) < 0 { return false; }
-    let n = unsafe { libsarga::syscall::syscall3(1, fd as u64, content.as_ptr() as u64, content.len() as u64) };
+    let fd = unsafe {
+        libsarga::syscall::syscall3(2, path.as_ptr() as u64, content.as_ptr() as u64, flags)
+    };
+    if (fd as i64) < 0 {
+        return false;
+    }
+    let n = unsafe {
+        libsarga::syscall::syscall3(1, fd as u64, content.as_ptr() as u64, content.len() as u64)
+    };
     let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
     (n as i64) == content.len() as i64
 }
@@ -47,11 +57,17 @@ fn user_main() -> i32 {
     let mut i = 1;
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
-        if arg == "-p1" || arg == "--strip=1" { /* skip */ }
-        else { file = arg; }
+        if arg == "-p1" || arg == "--strip=1" { /* skip */
+        } else {
+            file = arg;
+        }
         i += 1;
     }
-    let diff = if file.is_empty() { read_stdin() } else { read_file(file) };
+    let diff = if file.is_empty() {
+        read_stdin()
+    } else {
+        read_file(file)
+    };
     let mut current_file = alloc::string::String::new();
     let mut removes: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for line in diff.lines() {
@@ -65,7 +81,9 @@ fn user_main() -> i32 {
                 current_file = alloc::string::String::from(&next[4..]);
             }
         } else if line.starts_with("+++ ") {
-            if line[4..].starts_with("/dev/null") { continue; }
+            if line[4..].starts_with("/dev/null") {
+                continue;
+            }
             if current_file.is_empty() {
                 current_file = alloc::string::String::from(&line[4..]);
             }

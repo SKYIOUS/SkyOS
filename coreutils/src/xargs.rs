@@ -3,10 +3,13 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::{sarga_main, println, args, io, syscall};
+use libsarga::{args, io, println, sarga_main, syscall};
 
 fn user_main() -> i32 {
-    if args::argc() < 2 { println!("Usage: xargs <command> [args...]"); return 0; }
+    if args::argc() < 2 {
+        println!("Usage: xargs <command> [args...]");
+        return 0;
+    }
     let mut cmd_args = Vec::new();
     for i in 1..args::argc() {
         if let Some(s) = args::get(i as usize) {
@@ -27,7 +30,9 @@ fn user_main() -> i32 {
     }
     for line in input.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
         let mut child_args = cmd_args.clone();
         child_args.push(String::from(trimmed));
         let pid = unsafe { syscall::syscall0(57) } as i64;
@@ -37,10 +42,16 @@ fn user_main() -> i32 {
                 arg_ptrs.push(a.as_ptr() as u64);
             }
             arg_ptrs.push(0);
-            unsafe { syscall::syscall1(59, arg_ptrs.as_ptr() as u64); }
-            unsafe { syscall::syscall1(60, 0); }
+            unsafe {
+                syscall::syscall1(59, arg_ptrs.as_ptr() as u64);
+            }
+            unsafe {
+                syscall::syscall1(60, 0);
+            }
         } else {
-            unsafe { syscall::syscall2(61, pid as u64, 0u64); }
+            unsafe {
+                syscall::syscall2(61, pid as u64, 0u64);
+            }
         }
     }
     0

@@ -1,13 +1,17 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, args, io, println};
 use alloc::string::{String, ToString};
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
-    if args::argc() < 2 { return 0; }
+    if args::argc() < 2 {
+        return 0;
+    }
     let fmt = args::get(1).unwrap_or("");
-    if fmt.is_empty() { return 0; }
+    if fmt.is_empty() {
+        return 0;
+    }
     let mut arg_idx = 2usize;
     let mut out = String::new();
     let mut chars = fmt.chars().peekable();
@@ -22,7 +26,10 @@ fn user_main() -> i32 {
             });
         } else if c == '%' {
             match chars.next() {
-                Some('s') => { out.push_str(args::get(arg_idx).unwrap_or("")); arg_idx += 1; }
+                Some('s') => {
+                    out.push_str(args::get(arg_idx).unwrap_or(""));
+                    arg_idx += 1;
+                }
                 Some('d') => {
                     let s = args::get(arg_idx).unwrap_or("0");
                     let n: i64 = s.parse().unwrap_or(0);
@@ -36,7 +43,10 @@ fn user_main() -> i32 {
                     arg_idx += 1;
                 }
                 Some('%') => out.push('%'),
-                Some(c) => { out.push('%'); out.push(c); }
+                Some(c) => {
+                    out.push('%');
+                    out.push(c);
+                }
                 None => out.push('%'),
             }
         } else {

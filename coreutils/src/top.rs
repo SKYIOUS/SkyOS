@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, io, args};
 use alloc::string::String;
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let interval: u64 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(2);
@@ -16,8 +16,13 @@ fn user_main() -> i32 {
         let mem_total = read_ctl_file("sys/mem/total").unwrap_or_else(|_| String::from("?"));
         let mem_free = read_ctl_file("sys/mem/free").unwrap_or_else(|_| String::from("?"));
 
-        println!("SARGA OS top - uptime: {}s  cpu: {}%  mem total: {} free: {}",
-            uptime_str.trim(), cpu_load.trim(), mem_total.trim(), mem_free.trim());
+        println!(
+            "SARGA OS top - uptime: {}s  cpu: {}%  mem total: {} free: {}",
+            uptime_str.trim(),
+            cpu_load.trim(),
+            mem_total.trim(),
+            mem_free.trim()
+        );
         println!("PID  PPID STATE CMD");
 
         if let Ok(content) = read_ctl_file("proc/list") {

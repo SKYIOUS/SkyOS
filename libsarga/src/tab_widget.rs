@@ -15,7 +15,14 @@ pub struct TabWidget {
 
 impl TabWidget {
     pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
-        TabWidget { x, y, width, height, tabs: Vec::new(), active: 0 }
+        TabWidget {
+            x,
+            y,
+            width,
+            height,
+            tabs: Vec::new(),
+            active: 0,
+        }
     }
 
     pub fn add_tab(&mut self, title: &str) {
@@ -31,11 +38,17 @@ impl TabWidget {
         }
     }
 
-    pub fn active_tab(&self) -> usize { self.active }
-    pub fn tab_count(&self) -> usize { self.tabs.len() }
+    pub fn active_tab(&self) -> usize {
+        self.active
+    }
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
+    }
 
     pub fn set_active(&mut self, index: usize) {
-        if index < self.tabs.len() { self.active = index; }
+        if index < self.tabs.len() {
+            self.active = index;
+        }
     }
 }
 
@@ -45,14 +58,24 @@ impl Widget for TabWidget {
         let tab_w: u32 = 120;
 
         // Tab bar background
-        win.draw_rect(self.x as u32, self.y as u32, self.width, tab_h, theme.bg_surface);
+        win.draw_rect(
+            self.x as u32,
+            self.y as u32,
+            self.width,
+            tab_h,
+            theme.bg_surface,
+        );
 
         for (i, (title, _)) in self.tabs.iter().enumerate() {
             let tx = self.x as u32 + i as u32 * (tab_w + 2);
             let active = i == self.active;
 
             // Tab background
-            let bg = if active { theme.bg_elevated } else { theme.bg_surface };
+            let bg = if active {
+                theme.bg_elevated
+            } else {
+                theme.bg_surface
+            };
             win.draw_rect(tx, self.y as u32, tab_w, tab_h, bg);
 
             // Active indicator
@@ -61,8 +84,16 @@ impl Widget for TabWidget {
             }
 
             // Tab title (truncated)
-            let display_title = if title.len() > 12 { &title[..12] } else { title };
-            let text_color = if active { theme.text } else { theme.text_secondary };
+            let display_title = if title.len() > 12 {
+                &title[..12]
+            } else {
+                title
+            };
+            let text_color = if active {
+                theme.text
+            } else {
+                theme.text_secondary
+            };
             win.draw_string(tx + 8, self.y as u32 + 6, display_title, text_color, 0);
 
             // Close button (X)
@@ -91,7 +122,15 @@ impl Widget for TabWidget {
         false
     }
 
-    fn bounds(&self) -> (i32, i32, u32, u32) { (self.x, self.y, self.width, self.height) }
-    fn set_position(&mut self, x: i32, y: i32) { self.x = x; self.y = y; }
-    fn set_size(&mut self, w: u32, h: u32) { self.width = w; self.height = h; }
+    fn bounds(&self) -> (i32, i32, u32, u32) {
+        (self.x, self.y, self.width, self.height)
+    }
+    fn set_position(&mut self, x: i32, y: i32) {
+        self.x = x;
+        self.y = y;
+    }
+    fn set_size(&mut self, w: u32, h: u32) {
+        self.width = w;
+        self.height = h;
+    }
 }

@@ -1,8 +1,8 @@
 //! IPC foundation — messages, requests, responses, broadcast.
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Clone, Debug)]
 pub(crate) enum IpcMessage {
@@ -47,22 +47,32 @@ pub(crate) struct MessageBus {
 
 impl MessageBus {
     pub fn new() -> Self {
-        MessageBus { seq: 0, pending: Vec::new() }
+        MessageBus {
+            seq: 0,
+            pending: Vec::new(),
+        }
     }
 
     pub fn request(&mut self, target: IpcTarget, method: &'static str, args: Vec<String>) -> u64 {
         self.seq += 1;
         let seq = self.seq;
-        self.pending.push(IpcMessage::Request(IpcRequest { seq, target, method, args }));
+        self.pending.push(IpcMessage::Request(IpcRequest {
+            seq,
+            target,
+            method,
+            args,
+        }));
         seq
     }
 
     pub fn respond(&mut self, seq: u64, success: bool, data: Vec<String>) {
-        self.pending.push(IpcMessage::Response(IpcResponse { seq, success, data }));
+        self.pending
+            .push(IpcMessage::Response(IpcResponse { seq, success, data }));
     }
 
     pub fn broadcast(&mut self, topic: &'static str, data: Vec<String>) {
-        self.pending.push(IpcMessage::Broadcast(IpcBroadcast { topic, data }));
+        self.pending
+            .push(IpcMessage::Broadcast(IpcBroadcast { topic, data }));
     }
 
     pub fn drain(&mut self) -> Vec<IpcMessage> {

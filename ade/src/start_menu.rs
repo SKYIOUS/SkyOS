@@ -1,10 +1,10 @@
 //! Modern start menu — categories, search, pinned, keyboard navigation.
 
-use libsarga::gui::Window;
-use alloc::vec::Vec;
-use crate::app_db::{APPS, CATEGORIES, AppCategory, AppDb};
+use crate::app_db::{AppCategory, AppDb, APPS, CATEGORIES};
 use crate::geometry::{Point, Rect};
 use crate::render::snapshot::RenderSnapshot;
+use alloc::vec::Vec;
+use libsarga::gui::Window;
 
 pub(crate) struct StartMenuState {
     pub open: bool,
@@ -74,7 +74,9 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
         Some(d) => d,
         None => return,
     };
-    if !state.open { return; }
+    if !state.open {
+        return;
+    }
 
     let ty = snap.taskbar_y();
     let theme = snap.theme;
@@ -93,7 +95,17 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
     } else {
         core::str::from_utf8(&state.search).unwrap_or("")
     };
-    win.draw_string(menu_x + 14, search_y + 8, display, if state.search.is_empty() { 0xFF606060 } else { 0xFFFFFFFF }, 0);
+    win.draw_string(
+        menu_x + 14,
+        search_y + 8,
+        display,
+        if state.search.is_empty() {
+            0xFF606060
+        } else {
+            0xFFFFFFFF
+        },
+        0,
+    );
 
     // sidebar: categories
     let sidebar_x = menu_x + 4;
@@ -103,7 +115,9 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
 
     for (i, &(cat_name, _)) in CATEGORIES.iter().enumerate() {
         let iy = sidebar_y + 4 + i as u32 * 28;
-        if iy + 24 > sidebar_y + sidebar_h { break; }
+        if iy + 24 > sidebar_y + sidebar_h {
+            break;
+        }
         let selected = i == state.cat_idx;
         let bg = if selected { theme.accent } else { 0xFF252535 };
         let txt = if selected { 0xFFFFFFFF } else { 0xFFB0B0B0 };
@@ -126,14 +140,41 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
             let app = &APPS[app_idx];
             let iy = list_y + 2 + (i - start) as u32 * ITEM_H;
             let sel = i == state.selected;
-            let hover = Rect::new(list_x as i32, iy as i32, list_w, ITEM_H - 2).hit_test(snap.mouse);
-            let bg = if sel { 0xFF3D5AFE } else if hover { 0xFF333348 } else { 0xFF1E1E2E };
+            let hover =
+                Rect::new(list_x as i32, iy as i32, list_w, ITEM_H - 2).hit_test(snap.mouse);
+            let bg = if sel {
+                0xFF3D5AFE
+            } else if hover {
+                0xFF333348
+            } else {
+                0xFF1E1E2E
+            };
             win.draw_rounded_rect(list_x, iy, list_w, ITEM_H - 2, 4, bg);
-            let label = if app.name.len() > 28 { &app.name[..28] } else { app.name };
-            win.draw_string(list_x + 8, iy + 7, label, if sel { 0xFFFFFFFF } else { 0xFFD0D0D0 }, 0);
+            let label = if app.name.len() > 28 {
+                &app.name[..28]
+            } else {
+                app.name
+            };
+            win.draw_string(
+                list_x + 8,
+                iy + 7,
+                label,
+                if sel { 0xFFFFFFFF } else { 0xFFD0D0D0 },
+                0,
+            );
             if db.pinned[app_idx] {
-                let pin_label = if app.name.len() > 26 { &app.name[..26] } else { app.name };
-                win.draw_string(list_x + 8, iy + 7, pin_label, if sel { 0xFFFFFFFF } else { 0xFFD0D0D0 }, 0);
+                let pin_label = if app.name.len() > 26 {
+                    &app.name[..26]
+                } else {
+                    app.name
+                };
+                win.draw_string(
+                    list_x + 8,
+                    iy + 7,
+                    pin_label,
+                    if sel { 0xFFFFFFFF } else { 0xFFD0D0D0 },
+                    0,
+                );
                 win.draw_string(list_x + list_w - 50, iy + 7, "[Pin]", 0xFFFFAA00, 0);
             }
         }
@@ -145,11 +186,25 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
     win.draw_string(menu_x + 12, bottom_y + 10, "Recent:", 0xFF888888, 0);
     let mut rx = menu_x + 72;
     for &idx in db.recent.iter() {
-        if rx > menu_x + MENU_W - 20 { break; }
+        if rx > menu_x + MENU_W - 20 {
+            break;
+        }
         let app = &APPS[idx];
-        let label = if app.name.len() > 12 { &app.name[..12] } else { app.name };
-        let hover = Rect::new(rx as i32, bottom_y as i32 + 2, 80, 30).hit_test(Point::new(snap.mouse.x, snap.mouse.y));
-        win.draw_rounded_rect(rx, bottom_y + 4, 80, 26, 4, if hover { 0xFF3A3A5C } else { 0xFF2D2D40 });
+        let label = if app.name.len() > 12 {
+            &app.name[..12]
+        } else {
+            app.name
+        };
+        let hover = Rect::new(rx as i32, bottom_y as i32 + 2, 80, 30)
+            .hit_test(Point::new(snap.mouse.x, snap.mouse.y));
+        win.draw_rounded_rect(
+            rx,
+            bottom_y + 4,
+            80,
+            26,
+            4,
+            if hover { 0xFF3A3A5C } else { 0xFF2D2D40 },
+        );
         win.draw_string(rx + 6, bottom_y + 7, label, 0xFFD0D0D0, 0);
         rx += 84;
     }

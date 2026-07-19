@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, gui::Window, theme::Theme, io, fs};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use libsarga::{fs, gui::Window, io, sarga_main, theme::Theme};
 
 fn load_index() -> Vec<(String, String, u64, bool)> {
     let mut entries = Vec::new();
@@ -27,26 +27,58 @@ fn load_index() -> Vec<(String, String, u64, bool)> {
     entries
 }
 
-fn walk_dir(path: &str, entries: &mut Vec<(String, String, u64, bool)>, depth: usize) -> Result<(), ()> {
-    if depth > 6 { return Ok(()); }
-    if path.len() > 256 { return Ok(()); }
-    let fd = match io::open(path, 0) { Ok(f) => f, Err(_) => return Ok(()) };
+fn walk_dir(
+    path: &str,
+    entries: &mut Vec<(String, String, u64, bool)>,
+    depth: usize,
+) -> Result<(), ()> {
+    if depth > 6 {
+        return Ok(());
+    }
+    if path.len() > 256 {
+        return Ok(());
+    }
+    let fd = match io::open(path, 0) {
+        Ok(f) => f,
+        Err(_) => return Ok(()),
+    };
     let mut buf = [0u8; 4096];
-    let n = match io::getdents64(fd, &mut buf) { Ok(n) => n, Err(_) => { let _ = io::close(fd); return Ok(()); } };
+    let n = match io::getdents64(fd, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            let _ = io::close(fd);
+            return Ok(());
+        }
+    };
     let _ = io::close(fd);
 
     let mut off = 0;
     while off < n {
-        if off + 19 > n { break; }
-        let reclen = u16::from_le_bytes(buf[off+16..off+18].try_into().unwrap_or([0; 2])) as usize;
-        let d_type = buf[off+18];
-        if reclen < 19 || off + reclen > n { break; }
-        let name_bytes = &buf[off+19..off+reclen];
-        let name_end = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_bytes.len());
+        if off + 19 > n {
+            break;
+        }
+        let reclen =
+            u16::from_le_bytes(buf[off + 16..off + 18].try_into().unwrap_or([0; 2])) as usize;
+        let d_type = buf[off + 18];
+        if reclen < 19 || off + reclen > n {
+            break;
+        }
+        let name_bytes = &buf[off + 19..off + reclen];
+        let name_end = name_bytes
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(name_bytes.len());
         let name = core::str::from_utf8(&name_bytes[..name_end]).unwrap_or("");
-        if name.is_empty() || name == "." || name == ".." { off += reclen; continue; }
+        if name.is_empty() || name == "." || name == ".." {
+            off += reclen;
+            continue;
+        }
 
-        let full = if path == "/" { alloc::format!("/{}", name) } else { alloc::format!("{}/{}", path, name) };
+        let full = if path == "/" {
+            alloc::format!("/{}", name)
+        } else {
+            alloc::format!("{}/{}", path, name)
+        };
         let is_dir = d_type == 4;
         let size = fs::stat(&full).map(|s| s.size as u64).unwrap_or(0);
         let full_clone = full.clone();
@@ -78,7 +110,13 @@ fn user_main() -> i32 {
 
         let text_x = 20u32;
         if query.is_empty() {
-            win.draw_string(text_x, 22, "Search files, apps, and more... (Super+Space)", theme.text_secondary, 1);
+            win.draw_string(
+                text_x,
+                22,
+                "Search files, apps, and more... (Super+Space)",
+                theme.text_secondary,
+                1,
+            );
         } else {
             win.draw_string(text_x, 22, &query, theme.text, 0);
             frame += 1;
@@ -107,13 +145,21 @@ fn user_main() -> i32 {
         }
 
         // Results count
-        win.draw_string(15, 65, &alloc::format!("{} results", results.len()), theme.text_secondary, 1);
+        win.draw_string(
+            15,
+            65,
+            &alloc::format!("{} results", results.len()),
+            theme.text_secondary,
+            1,
+        );
 
         // Result items
         let mut y = 70u32;
         for (name, path, size, is_dir) in &results {
             y += 28;
-            if y + 28 > 360 { break; }
+            if y + 28 > 360 {
+                break;
+            }
 
             if *is_dir {
                 win.draw_rect(20, y, 20, 20, 0xFFD4A017);
@@ -125,8 +171,10 @@ fn user_main() -> i32 {
             win.draw_string(48, y + 2, name, theme.text, 0);
 
             let path_display = if path.len() > 40 {
-                alloc::format!("...{}", &path[path.len()-37..])
-            } else { path.clone() };
+                alloc::format!("...{}", &path[path.len() - 37..])
+            } else {
+                path.clone()
+            };
             win.draw_string(48, y + 14, &path_display, theme.text_secondary, 1);
 
             if !*is_dir {
@@ -147,12 +195,13 @@ fn user_main() -> i32 {
         // Keyboard input
         while let Some(c) = win.get_key() {
             match c {
-                0x7F | 0x08 => { query.pop(); }
-                0x0D | 0x0A => {
-                    if let Some((_, _, _, _)) = results.first() {
-                    }
+                0x7F | 0x08 => {
+                    query.pop();
                 }
-                c if c >= 0x20 && c <= 0x7E => { query.push(c as char); }
+                0x0D | 0x0A => if let Some((_, _, _, _)) = results.first() {},
+                c if c >= 0x20 && c <= 0x7E => {
+                    query.push(c as char);
+                }
                 _ => {}
             }
         }
@@ -161,7 +210,9 @@ fn user_main() -> i32 {
             all_entries = load_index();
         }
 
-        unsafe { libsarga::syscall::syscall2(35, 0, 16_000_000u64); }
+        unsafe {
+            libsarga::syscall::syscall2(35, 0, 16_000_000u64);
+        }
     }
 }
 

@@ -3,45 +3,45 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{gui::Window, sarga_main};
-use libsarga::io;
 use desktop::Desktop;
+use libsarga::io;
+use libsarga::{gui::Window, sarga_main};
 
 mod app_db;
 mod app_registry;
+mod clipboard_service;
+mod config;
 mod constants;
 mod damage;
 mod desktop;
 mod desktop_icons;
 mod event;
+mod explorer;
 mod file_assoc;
-mod notification;
 mod geometry;
-mod perms;
-mod window;
-mod taskbar;
-mod tray;
-mod settings;
-mod vfs;
-mod watcher;
-mod start_menu;
-mod wallpaper;
 mod icons;
 mod ipc;
 mod launcher;
-mod login_session;
 mod lifecycle;
-mod window_manager;
-mod shortcut;
-mod theme_service;
-mod clipboard_service;
-mod config;
-mod session_service;
+mod login_session;
+mod notification;
+mod perms;
 mod recovery;
 mod render;
 mod service_manager;
 mod session;
-
+mod session_service;
+mod settings;
+mod shortcut;
+mod start_menu;
+mod taskbar;
+mod theme_service;
+mod tray;
+mod vfs;
+mod wallpaper;
+mod watcher;
+mod window;
+mod window_manager;
 
 fn user_main() -> i32 {
     io::print_str("[ade] starting desktop environment\n");
@@ -66,7 +66,8 @@ fn user_main() -> i32 {
         }
 
         let ms = desktop_win.get_mouse();
-        let (pressed, released, dragging) = desktop.update_mouse(ms.x as i32, ms.y as i32, ms.buttons & 1 != 0);
+        let (pressed, released, dragging) =
+            desktop.update_mouse(ms.x as i32, ms.y as i32, ms.buttons & 1 != 0);
         if ms.scroll != 0 {
             desktop.handle_event(event::Event::Scroll(ms.scroll));
         }

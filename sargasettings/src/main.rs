@@ -2,10 +2,18 @@
 #![no_main]
 #![allow(unused_assignments)]
 extern crate alloc;
+use alloc::string::String;
+use alloc::string::ToString;
+use libsarga::config::Config;
+use libsarga::fs::write_file;
 use libsarga::gui::Window;
 use libsarga::io::{self, clipboard_write, notify};
+use libsarga::net::HttpClient;
 use libsarga::sarga_main;
+use libsarga::semver::Version;
 use libsarga::theme::Theme;
+use libsarga::toml::TomlDocument;
+use libsarga::version::{get_update_manifest_url, get_version_info, SKYOS_VERSION};
 
 const TAB_NAMES: &[&str] = &["Display", "Theme", "Update", "About"];
 const SIDEBAR_W: u32 = 120;
@@ -17,20 +25,55 @@ struct Settings {
     resolution_idx: usize,
     // Theme
     accent_idx: usize,
+    // Update state
+    update_status: UpdateStatus,
     // Hover states
     hover_tab: Option<usize>,
     hover_item: Option<usize>,
 }
 
+#[derive(Clone)]
+enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    UpdateAvailable(String),
+    Downloading,
+    Downloaded,
+    Error(String),
+}
+
 impl Settings {
     fn new() -> Self {
+        // Try to load settings from config file
+        let config = Config::load("/etc/settings.conf");
+
+        let (resolution_idx, accent_idx) = if let Ok(cfg) = config {
+            let res_idx = cfg.get_u32_or("resolution", 0) as usize;
+            let accent_idx = cfg.get_u32_or("accent_color", 0) as usize;
+            (
+                res_idx.min(RESOLUTIONS.len() - 1),
+                accent_idx.min(ACCENT_COLORS.len() - 1),
+            )
+        } else {
+            (0, 0)
+        };
+
         Settings {
             active_tab: 0,
-            resolution_idx: 0,
-            accent_idx: 0,
+            resolution_idx,
+            accent_idx,
+            update_status: UpdateStatus::Idle,
             hover_tab: None,
             hover_item: None,
         }
+    }
+
+    fn save(&self) {
+        let mut config = Config::new("/etc/settings.conf");
+        config.set("resolution", &alloc::format!("{}", self.resolution_idx));
+        config.set("accent_color", &alloc::format!("{}", self.accent_idx));
+        let _ = config.save();
     }
 }
 
@@ -133,6 +176,7 @@ fn user_main() -> i32 {
                                 settings.resolution_idx = i;
                                 let (_, w, h) = RESOLUTIONS[i];
                                 let _ = libsarga::gpu::set_mode(w, h, 32);
+                                settings.save();
                                 notify(&alloc::format!("Resolution: {}x{}", w, h), 2000);
                             }
                         }
@@ -145,29 +189,98 @@ fn user_main() -> i32 {
                             if mx >= SIDEBAR_W + 16 && mx < win_w - 16 && my >= iy && my < iy + 24 {
                                 settings.accent_idx = i;
                                 let _ = libsarga::gpu::set_accent_color(color);
+                                settings.save();
                                 notify(&alloc::format!("Accent: {}", name), 2000);
                             }
                         }
                     }
                     2 => {
-                        // Update - Update system button
+                        // Update - Check for updates button
                         if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= 100 && my < 140 {
+                            settings.update_status = UpdateStatus::Checking;
                             notify("Checking for updates...", 3000);
-                            match libsarga::net::HttpClient::get(
-                                "http://updates.skyious.org/update.toml",
-                            ) {
+
+                            let manifest_url = get_update_manifest_url();
+                            match HttpClient::get(&manifest_url) {
                                 Ok(data) => {
-                                    let manifest = core::str::from_utf8(&data).unwrap_or("");
-                                    if manifest.contains("version = \"0.6.0\"") {
-                                        notify("New version v0.6.0 found! Downloading...", 5000);
-                                        // Trigger download and update daemon
-                                        let _ = libsarga::fs::write_file("/tmp/update.toml", core::str::from_utf8(&data).unwrap_or(""));
-                                        notify("Update downloaded. Restart to apply.", 5000);
-                                    } else {
-                                        notify("System is up to date!", 3000);
+                                    let manifest_str = core::str::from_utf8(&data).unwrap_or("");
+                                    match TomlDocument::parse(manifest_str) {
+                                        Ok(doc) => {
+                                            if let Some(remote_version_str) =
+                                                doc.get_string("version")
+                                            {
+                                                let current_version = match Version::parse(
+                                                    SKYOS_VERSION,
+                                                ) {
+                                                    Some(v) => v,
+                                                    None => {
+                                                        settings.update_status =
+                                                            UpdateStatus::Error(
+                                                                "Failed to parse current version"
+                                                                    .into(),
+                                                            );
+                                                        continue;
+                                                    }
+                                                };
+
+                                                if let Some(remote_version) =
+                                                    Version::parse(remote_version_str)
+                                                {
+                                                    if remote_version
+                                                        .is_greater_than(&current_version)
+                                                    {
+                                                        settings.update_status =
+                                                            UpdateStatus::UpdateAvailable(
+                                                                remote_version_str.to_string(),
+                                                            );
+                                                        notify(
+                                                            &alloc::format!(
+                                                                "New version {} available!",
+                                                                remote_version_str
+                                                            ),
+                                                            5000,
+                                                        );
+
+                                                        // Download manifest for update daemon
+                                                        let _ = write_file(
+                                                            "/tmp/update.toml",
+                                                            manifest_str,
+                                                        );
+                                                        settings.update_status =
+                                                            UpdateStatus::Downloaded;
+                                                        notify(
+                                                            "Update staged. Restart to apply.",
+                                                            5000,
+                                                        );
+                                                    } else {
+                                                        settings.update_status =
+                                                            UpdateStatus::UpToDate;
+                                                        notify("System is up to date!", 3000);
+                                                    }
+                                                } else {
+                                                    settings.update_status = UpdateStatus::Error(
+                                                        "Failed to parse remote version".into(),
+                                                    );
+                                                    notify("Failed to parse update version.", 3000);
+                                                }
+                                            } else {
+                                                settings.update_status = UpdateStatus::Error(
+                                                    "No version in manifest".into(),
+                                                );
+                                                notify("Invalid update manifest.", 3000);
+                                            }
+                                        }
+                                        Err(_) => {
+                                            settings.update_status = UpdateStatus::Error(
+                                                "Failed to parse manifest".into(),
+                                            );
+                                            notify("Failed to parse update manifest.", 3000);
+                                        }
                                     }
                                 }
                                 Err(_) => {
+                                    settings.update_status =
+                                        UpdateStatus::Error("Connection failed".into());
                                     notify("Failed to connect to update server.", 3000);
                                 }
                             }
@@ -175,8 +288,13 @@ fn user_main() -> i32 {
                     }
                     3 => {
                         // About - copy info button
-                        if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= 240 && my < 270 {
-                            clipboard_write(b"SARGA OS v0.4.0\nKernel: SARGA\nArch: x86_64\n");
+                        if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= 256 && my < 284 {
+                            let version_info = get_version_info();
+                            let copy_text = alloc::format!(
+                                "{}\nArch: x86_64\nShell: SargaSH\nDesktop: ADE",
+                                version_info
+                            );
+                            clipboard_write(copy_text.as_bytes());
                             notify("Copied system info to clipboard", 2000);
                         }
                     }
@@ -273,7 +391,7 @@ fn user_main() -> i32 {
                     win.draw_string(SIDEBAR_W + 44, iy + 3, name, theme.text, 0);
                 }
 
-                // Dark mode toggle
+                // Note: Appearance settings not yet implemented
                 let toggle_y = 64 + ACCENT_COLORS.len() as u32 * 28 + 16;
                 win.draw_string(
                     SIDEBAR_W + 16,
@@ -282,21 +400,19 @@ fn user_main() -> i32 {
                     theme.text_secondary,
                     0,
                 );
-                draw_checkbox(
-                    &mut win,
-                    &theme,
+                win.draw_string(
                     SIDEBAR_W + 16,
                     toggle_y + 24,
-                    "Dark Mode (always on)",
-                    true,
+                    "Dark mode and animation settings",
+                    theme.text_disabled,
+                    0,
                 );
-                draw_checkbox(
-                    &mut win,
-                    &theme,
+                win.draw_string(
                     SIDEBAR_W + 16,
-                    toggle_y + 48,
-                    "Show animations",
-                    true,
+                    toggle_y + 40,
+                    "will be available in future updates.",
+                    theme.text_disabled,
+                    0,
                 );
             }
             2 => {
@@ -304,7 +420,13 @@ fn user_main() -> i32 {
                 win.draw_string(SIDEBAR_W + 16, 12, "System Updates", theme.text, 0);
                 win.draw_line_h(SIDEBAR_W + 16, 32, win_w - SIDEBAR_W - 32, theme.separator);
 
-                win.draw_string(SIDEBAR_W + 16, 50, "Current Version: v0.5.0", theme.text, 0);
+                win.draw_string(
+                    SIDEBAR_W + 16,
+                    50,
+                    &alloc::format!("Current Version: v{}", SKYOS_VERSION),
+                    theme.text,
+                    0,
+                );
                 win.draw_string(
                     SIDEBAR_W + 16,
                     70,
@@ -312,6 +434,67 @@ fn user_main() -> i32 {
                     theme.text_secondary,
                     0,
                 );
+
+                // Show update status
+                match settings.update_status {
+                    UpdateStatus::Idle => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            "Status: Idle",
+                            theme.text_secondary,
+                            0,
+                        );
+                    }
+                    UpdateStatus::Checking => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            "Status: Checking...",
+                            theme.accent,
+                            0,
+                        );
+                    }
+                    UpdateStatus::UpToDate => {
+                        win.draw_string(SIDEBAR_W + 16, 150, "Status: Up to date", 0xFF107C10, 0);
+                    }
+                    UpdateStatus::UpdateAvailable(ref ver) => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            &alloc::format!("Status: Update available: v{}", ver),
+                            0xFFD32F2F,
+                            0,
+                        );
+                    }
+                    UpdateStatus::Downloading => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            "Status: Downloading...",
+                            theme.accent,
+                            0,
+                        );
+                    }
+                    UpdateStatus::Downloaded => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            "Status: Downloaded - Restart to apply",
+                            0xFF107C10,
+                            0,
+                        );
+                    }
+                    UpdateStatus::Error(ref err) => {
+                        win.draw_string(
+                            SIDEBAR_W + 16,
+                            150,
+                            &alloc::format!("Status: Error: {}", err),
+                            0xFFD32F2F,
+                            0,
+                        );
+                    }
+                }
 
                 let btn_y = 100;
                 let btn_hover =
@@ -346,11 +529,14 @@ fn user_main() -> i32 {
 
                 // Info
                 let info_x = SIDEBAR_W + 112;
-                win.draw_string(info_x, 52, "SARGA OS v0.4.0", theme.text, 0);
-                win.draw_string(info_x, 72, "Kernel: SARGA", theme.text_secondary, 0);
-                win.draw_string(info_x, 88, "Arch: x86_64", theme.text_secondary, 0);
-                win.draw_string(info_x, 104, "Shell: SargaSH", theme.text_secondary, 0);
-                win.draw_string(info_x, 120, "Desktop: ADE", theme.text_secondary, 0);
+                let version_info = get_version_info();
+                let version_lines: alloc::vec::Vec<&str> = version_info.lines().collect();
+                for (i, line) in version_lines.iter().enumerate() {
+                    win.draw_string(info_x, 52 + (i as u32 * 16), line, theme.text, 0);
+                }
+                win.draw_string(info_x, 104, "Arch: x86_64", theme.text_secondary, 0);
+                win.draw_string(info_x, 120, "Shell: SargaSH", theme.text_secondary, 0);
+                win.draw_string(info_x, 136, "Desktop: ADE", theme.text_secondary, 0);
 
                 win.draw_line_h(SIDEBAR_W + 16, 148, win_w - SIDEBAR_W - 32, theme.separator);
 
@@ -373,7 +559,7 @@ fn user_main() -> i32 {
                 }
 
                 // Copy button
-                let btn_y = 240;
+                let btn_y = 256;
                 let btn_hover =
                     mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= btn_y && my < btn_y + 28;
                 let btn_bg = if btn_hover { theme.hover } else { theme.accent };

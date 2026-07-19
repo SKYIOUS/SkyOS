@@ -1,14 +1,17 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::string::{String, ToString};
-use libsarga::{sarga_main, println, fs, args};
+use alloc::vec;
+use alloc::vec::Vec;
+use libsarga::{args, fs, println, sarga_main};
 
 fn user_main() -> i32 {
     let paths: Vec<String> = if args::argc() > 1 {
-        (1..args::argc()).filter_map(|i| args::get(i as usize)).map(|s| s.to_string()).collect()
+        (1..args::argc())
+            .filter_map(|i| args::get(i as usize))
+            .map(|s| s.to_string())
+            .collect()
     } else {
         vec!["/".into(), "/tmp".into(), "/dev".into(), "/ctl".into()]
     };
@@ -32,17 +35,33 @@ fn user_main() -> i32 {
                 let used = total.saturating_sub(free);
                 let pct = if total > 0 { used * 100 / total } else { 0 };
                 if human {
-                    let (ts, tu, ta) = (fmt_size(total * 1024), fmt_size(used * 1024), fmt_size(avail * 1024));
-                    println!("{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}", label, ts, tu, ta, pct, path);
+                    let (ts, tu, ta) = (
+                        fmt_size(total * 1024),
+                        fmt_size(used * 1024),
+                        fmt_size(avail * 1024),
+                    );
+                    println!(
+                        "{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}",
+                        label, ts, tu, ta, pct, path
+                    );
                 } else {
-                    println!("{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}", label, total, used, avail, pct, path);
+                    println!(
+                        "{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}",
+                        label, total, used, avail, pct, path
+                    );
                 }
             }
             Err(_) => {
                 if human {
-                    println!("{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}", label, "-", "-", "-", 0, path);
+                    println!(
+                        "{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}",
+                        label, "-", "-", "-", 0, path
+                    );
                 } else {
-                    println!("{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}", label, 0, 0, 0, 0, path);
+                    println!(
+                        "{:<14} {:>6} {:>6} {:>6}  {:>3}%  {}",
+                        label, 0, 0, 0, 0, path
+                    );
                 }
             }
         }

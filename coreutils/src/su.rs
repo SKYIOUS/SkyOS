@@ -4,11 +4,11 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::sarga_main;
-use libsarga::io::{self, open, read, close};
-use libsarga::process::{geteuid, setuid, setgid, execve};
-use libsarga::hash;
 use alloc::string::ToString;
+use libsarga::hash;
+use libsarga::io::{self, close, open, read};
+use libsarga::process::{execve, geteuid, setgid, setuid};
+use libsarga::sarga_main;
 
 fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let fd = open(path, 0)?;
@@ -16,7 +16,9 @@ fn read_whole_file(path: &str) -> Result<alloc::vec::Vec<u8>, libsarga::errno::E
     let mut tmp = [0u8; 512];
     loop {
         let n = read(fd, &mut tmp)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
     }
     close(fd)?;
@@ -28,8 +30,12 @@ fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
     let mut byte = [0u8; 1];
     loop {
         let n = read(fd, &mut byte)?;
-        if n == 0 { break; }
-        if byte[0] == b'\n' || byte[0] == b'\r' { break; }
+        if n == 0 {
+            break;
+        }
+        if byte[0] == b'\n' || byte[0] == b'\r' {
+            break;
+        }
         buf.push(byte[0]);
     }
     Ok(buf)
@@ -38,7 +44,9 @@ fn read_line(fd: i64) -> Result<alloc::vec::Vec<u8>, libsarga::errno::Error> {
 fn lookup_user(username: &str) -> Option<(u32, u32, alloc::vec::Vec<u8>, alloc::vec::Vec<u8>)> {
     let data = read_whole_file("/etc/passwd\0").ok()?;
     for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let mut parts = line.splitn(7, |&b| b == b':');
         let name = parts.next()?;
         if name == username.as_bytes() {
@@ -75,7 +83,9 @@ fn verify_password(username: &str, password: &str) -> bool {
         Err(_) => return false,
     };
     for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let mut parts = line.splitn(2, |&b| b == b':');
         let name = parts.next().unwrap_or(b"");
         if name != username.as_bytes() {
@@ -163,7 +173,10 @@ fn user_main() -> i32 {
         alloc::format!("SHELL={}", shell_name),
         "TERM=xterm-256color".to_string(),
     ];
-    let env_refs: alloc::vec::Vec<&str> = env.iter().map(|s: &alloc::string::String| s.as_str()).collect();
+    let env_refs: alloc::vec::Vec<&str> = env
+        .iter()
+        .map(|s: &alloc::string::String| s.as_str())
+        .collect();
 
     execve(shell_name, &[], &env_refs);
     return 1;

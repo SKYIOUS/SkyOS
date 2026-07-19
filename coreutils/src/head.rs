@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, args, io};
 use alloc::string::String;
+use libsarga::{args, io, sarga_main};
 
 fn user_main() -> i32 {
     let mut count: usize = 10;
@@ -28,7 +28,9 @@ fn user_main() -> i32 {
         let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
         leftover.push_str(s);
         while let Some(pos) = leftover.find('\n') {
-            if printed >= count { break; }
+            if printed >= count {
+                break;
+            }
             io::write_all(1, leftover[..=pos].as_bytes()).ok();
             printed += 1;
             leftover = String::from(&leftover[pos + 1..]);

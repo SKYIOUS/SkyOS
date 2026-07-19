@@ -4,9 +4,9 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::sarga_main;
-use libsarga::io::{self, open, close, fchown};
+use libsarga::io::{self, close, fchown, open};
 use libsarga::process::getegid;
+use libsarga::sarga_main;
 
 fn parse_num(s: &str) -> Option<u32> {
     s.parse::<u32>().ok()
@@ -23,7 +23,7 @@ fn user_main() -> i32 {
     let spec = libsarga::args::get(1).unwrap_or("0");
     let (uid, gid) = if let Some(colon) = spec.find(':') {
         let u = parse_num(&spec[..colon]).unwrap_or(0);
-        let g = parse_num(&spec[colon+1..]).unwrap_or(0);
+        let g = parse_num(&spec[colon + 1..]).unwrap_or(0);
         (u, g)
     } else {
         let u = parse_num(spec).unwrap_or(0);

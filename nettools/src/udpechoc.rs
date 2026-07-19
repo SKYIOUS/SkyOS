@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, io, args};
-use libsarga::libskyos::net_ext::{self, SOCK_DGRAM, AF_INET, SocketAddrV4, Ipv4Addr};
+use libsarga::libskyos::net_ext::{self, Ipv4Addr, SocketAddrV4, AF_INET, SOCK_DGRAM};
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let port: u16 = args::get(1).and_then(|s| s.parse().ok()).unwrap_or(7);
@@ -14,9 +14,17 @@ fn user_main() -> i32 {
         return 0;
     }
 
-    let dest = SocketAddrV4 { ip: target_ip, port };
+    let dest = SocketAddrV4 {
+        ip: target_ip,
+        port,
+    };
     let msg = b"Hello UDP echo!";
-    println!("udpechoc: sending {} bytes to {}:{}", msg.len(), target_ip, port);
+    println!(
+        "udpechoc: sending {} bytes to {}:{}",
+        msg.len(),
+        target_ip,
+        port
+    );
 
     let sent = net_ext::sendto(fd, msg, &dest);
     if sent <= 0 {
@@ -34,13 +42,20 @@ fn user_main() -> i32 {
     }
 
     if let Some(addr) = src {
-        println!("udpechoc: received {} bytes from {}:{}", n, addr.ip, addr.port);
+        println!(
+            "udpechoc: received {} bytes from {}:{}",
+            n, addr.ip, addr.port
+        );
     }
 
     if n as usize == msg.len() && &buf[..n as usize] == msg {
         println!("udpechoc: SUCCESS - data matches!");
     } else {
-        println!("udpechoc: FAIL - data mismatch (got {} bytes, expected {})", n, msg.len());
+        println!(
+            "udpechoc: FAIL - data mismatch (got {} bytes, expected {})",
+            n,
+            msg.len()
+        );
         let _ = io::close(fd);
         return 1;
     }

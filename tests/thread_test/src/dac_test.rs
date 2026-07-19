@@ -2,7 +2,7 @@
 #![no_main]
 extern crate alloc;
 
-use libsarga::{sarga_main, println};
+use libsarga::{println, sarga_main};
 
 mod raw {
     pub fn open(path: *const u8, flags: i32, mode: u32) -> i64 {
@@ -45,7 +45,9 @@ fn stat_mode(path: &str) -> i64 {
     let bytes = path.as_bytes();
     buf[..bytes.len()].copy_from_slice(bytes);
     buf[bytes.len()] = 0;
-    if raw::stat(buf.as_ptr(), st.as_mut_ptr() as *mut u8) < 0 { return -1; }
+    if raw::stat(buf.as_ptr(), st.as_mut_ptr() as *mut u8) < 0 {
+        return -1;
+    }
     st[2] as i64 // st_mode is 3rd field (offset 2)
 }
 
@@ -57,7 +59,10 @@ fn main_test() -> i32 {
     let mut buf = [0u8; 260];
     buf[..19].copy_from_slice(b"/tmp_dac_test1.txt\0");
     let fd = raw::open(buf.as_ptr(), O_CREAT | O_RDWR, 0o640);
-    if fd < 0 { println!("FAIL: create file"); return 1; }
+    if fd < 0 {
+        println!("FAIL: create file");
+        return 1;
+    }
     raw::close(fd);
 
     let mode = stat_mode("/tmp_dac_test1.txt");
@@ -72,8 +77,10 @@ fn main_test() -> i32 {
     // Test 2: chmod to 0600
     println!("Test 2: chmod to 0600");
     let r = raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o600);
-    if r < 0 { println!("  FAIL: chmod returned {}", r); failed += 1; }
-    else {
+    if r < 0 {
+        println!("  FAIL: chmod returned {}", r);
+        failed += 1;
+    } else {
         let mode = stat_mode("/tmp_dac_test1.txt");
         let perms = mode & 0o777;
         if perms == 0o600 {
@@ -87,7 +94,8 @@ fn main_test() -> i32 {
     // Test 3: open for write after chmod 0444 (read-only) should fail
     println!("Test 3: open(O_WRONLY) on read-only file");
     if raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o444) < 0 {
-        println!("  FAIL: chmod"); failed += 1;
+        println!("  FAIL: chmod");
+        failed += 1;
     } else {
         let wfd = raw::open("/tmp_dac_test1.txt\0".as_ptr(), O_WRONLY, 0);
         if wfd < 0 {
@@ -116,8 +124,10 @@ fn main_test() -> i32 {
     let mut buf2 = [0u8; 260];
     buf2[..19].copy_from_slice(b"/tmp_dac_test2.txt\0");
     let fd2 = raw::open(buf2.as_ptr(), O_CREAT | O_RDWR, 0o666);
-    if fd2 < 0 { println!("  FAIL: create file 2"); failed += 1; }
-    else {
+    if fd2 < 0 {
+        println!("  FAIL: create file 2");
+        failed += 1;
+    } else {
         raw::close(fd2);
         let mode2 = stat_mode("/tmp_dac_test2.txt");
         let perms2 = mode2 & 0o777;
@@ -135,13 +145,18 @@ fn main_test() -> i32 {
     // Test 6: chown (root only test — we're uid 0 by default)
     println!("Test 6: chown to uid=1,gid=1");
     let r = raw::chown("/tmp_dac_test1.txt\0".as_ptr(), 1, 1);
-    if r < 0 { println!("  FAIL: chown {}", r); failed += 1; }
-    else { println!("  PASS: chown succeeded"); }
+    if r < 0 {
+        println!("  FAIL: chown {}", r);
+        failed += 1;
+    } else {
+        println!("  PASS: chown succeeded");
+    }
 
     // Test 7: access() syscall
     println!("Test 7: access() on 0444 file");
     if raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o444) < 0 {
-        println!("  FAIL: chmod"); failed += 1;
+        println!("  FAIL: chmod");
+        failed += 1;
     } else {
         let r_ok = raw::access("/tmp_dac_test1.txt\0".as_ptr(), R_OK);
         let w_ok = raw::access("/tmp_dac_test1.txt\0".as_ptr(), W_OK);
@@ -166,5 +181,7 @@ fn main_test() -> i32 {
     }
 }
 
-fn user_main() -> i32 { main_test() }
+fn user_main() -> i32 {
+    main_test()
+}
 sarga_main!(user_main);

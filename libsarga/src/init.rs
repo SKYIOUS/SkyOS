@@ -30,7 +30,10 @@ impl InitManager {
                     continue;
                 }
                 let deps_met = svc.depends.iter().all(|dep| {
-                    self.services.iter().enumerate().any(|(j, s)| s.name == *dep && started[j])
+                    self.services
+                        .iter()
+                        .enumerate()
+                        .any(|(j, s)| s.name == *dep && started[j])
                 });
                 if !deps_met {
                     continue;
@@ -55,12 +58,10 @@ impl InitManager {
                     continue;
                 }
                 match process::waitpid(pids[i] as i64, 0) {
-                    Ok((_, _)) => {
-                        match process::spawn(svc.command) {
-                            Ok(pid) => pids[i] = pid,
-                            Err(_) => {}
-                        }
-                    }
+                    Ok((_, _)) => match process::spawn(svc.command) {
+                        Ok(pid) => pids[i] = pid,
+                        Err(_) => {}
+                    },
                     Err(_) => {}
                 }
             }

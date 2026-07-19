@@ -57,34 +57,50 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, &'static str> {
     let len = chars.len();
 
     while pos < len {
-        if chars[pos] == ' ' || chars[pos] == '\t' || chars[pos] == '\n' { pos += 1; continue; }
+        if chars[pos] == ' ' || chars[pos] == '\t' || chars[pos] == '\n' {
+            pos += 1;
+            continue;
+        }
 
         match chars[pos] {
             '|' => {
                 if pos + 1 < len && chars[pos + 1] == '|' {
-                    tokens.push(Token::Or); pos += 2;
+                    tokens.push(Token::Or);
+                    pos += 2;
                 } else {
-                    tokens.push(Token::Pipe); pos += 1;
+                    tokens.push(Token::Pipe);
+                    pos += 1;
                 }
             }
             '&' => {
                 if pos + 1 < len && chars[pos + 1] == '&' {
-                    tokens.push(Token::And); pos += 2;
+                    tokens.push(Token::And);
+                    pos += 2;
                 } else {
-                    tokens.push(Token::Background); pos += 1;
+                    tokens.push(Token::Background);
+                    pos += 1;
                 }
             }
-            ';' => { tokens.push(Token::Semi); pos += 1; }
+            ';' => {
+                tokens.push(Token::Semi);
+                pos += 1;
+            }
             '>' => {
                 if pos + 1 < len && chars[pos + 1] == '>' {
-                    tokens.push(Token::RedirectAppend); pos += 2;
+                    tokens.push(Token::RedirectAppend);
+                    pos += 2;
                 } else if pos + 1 < len && chars[pos + 1] == '&' {
-                    tokens.push(Token::RedirectStderr); pos += 2;
+                    tokens.push(Token::RedirectStderr);
+                    pos += 2;
                 } else {
-                    tokens.push(Token::RedirectOut); pos += 1;
+                    tokens.push(Token::RedirectOut);
+                    pos += 1;
                 }
             }
-            '<' => { tokens.push(Token::RedirectIn); pos += 1; }
+            '<' => {
+                tokens.push(Token::RedirectIn);
+                pos += 1;
+            }
             '"' | '\'' => {
                 let quote = chars[pos];
                 pos += 1;
@@ -94,44 +110,66 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, &'static str> {
                         pos += 1;
                         match chars[pos] {
                             '"' | '\\' | '$' | '`' | '\n' => word.push(chars[pos]),
-                            c => { word.push('\\'); word.push(c); }
+                            c => {
+                                word.push('\\');
+                                word.push(c);
+                            }
                         }
                     } else {
                         word.push(chars[pos]);
                     }
                     pos += 1;
                 }
-                if pos >= len { return Err("Unterminated quote"); }
+                if pos >= len {
+                    return Err("Unterminated quote");
+                }
                 pos += 1;
                 tokens.push(Token::Word(word));
             }
-            '#' => { break; }
+            '#' => {
+                break;
+            }
             _ => {
                 let mut word = String::new();
-                while pos < len && !chars[pos].is_whitespace()
-                    && chars[pos] != '|' && chars[pos] != '&'
-                    && chars[pos] != ';' && chars[pos] != '>'
-                    && chars[pos] != '<' && chars[pos] != '#'
+                while pos < len
+                    && !chars[pos].is_whitespace()
+                    && chars[pos] != '|'
+                    && chars[pos] != '&'
+                    && chars[pos] != ';'
+                    && chars[pos] != '>'
+                    && chars[pos] != '<'
+                    && chars[pos] != '#'
                 {
                     if chars[pos] == '\\' && pos + 1 < len {
-                        pos += 1; word.push(chars[pos]); pos += 1;
+                        pos += 1;
+                        word.push(chars[pos]);
+                        pos += 1;
                     } else if chars[pos] == '$' && pos + 1 < len && chars[pos + 1] == '(' {
                         pos += 2;
                         let mut inner = String::new();
                         let mut depth = 1;
                         while pos < len && depth > 0 {
-                            if chars[pos] == '(' { depth += 1; }
-                            else if chars[pos] == ')' { depth -= 1; if depth == 0 { break; } }
+                            if chars[pos] == '(' {
+                                depth += 1;
+                            } else if chars[pos] == ')' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
                             inner.push(chars[pos]);
                             pos += 1;
                         }
-                        if depth > 0 { return Err("Unterminated $("); }
+                        if depth > 0 {
+                            return Err("Unterminated $(");
+                        }
                         pos += 1;
                         // Execute sub-shell and capture output
                         let output = crate::executor::capture_output(&inner);
                         word.push_str(&output);
                     } else {
-                        word.push(chars[pos]); pos += 1;
+                        word.push(chars[pos]);
+                        pos += 1;
                     }
                 }
                 tokens.push(Token::Word(word));
@@ -143,8 +181,15 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, &'static str> {
 
 pub fn parse(tokens: &[Token]) -> Vec<Pipeline> {
     let mut pipelines: Vec<Pipeline> = Vec::new();
-    let mut current_pipeline = Pipeline { commands: Vec::new(), connector: None };
-    let mut current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+    let mut current_pipeline = Pipeline {
+        commands: Vec::new(),
+        connector: None,
+    };
+    let mut current_cmd = Command {
+        args: Vec::new(),
+        redirects: Vec::new(),
+        background: false,
+    };
     let mut i = 0;
 
     while i < tokens.len() {
@@ -154,7 +199,10 @@ pub fn parse(tokens: &[Token]) -> Vec<Pipeline> {
                 i += 1;
                 if i < tokens.len() {
                     if let Token::Word(f) = &tokens[i] {
-                        current_cmd.redirects.push(Redirect { kind: RedirectKind::Out, file: f.clone() });
+                        current_cmd.redirects.push(Redirect {
+                            kind: RedirectKind::Out,
+                            file: f.clone(),
+                        });
                     }
                 }
             }
@@ -162,7 +210,10 @@ pub fn parse(tokens: &[Token]) -> Vec<Pipeline> {
                 i += 1;
                 if i < tokens.len() {
                     if let Token::Word(f) = &tokens[i] {
-                        current_cmd.redirects.push(Redirect { kind: RedirectKind::Append, file: f.clone() });
+                        current_cmd.redirects.push(Redirect {
+                            kind: RedirectKind::Append,
+                            file: f.clone(),
+                        });
                     }
                 }
             }
@@ -170,7 +221,10 @@ pub fn parse(tokens: &[Token]) -> Vec<Pipeline> {
                 i += 1;
                 if i < tokens.len() {
                     if let Token::Word(f) = &tokens[i] {
-                        current_cmd.redirects.push(Redirect { kind: RedirectKind::In, file: f.clone() });
+                        current_cmd.redirects.push(Redirect {
+                            kind: RedirectKind::In,
+                            file: f.clone(),
+                        });
                     }
                 }
             }
@@ -178,42 +232,77 @@ pub fn parse(tokens: &[Token]) -> Vec<Pipeline> {
                 i += 1;
                 if i < tokens.len() {
                     if let Token::Word(f) = &tokens[i] {
-                        current_cmd.redirects.push(Redirect { kind: RedirectKind::Stderr, file: f.clone() });
+                        current_cmd.redirects.push(Redirect {
+                            kind: RedirectKind::Stderr,
+                            file: f.clone(),
+                        });
                     }
                 }
             }
             Token::Pipe => {
                 current_pipeline.commands.push(current_cmd);
-                current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+                current_cmd = Command {
+                    args: Vec::new(),
+                    redirects: Vec::new(),
+                    background: false,
+                };
             }
             Token::And => {
                 current_pipeline.commands.push(current_cmd);
-                current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+                current_cmd = Command {
+                    args: Vec::new(),
+                    redirects: Vec::new(),
+                    background: false,
+                };
                 current_pipeline.connector = Some(Connector::And);
                 pipelines.push(current_pipeline);
-                current_pipeline = Pipeline { commands: Vec::new(), connector: None };
+                current_pipeline = Pipeline {
+                    commands: Vec::new(),
+                    connector: None,
+                };
             }
             Token::Or => {
                 current_pipeline.commands.push(current_cmd);
-                current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+                current_cmd = Command {
+                    args: Vec::new(),
+                    redirects: Vec::new(),
+                    background: false,
+                };
                 current_pipeline.connector = Some(Connector::Or);
                 pipelines.push(current_pipeline);
-                current_pipeline = Pipeline { commands: Vec::new(), connector: None };
+                current_pipeline = Pipeline {
+                    commands: Vec::new(),
+                    connector: None,
+                };
             }
             Token::Semi => {
                 current_pipeline.commands.push(current_cmd);
-                current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+                current_cmd = Command {
+                    args: Vec::new(),
+                    redirects: Vec::new(),
+                    background: false,
+                };
                 current_pipeline.connector = Some(Connector::Semi);
                 pipelines.push(current_pipeline);
-                current_pipeline = Pipeline { commands: Vec::new(), connector: None };
+                current_pipeline = Pipeline {
+                    commands: Vec::new(),
+                    connector: None,
+                };
             }
             Token::Background => {
                 current_cmd.background = true;
                 current_pipeline.commands.push(current_cmd);
-                current_cmd = Command { args: Vec::new(), redirects: Vec::new(), background: false };
+                current_cmd = Command {
+                    args: Vec::new(),
+                    redirects: Vec::new(),
+                    background: false,
+                };
                 current_pipeline.connector = Some(Connector::Background);
                 pipelines.push(current_pipeline);
-                current_pipeline = Pipeline { commands: Vec::new(), connector: None };
+                current_pipeline = Pipeline {
+                    commands: Vec::new(),
+                    connector: None,
+                };
             }
         }
         i += 1;

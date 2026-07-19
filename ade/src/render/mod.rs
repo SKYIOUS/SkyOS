@@ -17,12 +17,12 @@ pub(crate) fn render(
 
     for aw in snap.windows {
         if !aw.always_on_top {
-            crate::window::draw(win, snap.theme, aw, snap.cursor_visible);
+            crate::window::draw(win, snap.theme, aw, snap.cursor_visible, snap.explorers);
         }
     }
     for aw in snap.windows {
         if aw.always_on_top {
-            crate::window::draw(win, snap.theme, aw, snap.cursor_visible);
+            crate::window::draw(win, snap.theme, aw, snap.cursor_visible, snap.explorers);
         }
     }
 

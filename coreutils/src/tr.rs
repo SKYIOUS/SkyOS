@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::sarga_main;
-use libsarga::io;
 use libsarga::args;
+use libsarga::io;
+use libsarga::sarga_main;
 
 fn user_main() -> i32 {
     let mut delete = false;
@@ -39,7 +39,11 @@ fn user_main() -> i32 {
     let to_chars: alloc::vec::Vec<char> = to.chars().collect();
     let fill = *to_chars.last().unwrap_or(&'\0');
     for (idx, &fc) in from_chars.iter().enumerate() {
-        let tc = if idx < to_chars.len() { to_chars[idx] } else { fill };
+        let tc = if idx < to_chars.len() {
+            to_chars[idx]
+        } else {
+            fill
+        };
         map.insert(fc, tc);
     }
     let text = alloc::string::String::from_utf8_lossy(&data);

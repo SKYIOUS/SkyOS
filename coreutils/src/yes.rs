@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-use libsarga::{sarga_main, io};
+use libsarga::{io, sarga_main};
 
 fn user_main() -> i32 {
     loop {

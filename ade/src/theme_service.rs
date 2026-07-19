@@ -8,7 +8,9 @@ pub(crate) struct ThemeService {
 
 impl ThemeService {
     pub fn new() -> Self {
-        ThemeService { theme: Theme::dark() }
+        ThemeService {
+            theme: Theme::dark(),
+        }
     }
 
     pub fn current(&self) -> &Theme {

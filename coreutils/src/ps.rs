@@ -1,11 +1,12 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{sarga_main, println, io, args};
 use alloc::string::String;
+use libsarga::{args, io, println, sarga_main};
 
 fn user_main() -> i32 {
-    let show_all = args::argc() > 1 && args::get(1) == Some("-a") || args::argc() > 1 && args::get(1) == Some("aux");
+    let show_all = args::argc() > 1 && args::get(1) == Some("-a")
+        || args::argc() > 1 && args::get(1) == Some("aux");
 
     // Try reading from ctlFS /proc/list
     let content = match read_ctl_file("proc/list") {
@@ -18,7 +19,9 @@ fn user_main() -> i32 {
                 println!("PID  PPID STATE CMD");
                 println!("1    0    S     init");
                 println!("2    1    S     sash");
-                if show_all { println!("3    2    S     ps"); }
+                if show_all {
+                    println!("3    2    S     ps");
+                }
             } else {
                 println!("PID  PPID STATE CMD");
                 println!("1    0    S     init");
