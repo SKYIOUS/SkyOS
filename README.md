@@ -72,26 +72,26 @@ SARGA OS runs on top of the **SARGA kernel** -- a monolithic Rust kernel with 90
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Userspace (SARGA OS)                     │
+│                    Userspace (SARGA OS)                 │
 │                                                         │
-│  ┌─────────────┐ ┌──────────┐ ┌────────────────────┐   │
-│  │  sash (sh)  │ │ coreutils│ │  ADE Desktop       │   │
+│  ┌─────────────┐ ┌──────────┐ ┌─────────────────────┐   │
+│  │  sash (sh)  │ │ coreutils│ │  ADE Desktop        │   │
 │  │  scripting  │ │ 62 utils │ │  Window Manager     │   │
-│  └─────────────┘ └──────────┘ └────────────────────┘   │
-│  ┌─────────────┐ ┌──────────┐ ┌────────────────────┐   │
-│  │  spkg (pkg) │ │ nettools │ │  GUI Applications  │   │
-│  │  dependency │ │ curl, nc │ │  skyedit, skyfiles │   │
-│  └─────────────┘ └──────────┘ └────────────────────┘   │
+│  └─────────────┘ └──────────┘ └─────────────────────┘   │
+│  ┌─────────────┐ ┌──────────┐ ┌─────────────────────┐   │
+│  │  spkg (pkg) │ │ nettools │ │  GUI Applications   │   │
+│  │  dependency │ │ curl, nc │ │  skyedit, skyfiles  │   │
+│  └─────────────┘ └──────────┘ └─────────────────────┘   │
 │                                                         │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │               libsarga (std lib)                │    │
-│  │  syscalls | GUI | FS | net | thread | posix    │    │
+│  │  syscalls | GUI | FS | net | thread | posix     │    │
 │  └─────────────────────────────────────────────────┘    │
 ├─────────────────────────────────────────────────────────┤
-│                     System Calls                         │
-│         (90+ Linux-compatible syscalls via `syscall`)    │
+│                     System Calls                        │
+│         (90+ Linux-compatible syscalls via `syscall`)   │
 ├─────────────────────────────────────────────────────────┤
-│                   SARGA Kernel                            │
+│                   SARGA Kernel                          │
 │  scheduler | VFS | drivers | network | SkyFS | eBPF     │
 └─────────────────────────────────────────────────────────┘
 ```

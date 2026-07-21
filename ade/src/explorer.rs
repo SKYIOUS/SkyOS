@@ -4,7 +4,6 @@
 use crate::vfs::VfsEntry;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::gui::Window;
 use libsarga::theme::Theme;
 
 /// Undo log entry for file operations
@@ -837,7 +836,7 @@ fn icon_for_entry(e: &VfsEntry) -> &'static str {
 }
 
 pub(crate) fn draw_explorer_content(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     aw: &crate::window::AppWindow,
     explorers: &[ExplorerState],
@@ -855,25 +854,25 @@ pub(crate) fn draw_explorer_content(
     let area_w = aw.w - 4;
 
     // Toolbar with nav buttons + address bar
-    win.fill_rect(area_x, y, area_w, 26, theme.bg_elevated);
+    canvas.fill_rect(area_x, y, area_w, 26, theme.bg_elevated);
     // Nav buttons
-    win.draw_string(area_x + 2, y + 5, "<", theme.text, 0);
-    win.draw_string(area_x + 20, y + 5, ">", theme.text, 0);
-    win.draw_string(area_x + 38, y + 5, "^", theme.text, 0);
-    win.draw_string(area_x + 56, y + 5, "~", theme.text, 0);
+    canvas.draw_string(area_x + 2, y + 5, "<", theme.text, 0);
+    canvas.draw_string(area_x + 20, y + 5, ">", theme.text, 0);
+    canvas.draw_string(area_x + 38, y + 5, "^", theme.text, 0);
+    canvas.draw_string(area_x + 56, y + 5, "~", theme.text, 0);
     // Address bar
     let addr_x = area_x + 80;
     let addr_w = area_w - 160;
-    win.draw_rounded_rect(addr_x, y + 3, addr_w, 20, 4, theme.bg_surface);
+    canvas.draw_rounded_rect(addr_x, y + 3, addr_w, 20, 4, theme.bg_surface);
     let display_path = if tab.path.len() > (addr_w / 8) as usize {
         &tab.path[tab.path.len().saturating_sub((addr_w / 8) as usize)..]
     } else {
         &tab.path
     };
-    win.draw_string(addr_x + 4, y + 6, display_path, theme.text_secondary, 0);
+    canvas.draw_string(addr_x + 4, y + 6, display_path, theme.text_secondary, 0);
     // Sort type view control text
     let view_names = ["List", "Grid", "Icon", "Detl"];
-    win.draw_string(
+    canvas.draw_string(
         addr_x + addr_w + 30,
         y + 5,
         view_names[tab.view_mode as usize],
@@ -884,8 +883,8 @@ pub(crate) fn draw_explorer_content(
 
     // Search bar (when search is active)
     if state.search_active {
-        win.fill_rect(area_x, y, area_w, 20, theme.bg_surface);
-        win.draw_string(
+        canvas.fill_rect(area_x, y, area_w, 20, theme.bg_surface);
+        canvas.draw_string(
             area_x + 4,
             y + 4,
             &alloc::format!(
@@ -910,8 +909,8 @@ pub(crate) fn draw_explorer_content(
     // Favorites sidebar
     let fav_x = area_x;
     if !state.favorites.is_empty() {
-        win.fill_rect(fav_x, y, fav_width, bottom - y, theme.bg_surface);
-        win.draw_string(fav_x + 4, y + 2, "Favorites", theme.accent, 0);
+        canvas.fill_rect(fav_x, y, fav_width, bottom - y, theme.bg_surface);
+        canvas.draw_string(fav_x + 4, y + 2, "Favorites", theme.accent, 0);
         let mut fy = y + 20;
         for fav in &state.favorites {
             let short = if fav.len() > 12 {
@@ -920,7 +919,7 @@ pub(crate) fn draw_explorer_content(
                 fav
             };
             if fy < bottom {
-                win.draw_string(fav_x + 6, fy, short, theme.text_secondary, 0);
+                canvas.draw_string(fav_x + 6, fy, short, theme.text_secondary, 0);
                 fy += 14;
             }
         }
@@ -940,11 +939,11 @@ pub(crate) fn draw_explorer_content(
             content_width * 20 / 100,
             content_width * 27 / 100,
         ];
-        win.fill_rect(content_x, y, content_width, 20, theme.bg_surface);
+        canvas.fill_rect(content_x, y, content_width, 20, theme.bg_surface);
         let mut cx = content_x + 6;
         for (i, (col, cw)) in cols.iter().zip(col_ws.iter()).enumerate() {
             let is_sort = (tab.sort_by as usize) == i;
-            win.draw_string(
+            canvas.draw_string(
                 cx,
                 y + 4,
                 col,
@@ -982,7 +981,7 @@ pub(crate) fn draw_explorer_content(
 
         match tab.view_mode {
             0 => draw_list(
-                win,
+                canvas,
                 theme,
                 aw,
                 content_x,
@@ -994,7 +993,7 @@ pub(crate) fn draw_explorer_content(
                 tab,
             ),
             1 => draw_grid(
-                win,
+                canvas,
                 theme,
                 aw,
                 content_x,
@@ -1006,7 +1005,7 @@ pub(crate) fn draw_explorer_content(
                 tab,
             ),
             2 => draw_icon(
-                win,
+                canvas,
                 theme,
                 aw,
                 content_x,
@@ -1018,7 +1017,7 @@ pub(crate) fn draw_explorer_content(
                 tab,
             ),
             3 => draw_details(
-                win,
+                canvas,
                 theme,
                 aw,
                 content_x,
@@ -1030,7 +1029,7 @@ pub(crate) fn draw_explorer_content(
                 tab,
             ),
             _ => draw_list(
-                win,
+                canvas,
                 theme,
                 aw,
                 content_x,
@@ -1048,14 +1047,14 @@ pub(crate) fn draw_explorer_content(
     if state.show_preview && !state.preview_content.is_empty() {
         let pv_x = content_x + content_width;
         let pv_w = preview_width;
-        win.fill_rect(
+        canvas.fill_rect(
             pv_x,
             aw.y as u32 + 57,
             pv_w,
             bottom - aw.y as u32 - 57,
             theme.bg_surface,
         );
-        win.draw_string(pv_x + 4, aw.y as u32 + 60, "Preview", theme.accent, 0);
+        canvas.draw_string(pv_x + 4, aw.y as u32 + 60, "Preview", theme.accent, 0);
         let mut py = aw.y as u32 + 72;
         for line in state.preview_content.lines().take(20) {
             if py >= bottom {
@@ -1066,7 +1065,7 @@ pub(crate) fn draw_explorer_content(
             } else {
                 line
             };
-            win.draw_string(pv_x + 4, py, display, theme.text_secondary, 0);
+            canvas.draw_string(pv_x + 4, py, display, theme.text_secondary, 0);
             py += 14;
         }
     }
@@ -1074,8 +1073,8 @@ pub(crate) fn draw_explorer_content(
     // Status bar
     let status_str = state.status_text();
     let sb_y = bottom - 16;
-    win.fill_rect(area_x, sb_y, area_w, 16, theme.bg_elevated);
-    win.draw_string(area_x + 4, sb_y + 2, &status_str, theme.text_secondary, 0);
+    canvas.fill_rect(area_x, sb_y, area_w, 16, theme.bg_elevated);
+    canvas.draw_string(area_x + 4, sb_y + 2, &status_str, theme.text_secondary, 0);
 }
 
 /// Handle mouse click on an explorer window's content area.
@@ -1180,7 +1179,7 @@ pub(crate) fn handle_explorer_click(
 }
 
 fn draw_list(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     _aw: &crate::window::AppWindow,
     area_x: u32,
@@ -1201,7 +1200,7 @@ fn draw_list(
         let abs_idx = start_idx + i;
         let ey = y + (i as u32) * item_h;
         if Some(abs_idx) == tab.sel_idx {
-            win.fill_rect(
+            canvas.fill_rect(
                 area_x,
                 ey,
                 area_w,
@@ -1209,13 +1208,13 @@ fn draw_list(
                 (theme.accent & 0x00FFFFFF) | 0x40000000,
             );
         }
-        win.draw_string(area_x + 4, ey + 1, icon_for_entry(entry), theme.text, 0);
+        canvas.draw_string(area_x + 4, ey + 1, icon_for_entry(entry), theme.text, 0);
         let name = if entry.name.len() > 28 {
             &entry.name[..28]
         } else {
             &entry.name
         };
-        win.draw_string(
+        canvas.draw_string(
             area_x + 16,
             ey + 1,
             name,
@@ -1227,7 +1226,7 @@ fn draw_list(
             0,
         );
         let size_str = format_size(entry.size);
-        win.draw_string(
+        canvas.draw_string(
             area_x + col_ws[0] + 4,
             ey + 1,
             &size_str,
@@ -1235,7 +1234,7 @@ fn draw_list(
             0,
         );
         let date_str = format_date(entry.modified);
-        win.draw_string(
+        canvas.draw_string(
             area_x + col_ws[0] + col_ws[1] + 4,
             ey + 1,
             &date_str,
@@ -1246,7 +1245,7 @@ fn draw_list(
 }
 
 fn draw_grid(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     _aw: &crate::window::AppWindow,
     area_x: u32,
@@ -1266,7 +1265,7 @@ fn draw_grid(
         let gx = area_x + col * cell_w + 2;
         let gy = y + row * item_h;
         if Some(abs_idx) == tab.sel_idx {
-            win.fill_rect(
+            canvas.fill_rect(
                 gx,
                 gy,
                 cell_w - 4,
@@ -1274,18 +1273,18 @@ fn draw_grid(
                 (theme.accent & 0x00FFFFFF) | 0x40000000,
             );
         }
-        win.draw_string(gx + 4, gy + 4, icon_for_entry(entry), theme.text, 0);
+        canvas.draw_string(gx + 4, gy + 4, icon_for_entry(entry), theme.text, 0);
         let name = if entry.name.len() > 10 {
             &entry.name[..10]
         } else {
             &entry.name
         };
-        win.draw_string(gx + 4, gy + 22, name, theme.text_secondary, 0);
+        canvas.draw_string(gx + 4, gy + 22, name, theme.text_secondary, 0);
     }
 }
 
 fn draw_icon(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     _aw: &crate::window::AppWindow,
     area_x: u32,
@@ -1306,7 +1305,7 @@ fn draw_icon(
         let abs_idx = start_idx + i;
         let ey = y + (i as u32) * item_h;
         if Some(abs_idx) == tab.sel_idx {
-            win.fill_rect(
+            canvas.fill_rect(
                 area_x,
                 ey,
                 area_w,
@@ -1314,13 +1313,13 @@ fn draw_icon(
                 (theme.accent & 0x00FFFFFF) | 0x40000000,
             );
         }
-        win.draw_string(area_x + 4, ey + 6, icon_for_entry(entry), theme.text, 0);
+        canvas.draw_string(area_x + 4, ey + 6, icon_for_entry(entry), theme.text, 0);
         let name = if entry.name.len() > 28 {
             &entry.name[..28]
         } else {
             &entry.name
         };
-        win.draw_string(
+        canvas.draw_string(
             area_x + 28,
             ey + 6,
             name,
@@ -1332,7 +1331,7 @@ fn draw_icon(
             0,
         );
         let size_str = format_size(entry.size);
-        win.draw_string(
+        canvas.draw_string(
             area_x + col_ws[0] + 4,
             ey + 6,
             &size_str,
@@ -1340,7 +1339,7 @@ fn draw_icon(
             0,
         );
         let date_str = format_date(entry.modified);
-        win.draw_string(
+        canvas.draw_string(
             area_x + col_ws[0] + col_ws[1] + 4,
             ey + 6,
             &date_str,
@@ -1351,7 +1350,7 @@ fn draw_icon(
 }
 
 fn draw_details(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     _aw: &crate::window::AppWindow,
     area_x: u32,
@@ -1374,7 +1373,7 @@ fn draw_details(
         let abs_idx = start_idx + i;
         let ey = y + (i as u32) * item_h;
         if Some(abs_idx) == tab.sel_idx {
-            win.fill_rect(
+            canvas.fill_rect(
                 area_x,
                 ey,
                 area_w,
@@ -1383,19 +1382,19 @@ fn draw_details(
             );
         }
         let mut cx = area_x + 4;
-        win.draw_string(cx, ey + 1, icon_for_entry(entry), theme.text, 0);
+        canvas.draw_string(cx, ey + 1, icon_for_entry(entry), theme.text, 0);
         let name = if entry.name.len() > 22 {
             &entry.name[..22]
         } else {
             &entry.name
         };
-        win.draw_string(cx + 14, ey + 1, name, theme.text, 0);
+        canvas.draw_string(cx + 14, ey + 1, name, theme.text, 0);
         cx += col_ws[0];
         let size_str = format_size(entry.size);
-        win.draw_string(cx, ey + 1, &size_str, theme.text_secondary, 0);
+        canvas.draw_string(cx, ey + 1, &size_str, theme.text_secondary, 0);
         cx += col_ws[1];
         let date_str = format_date(entry.modified);
-        win.draw_string(cx, ey + 1, &date_str, theme.text_secondary, 0);
+        canvas.draw_string(cx, ey + 1, &date_str, theme.text_secondary, 0);
         cx += col_ws[2];
         // type
         let ext = entry
@@ -1403,10 +1402,10 @@ fn draw_details(
             .rfind('.')
             .map(|i| &entry.name[i..])
             .unwrap_or("");
-        win.draw_string(cx, ey + 1, ext, theme.text_secondary, 0);
+        canvas.draw_string(cx, ey + 1, ext, theme.text_secondary, 0);
         cx += col_ws[3];
         // modified time
-        win.draw_string(cx, ey + 1, &date_str, theme.text_secondary, 0);
+        canvas.draw_string(cx, ey + 1, &date_str, theme.text_secondary, 0);
         cx += col_ws[4];
         // brief path
         if let Some(slash) = entry.path.rfind('/') {
@@ -1416,7 +1415,7 @@ fn draw_details(
             } else {
                 parent
             };
-            win.draw_string(cx, ey + 1, short, theme.text_disabled, 0);
+            canvas.draw_string(cx, ey + 1, short, theme.text_disabled, 0);
         }
     }
 }

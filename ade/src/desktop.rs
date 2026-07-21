@@ -9,7 +9,7 @@ use crate::geometry::{Point, Rect};
 use crate::notification::NotificationCenter;
 use crate::start_menu::StartMenuState;
 use crate::tray::SystemTray;
-use crate::window::{WindowId, WindowState};
+use crate::window::{VisualFlags, WindowId, WindowState};
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -190,8 +190,8 @@ impl Desktop {
         self.reap_children();
         let mut anim_active = false;
         for w in self.wm.iter_mut() {
-            if w.opacity < 255 {
-                w.opacity = w.opacity.saturating_add(25);
+            if w.flags.opacity < 255 {
+                w.flags.opacity = w.flags.opacity.saturating_add(25);
             }
             if w.tick_animation() {
                 anim_active = true;
@@ -596,7 +596,7 @@ impl Desktop {
             drag_oy: 0,
             state: crate::window::WindowState::Normal,
             prev_state: crate::window::WindowState::Normal,
-            opacity: 0,
+            flags: VisualFlags::new(),
             selection: None,
             anim: None,
             always_on_top: false,
@@ -622,7 +622,7 @@ impl Desktop {
         }
         let wid = self.wm.create(app_win);
         if let Some(w) = self.wm.lookup_mut(wid) {
-            w.opacity = 0;
+            w.flags.opacity = 0;
             w.animate_to(w.x, w.y, w.w, w.h);
         }
         self.notif.push("App Launched", "File Explorer", 1, 120);

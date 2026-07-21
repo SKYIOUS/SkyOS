@@ -53,6 +53,7 @@ mod wallpaper;
 mod watcher;
 mod window;
 mod window_manager;
+use render::compositor::Compositor;
 
 fn user_main() -> i32 {
     io::print_str("[ade] starting desktop environment\n");
@@ -66,6 +67,7 @@ fn user_main() -> i32 {
     };
 
     let mut desktop = Desktop::new(desktop_win.width, desktop_win.height);
+    let mut compositor = Compositor::new(desktop_win.width, desktop_win.height);
     desktop.spawn_app("/bin/sash", "Terminal");
     io::print_str("[ade] desktop running\n");
 
@@ -98,7 +100,7 @@ fn user_main() -> i32 {
         if desktop.damage.is_dirty() {
             let clock_str = desktop.prepare_clock();
             let snap = desktop.snapshot();
-            render::render(&mut desktop_win, &snap, &clock_str);
+            render::render(&mut desktop_win, &snap, &clock_str, &mut compositor);
             if let Err(e) = desktop_win.flush() {
                 io::print_str(&alloc::format!("[ade] flush error: {}\n", e));
             }

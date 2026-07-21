@@ -1,6 +1,5 @@
 //! Window primitives — AppWindow, WindowId, Selection, text cursor input handling.
 
-use libsarga::gui::Window;
 use libsarga::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +18,27 @@ pub enum WindowState {
 pub(crate) struct Selection {
     pub start: (u32, u32),
     pub end: (u32, u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VisualFlags {
+    pub shadow: bool,
+    pub opacity: u8,
+    pub rounded: bool,
+    pub border: bool,
+    pub active: bool,
+}
+
+impl VisualFlags {
+    pub(crate) fn new() -> Self {
+        VisualFlags {
+            shadow: true,
+            opacity: 255,
+            rounded: true,
+            border: true,
+            active: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -54,7 +74,7 @@ pub struct AppWindow {
     pub(crate) drag_oy: i32,
     pub(crate) state: WindowState,
     pub(crate) prev_state: WindowState,
-    pub(crate) opacity: u8,
+    pub(crate) flags: VisualFlags,
     #[allow(dead_code)]
     pub(crate) selection: Option<Selection>,
     pub(crate) anim: Option<AnimState>,
@@ -105,7 +125,7 @@ impl AppWindow {
 }
 
 pub(crate) fn draw(
-    win: &mut Window,
+    canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     aw: &AppWindow,
     cursor_visible: bool,
@@ -128,10 +148,10 @@ pub(crate) fn draw(
     };
 
     // Shadow
-    win.draw_rect_alpha(aw.x as u32 + 6, aw.y as u32 + 6, aw.w, aw.h, 0x60000000);
+    canvas.draw_rect_alpha(aw.x as u32 + 6, aw.y as u32 + 6, aw.w, aw.h, 0x60000000);
 
     // Window body
-    win.draw_rounded_rect(
+    canvas.draw_rounded_rect(
         aw.x as u32,
         aw.y as u32,
         aw.w,
@@ -140,7 +160,7 @@ pub(crate) fn draw(
         theme.bg_surface,
     );
 
-    win.draw_rounded_rect_outline(
+    canvas.draw_rounded_rect_outline(
         aw.x as u32,
         aw.y as u32,
         aw.w,
@@ -162,7 +182,7 @@ pub(crate) fn draw(
         theme.bg_surface
     };
 
-    win.draw_gradient_rect(
+    canvas.draw_gradient_rect(
         aw.x as u32 + 1,
         aw.y as u32 + 1,
         aw.w - 2,
@@ -172,10 +192,10 @@ pub(crate) fn draw(
         false,
     );
 
-    win.draw_string(aw.x as u32 + 12, aw.y as u32 + 7, &aw.title, 0xFFFFFFFF, 0);
+    canvas.draw_string(aw.x as u32 + 12, aw.y as u32 + 7, &aw.title, 0xFFFFFFFF, 0);
 
     if aw.always_on_top {
-        win.draw_string(
+        canvas.draw_string(
             aw.x as u32 + aw.w - 82,
             aw.y as u32 + 7,
             "[A]",
@@ -188,17 +208,17 @@ pub(crate) fn draw(
     let close_x = aw.x as u32 + aw.w - 28;
     let close_y = aw.y as u32 + 6;
 
-    win.draw_rounded_rect(close_x, close_y, 22, 18, 4, theme.error);
-    win.draw_string(close_x + 7, close_y + 2, "x", 0xFFFFFFFF, 0);
+    canvas.draw_rounded_rect(close_x, close_y, 22, 18, 4, theme.error);
+    canvas.draw_string(close_x + 7, close_y + 2, "x", 0xFFFFFFFF, 0);
 
     // Minimize button
     let min_x = aw.x as u32 + aw.w - 54;
-    win.draw_rounded_rect(min_x, close_y, 22, 18, 4, theme.bg_elevated);
-    win.draw_line_h(min_x + 6, close_y + 14, 10, 0xFFFFFFFF);
+    canvas.draw_rounded_rect(min_x, close_y, 22, 18, 4, theme.bg_elevated);
+    canvas.draw_line_h(min_x + 6, close_y + 14, 10, 0xFFFFFFFF);
 
     // Explorer content
     if let Some(exp_id) = aw.explorer_id {
-        crate::explorer::draw_explorer_content(win, theme, aw, explorers, exp_id);
+        crate::explorer::draw_explorer_content(canvas, theme, aw, explorers, exp_id);
         return;
     }
 
@@ -221,7 +241,7 @@ pub(crate) fn draw(
 
         let display = if line.len() > 55 { &line[..55] } else { line };
 
-        win.draw_string(aw.x as u32 + 8, ly, display, theme.text_secondary, 0);
+        canvas.draw_string(aw.x as u32 + 8, ly, display, theme.text_secondary, 0);
     }
 
     if cursor_visible && aw.focused && !aw.content.is_empty() {
@@ -231,7 +251,7 @@ pub(crate) fn draw(
             + 30
             + (aw.content.len().saturating_sub(1) as u32 - aw.scroll).saturating_sub(1) * 14;
         if cy < aw.y as u32 + aw.h {
-            win.draw_char(cx, cy, '_', theme.accent, 0);
+            canvas.draw_char(cx, cy, '_', theme.accent, 0);
         }
     }
 }

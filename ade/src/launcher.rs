@@ -2,7 +2,7 @@
 
 use crate::app_db::APPS;
 use crate::desktop::Desktop;
-use crate::window::{AppWindow, WindowState};
+use crate::window::{AppWindow, VisualFlags, WindowState};
 
 pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
     if path == "/bin/skyfiles" {
@@ -52,7 +52,7 @@ pub(crate) fn spawn_app_at(
         drag_oy: 0,
         state: WindowState::Normal,
         prev_state: WindowState::Normal,
-        opacity: 0,
+        flags: VisualFlags::new(),
         selection: None,
         anim: None,
         always_on_top: false,
@@ -82,7 +82,7 @@ pub(crate) fn spawn_app_at(
     }
     let id = desktop.wm.create(app_win);
     if let Some(w) = desktop.wm.lookup_mut(id) {
-        w.opacity = 0;
+        w.flags.opacity = 0;
         w.animate_to(w.x, w.y, w.w, w.h);
     }
     desktop.notif.push("App Launched", title, 1, 120);

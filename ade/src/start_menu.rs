@@ -2,9 +2,9 @@
 
 use crate::app_db::{AppCategory, AppDb, APPS, CATEGORIES};
 use crate::geometry::{Point, Rect};
+use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
 use alloc::vec::Vec;
-use libsarga::gui::Window;
 
 pub(crate) struct StartMenuState {
     pub open: bool,
@@ -65,7 +65,7 @@ const SEARCH_H: u32 = 36;
 const ITEM_H: u32 = 32;
 const SIDEBAR_W: u32 = 130;
 
-pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
+pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
     let state = match snap.start_menu_state {
         Some(s) => s,
         None => return,
@@ -84,18 +84,18 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
     let menu_y = ty.saturating_sub(MENU_H + 4);
 
     // backdrop
-    win.draw_rounded_rect(menu_x, menu_y, MENU_W, MENU_H, 8, 0xFF1E1E2E);
-    win.draw_rounded_rect_outline(menu_x, menu_y, MENU_W, MENU_H, 8, 0xFF3A3A5C);
+    canvas.draw_rounded_rect(menu_x, menu_y, MENU_W, MENU_H, 8, 0xFF1E1E2E);
+    canvas.draw_rounded_rect_outline(menu_x, menu_y, MENU_W, MENU_H, 8, 0xFF3A3A5C);
 
     // search bar
     let search_y = menu_y + 8;
-    win.draw_rounded_rect(menu_x + 8, search_y, MENU_W - 16, SEARCH_H, 6, 0xFF2D2D40);
+    canvas.draw_rounded_rect(menu_x + 8, search_y, MENU_W - 16, SEARCH_H, 6, 0xFF2D2D40);
     let display = if state.search.is_empty() {
         "  Search applications..."
     } else {
         core::str::from_utf8(&state.search).unwrap_or("")
     };
-    win.draw_string(
+    canvas.draw_string(
         menu_x + 14,
         search_y + 8,
         display,
@@ -111,7 +111,7 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
     let sidebar_x = menu_x + 4;
     let sidebar_y = search_y + SEARCH_H + 6;
     let sidebar_h = MENU_H - (sidebar_y - menu_y) - 8;
-    win.draw_rounded_rect(sidebar_x, sidebar_y, SIDEBAR_W, sidebar_h, 6, 0xFF252535);
+    canvas.draw_rounded_rect(sidebar_x, sidebar_y, SIDEBAR_W, sidebar_h, 6, 0xFF252535);
 
     for (i, &(cat_name, _)) in CATEGORIES.iter().enumerate() {
         let iy = sidebar_y + 4 + i as u32 * 28;
@@ -121,8 +121,8 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
         let selected = i == state.cat_idx;
         let bg = if selected { theme.accent } else { 0xFF252535 };
         let txt = if selected { 0xFFFFFFFF } else { 0xFFB0B0B0 };
-        win.draw_rounded_rect(sidebar_x + 4, iy, SIDEBAR_W - 8, 24, 4, bg);
-        win.draw_string(sidebar_x + 10, iy + 5, cat_name, txt, 0);
+        canvas.draw_rounded_rect(sidebar_x + 4, iy, SIDEBAR_W - 8, 24, 4, bg);
+        canvas.draw_string(sidebar_x + 10, iy + 5, cat_name, txt, 0);
     }
 
     // app list
@@ -149,13 +149,13 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
             } else {
                 0xFF1E1E2E
             };
-            win.draw_rounded_rect(list_x, iy, list_w, ITEM_H - 2, 4, bg);
+            canvas.draw_rounded_rect(list_x, iy, list_w, ITEM_H - 2, 4, bg);
             let label = if app.name.len() > 28 {
                 &app.name[..28]
             } else {
                 app.name
             };
-            win.draw_string(
+            canvas.draw_string(
                 list_x + 8,
                 iy + 7,
                 label,
@@ -168,22 +168,22 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
                 } else {
                     app.name
                 };
-                win.draw_string(
+                canvas.draw_string(
                     list_x + 8,
                     iy + 7,
                     pin_label,
                     if sel { 0xFFFFFFFF } else { 0xFFD0D0D0 },
                     0,
                 );
-                win.draw_string(list_x + list_w - 50, iy + 7, "[Pin]", 0xFFFFAA00, 0);
+                canvas.draw_string(list_x + list_w - 50, iy + 7, "[Pin]", 0xFFFFAA00, 0);
             }
         }
     }
 
     // bottom: recent strip
     let bottom_y = menu_y + MENU_H - 36;
-    win.draw_rect(menu_x + 2, bottom_y, MENU_W - 4, 34, 0xFF252540);
-    win.draw_string(menu_x + 12, bottom_y + 10, "Recent:", 0xFF888888, 0);
+    canvas.draw_rect(menu_x + 2, bottom_y, MENU_W - 4, 34, 0xFF252540);
+    canvas.draw_string(menu_x + 12, bottom_y + 10, "Recent:", 0xFF888888, 0);
     let mut rx = menu_x + 72;
     for &idx in db.recent.iter() {
         if rx > menu_x + MENU_W - 20 {
@@ -197,7 +197,7 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
         };
         let hover = Rect::new(rx as i32, bottom_y as i32 + 2, 80, 30)
             .hit_test(Point::new(snap.mouse.x, snap.mouse.y));
-        win.draw_rounded_rect(
+        canvas.draw_rounded_rect(
             rx,
             bottom_y + 4,
             80,
@@ -205,7 +205,7 @@ pub(crate) fn draw(win: &mut Window, snap: &RenderSnapshot) {
             4,
             if hover { 0xFF3A3A5C } else { 0xFF2D2D40 },
         );
-        win.draw_string(rx + 6, bottom_y + 7, label, 0xFFD0D0D0, 0);
+        canvas.draw_string(rx + 6, bottom_y + 7, label, 0xFFD0D0D0, 0);
         rx += 84;
     }
 }

@@ -1,9 +1,9 @@
 //! Desktop icons — selection, multi-select, move, delete, rectangle selection.
 
 use crate::geometry::{Point, Rect};
+use crate::render::compositor::Canvas;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::gui::Window;
 
 pub(crate) struct DesktopIcon {
     pub name: String,
@@ -94,14 +94,14 @@ impl DesktopIcons {
 }
 
 pub(crate) fn draw(
-    win: &mut Window,
+    canvas: &mut Canvas,
     icons: &[DesktopIcon],
     theme: &libsarga::theme::Theme,
     rubber: Option<(i32, i32, i32, i32)>,
 ) {
     for ic in icons {
         if ic.selected {
-            win.draw_rounded_rect_outline(
+            canvas.draw_rounded_rect_outline(
                 ic.x as u32 - 2,
                 ic.y as u32 - 2,
                 52,
@@ -110,8 +110,8 @@ pub(crate) fn draw(
                 theme.accent,
             );
         }
-        win.draw_rounded_rect(ic.x as u32 + 8, ic.y as u32 + 2, 32, 32, 8, 0xFF3D5AFE);
-        win.draw_string(
+        canvas.draw_rounded_rect(ic.x as u32 + 8, ic.y as u32 + 2, 32, 32, 8, 0xFF3D5AFE);
+        canvas.draw_string(
             ic.x as u32 + 4,
             ic.y as u32 + 40,
             if ic.name.len() > 8 {
@@ -128,7 +128,7 @@ pub(crate) fn draw(
         let ry = y1.min(y2) as u32;
         let rw = (x1 - x2).abs() as u32;
         let rh = (y1 - y2).abs() as u32;
-        win.draw_rect_alpha(rx, ry, rw, rh, 0x223D5AFE);
-        win.draw_rect_outline(rx, ry, rw, rh, 0xFF3D5AFE);
+        canvas.draw_rect_alpha(rx, ry, rw, rh, 0x223D5AFE);
+        canvas.draw_rect_outline(rx, ry, rw, rh, 0xFF3D5AFE);
     }
 }
