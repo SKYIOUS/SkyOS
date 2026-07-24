@@ -9,7 +9,7 @@ if (!(Test-Path "kernel")) {
     exit 1
 }
 
-Write-Host "--- SARGA OS Bootimage Builder ---" -ForegroundColor Cyan
+Write-Host "--- Vahi OS Bootimage Builder ---" -ForegroundColor Cyan
 
 # 0. Build userspace first (init, sargash, etc.)
 Write-Host "Step 0: Building userspace..." -ForegroundColor Gray
@@ -21,9 +21,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # 1. Build the kernel
 Write-Host "Step 1: Building kernel..." -ForegroundColor Gray
-cd kernel
+Set-Location kernel
 cargo build --target x86_64-unknown-none
-cd ..
+Set-Location ..
 
 # 2. Run the image builder
 Write-Host "Step 2: Running image builder..." -ForegroundColor Gray

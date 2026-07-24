@@ -10,6 +10,7 @@ if (-not (Test-Path $KERNEL_PATH)) {
     exit 1
 }
 
+# ponytail: no -usb -device usb-tablet — kernel only has PS/2 mouse driver
 Write-Host "Starting Sarga OS in QEMU..." -ForegroundColor Cyan
 
 qemu-system-x86_64 `

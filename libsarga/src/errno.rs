@@ -169,6 +169,15 @@ pub const ERANGE: i32 = 34;
 pub const ENOSYS: i32 = 38;
 pub const EAFNOSUPPORT: i32 = 97;
 pub const EADDRINUSE: i32 = 98;
+pub const ENOTSUP: i32 = 95;
+pub const EOVERFLOW: i32 = 75;
+pub const ECANCELED: i32 = 125;
+pub const EOWNERDEAD: i32 = 130;
+pub const ENOTRECOVERABLE: i32 = 131;
+pub const ETIME: i32 = 62;
+pub const ENODATA: i32 = 61;
+pub const EPROTO: i32 = 71;
+pub const EBADMSG: i32 = 74;
 
 #[cfg(test)]
 mod tests {

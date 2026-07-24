@@ -7,8 +7,8 @@ Write-Host "--- Building SkyOS Userspace ---" -ForegroundColor Cyan
 
 # Step 1: Build with cargo
 # ponytail: removed Set-Location to userspace/ — no such subdirectory
-$target = "x86_64-skyos"
-$targetJson = "target\$target.json"
+$target = "x86_64-sarga"
+$targetJson = "$target.json"
 
 # Build release for smaller binaries
 $env:RUSTC_BOOTSTRAP=1
@@ -34,7 +34,10 @@ Copy-Item "$releaseDir\vahid" "$binDir\vahid" -Force
   'rmdir','touch','hostname','which','env','echo','head','tail','wc','grep','ln','chmod',
   'printf','sort','uniq','uptime',
   'ping','nslookup','wget','ifconfig','netstat','telnet',
-  'beep','dd','blkid','fdisk','df','du') | ForEach-Object {
+  'beep','dd','blkid','fdisk','df','du',
+  'more','less','expr','seq','fold','mknod','mkfifo','tsort',
+  'tty','logname','nohup','shuf','users','split','sum','stdbuf',
+  'md5sum','base64') | ForEach-Object {
     Copy-Item "$releaseDir\$_" "$binDir\$_" -Force
 }
 

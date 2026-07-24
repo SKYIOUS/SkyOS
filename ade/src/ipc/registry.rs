@@ -1,0 +1,82 @@
+#![allow(dead_code)]
+
+use alloc::vec::Vec;
+
+/// IPC API v1.0 — STABLE
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ServiceId {
+    Clipboard,
+    Notification,
+    Launcher,
+    FileDialog,
+    Settings,
+    Session,
+    Window,
+    Theme,
+    Power,
+}
+
+/// IPC API v1.0 — STABLE
+#[derive(Clone, Debug)]
+pub(crate) struct ServiceInfo {
+    pub id: ServiceId,
+    pub name: &'static str,
+    pub version: u32,
+    pub required_permissions: u32,
+    pub available: bool,
+}
+
+/// IPC API v1.0 — STABLE
+pub(crate) struct ServiceRegistry {
+    pub services: Vec<ServiceInfo>,
+}
+
+impl ServiceRegistry {
+    pub fn new() -> Self {
+        ServiceRegistry {
+            services: Vec::new(),
+        }
+    }
+
+    pub fn find(&self, id: ServiceId) -> Option<&ServiceInfo> {
+        self.services.iter().find(|s| s.id == id)
+    }
+
+    pub fn find_by_name(&self, name: &str) -> Option<&ServiceInfo> {
+        self.services.iter().find(|s| s.name == name)
+    }
+
+    pub fn find_by_permission(&self, perm: u32) -> Vec<&ServiceInfo> {
+        self.services
+            .iter()
+            .filter(|s| s.required_permissions & perm == perm)
+            .collect()
+    }
+
+    pub fn register(&mut self, info: ServiceInfo) {
+        if !self.services.iter().any(|s| s.id == info.id) {
+            self.services.push(info);
+        }
+    }
+
+    pub fn set_available(&mut self, id: ServiceId, available: bool) {
+        for s in &mut self.services {
+            if s.id == id {
+                s.available = available;
+                return;
+            }
+        }
+    }
+
+    pub fn all(&self) -> &[ServiceInfo] {
+        &self.services
+    }
+
+    pub fn discover(&self, name: &str) -> Option<&ServiceInfo> {
+        self.find_by_name(name)
+    }
+
+    pub fn discover_by_permission(&self, perm: u32) -> Vec<&ServiceInfo> {
+        self.find_by_permission(perm)
+    }
+}

@@ -1,5 +1,5 @@
-use crate::syscall::syscall2;
-use crate::syscall::syscall6;
+use crate::errno::Error;
+use crate::syscall::*;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -159,6 +159,138 @@ pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
         }
     }
     0
+}
+
+// ── Shared Memory ─────────────────────────────────────────────────
+
+pub fn shmget(key: i32, size: usize, flags: i32) -> Result<i32, Error> {
+    let r = unsafe { syscall3(SYS_SHMGET, key as u64, size as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+}
+
+pub fn shmat(shmid: i32, addr: Option<*const u8>, flags: i32) -> Result<*mut u8, Error> {
+    let addr_ptr = addr.unwrap_or(core::ptr::null()) as u64;
+    let r = unsafe { syscall3(SYS_SHMAT, shmid as u64, addr_ptr, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as *mut u8) }
+}
+
+pub fn shmdt(addr: *const u8) -> Result<(), Error> {
+    let r = unsafe { syscall1(SYS_SHMDT, addr as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+#[repr(C)]
+pub struct ShmIdDs {
+    pub shm_perm: IpcPerm,
+    pub shm_segsz: usize,
+    pub shm_atime: u64,
+    pub shm_dtime: u64,
+    pub shm_ctime: u64,
+    pub shm_cpid: i32,
+    pub shm_lpid: i32,
+    pub shm_nattch: u64,
+}
+
+#[repr(C)]
+pub struct IpcPerm {
+    pub key: i32,
+    pub uid: u32,
+    pub gid: u32,
+    pub cuid: u32,
+    pub cgid: u32,
+    pub mode: u16,
+    pub _pad: [u8; 6],
+}
+
+pub const IPC_RMID: i32 = 0;
+pub const IPC_SET: i32 = 1;
+pub const IPC_STAT: i32 = 2;
+pub const IPC_CREAT: i32 = 0o1000;
+pub const IPC_EXCL: i32 = 0o2000;
+
+pub fn shmctl(shmid: i32, cmd: i32, buf: Option<&mut ShmIdDs>) -> Result<(), Error> {
+    let buf_ptr = buf.map_or(0, |b| b as *mut ShmIdDs as u64);
+    let r = unsafe { syscall3(SYS_SHMCTL, shmid as u64, cmd as u64, buf_ptr) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+// ── memfd_create ──────────────────────────────────────────────────
+
+pub fn memfd_create(name: &str, flags: u32) -> Result<i64, Error> {
+    let mut buf = alloc::vec::Vec::from(name.as_bytes());
+    buf.push(0);
+    let r = unsafe { syscall2(SYS_MEMFD_CREATE, buf.as_ptr() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
+// ─── POSIX timers ──────────────────────────────────────────────────
+
+#[repr(C)]
+pub struct Sigevent {
+    pub sigev_value: i64,
+    pub sigev_signo: i32,
+    pub sigev_notify: i32,
+}
+
+#[repr(C)]
+pub struct Itimerspec {
+    pub it_interval: crate::posix::Timespec,
+    pub it_value: crate::posix::Timespec,
+}
+
+pub fn timer_create(clockid: i32, evp: Option<&Sigevent>) -> Result<i32, Error> {
+    let evp_ptr = evp.map_or(0, |e| e as *const Sigevent as u64);
+    let mut timerid: i32 = 0;
+    let r = unsafe { syscall3(SYS_TIMER_CREATE, clockid as u64, evp_ptr, (&mut timerid as *mut i32) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(timerid) }
+}
+
+pub fn timer_settime(timerid: i32, flags: i32, new: &Itimerspec, old: Option<&mut Itimerspec>) -> Result<(), Error> {
+    let old_ptr = old.map_or(0, |o| o as *mut Itimerspec as u64);
+    let r = unsafe { syscall4(SYS_TIMER_SETTIME, timerid as u64, flags as u64, new as *const Itimerspec as u64, old_ptr) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+pub fn timer_gettime(timerid: i32) -> Result<Itimerspec, Error> {
+    let mut val = Itimerspec {
+        it_interval: crate::posix::Timespec { sec: 0, nsec: 0 },
+        it_value: crate::posix::Timespec { sec: 0, nsec: 0 },
+    };
+    let r = unsafe { syscall2(SYS_TIMER_GETTIME, timerid as u64, (&mut val as *mut Itimerspec) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(val) }
+}
+
+pub fn timer_getoverrun(timerid: i32) -> Result<i32, Error> {
+    let r = unsafe { syscall1(SYS_TIMER_GETOVERRUN, timerid as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+}
+
+pub fn timer_delete(timerid: i32) -> Result<(), Error> {
+    let r = unsafe { syscall1(SYS_TIMER_DELETE, timerid as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+// ── mprotect ──────────────────────────────────────────────────────
+
+pub fn mprotect(addr: u64, len: usize, prot: i32) -> Result<(), Error> {
+    let r = unsafe { syscall3(SYS_MPROTECT, addr, len as u64, prot as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+// ── swapon/swapoff ──────────────────────────────────────────────────
+
+pub fn swapon(path: &str, flags: i32) -> Result<(), Error> {
+    let mut buf = alloc::vec::Vec::from(path.as_bytes());
+    buf.push(0);
+    let r = unsafe { syscall2(SYS_SWAPON, buf.as_ptr() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+pub fn swapoff(path: &str) -> Result<(), Error> {
+    let mut buf = alloc::vec::Vec::from(path.as_bytes());
+    buf.push(0);
+    let r = unsafe { syscall1(SYS_SWAPOFF, buf.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
 }
 
 #[no_mangle]

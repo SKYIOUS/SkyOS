@@ -23,14 +23,14 @@
   },
   "panic-strategy": "abort",
   "plt-by-default": true,
-  "dynamic-linking": true,
-  "position-independent-executables": true,
+  "dynamic-linking": false,
+  "position-independent-executables": false,
   "relro-level": "full",
   "rustc-abi": "x86-softfloat",
   "stack-probes": {
     "kind": "inline"
   },
-  "static-position-independent-executables": true,
+  "static-position-independent-executables": false,
   "supported-sanitizers": ["kcfi", "kernel-address"],
   "target-pointer-width": 64
 }

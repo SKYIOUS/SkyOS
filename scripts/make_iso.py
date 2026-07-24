@@ -74,7 +74,7 @@ def create_iso(esp_path, output_path, version):
     content_dir = os.path.join(build_dir, 'iso_root')
     os.makedirs(content_dir, exist_ok=True)
     with open(os.path.join(content_dir, 'README.txt'), 'w') as f:
-        f.write(f'SARGA OS {version} - UEFI Bootable\n')
+        f.write(f'Vahi OS {version} - UEFI Bootable\n')
     shutil.copy2(esp_path, os.path.join(content_dir, 'esp.img'))
 
     cmd = ['xorriso', '-as', 'mkisofs',
@@ -106,7 +106,10 @@ def create_iso(esp_path, output_path, version):
             rec_len = rd[off]
             if rec_len == 0: break
             name_len = rd[off + 32]
-            name = rd[off + 33:off + 33 + name_len].decode('ascii', errors='replace').split(';')[0].rstrip('.')
+            name = rd[off + 33:off + 33 + name_len].decode('ascii', errors='replace').split(';')[0]
+            # ponytail: strip trailing dot only when ISO stored NAME.;1 (no-extension file)
+            if name.endswith('.'):
+                name = name.rstrip('.')
             file_lba = struct.unpack_from('<I', rd, off + 2)[0]
             file_size = struct.unpack_from('<I', rd, off + 10)[0]
             if name.upper() == 'BOOT.CATALOG': cat_lbn = file_lba
@@ -179,12 +182,13 @@ def create_iso(esp_path, output_path, version):
         f.write(all_entries)
         backup_hdr = bytearray(gpt_hdr)
         backup_hdr[24:32] = struct.pack('<Q', last_lba)
-        backup_hdr[32:40] = struct.pack('<Q', 1)
+        backup_hdr[32:40] = struct.pack('<Q', 34)
         backup_hdr[16:20] = b'\x00\x00\x00\x00'
         backup_hdr[16:20] = struct.pack('<I', zlib.crc32(backup_hdr) & 0xFFFFFFFF)
         f.seek(last_lba * 512)
         f.write(backup_hdr)
 
+    shutil.rmtree(content_dir, ignore_errors=True)
     print(f"  Hybrid: MBR=YES GPT=YES (ESP LBA={esp_lba}, {esp_sectors} sectors)")
     return True
 

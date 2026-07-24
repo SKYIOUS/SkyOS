@@ -293,3 +293,75 @@ path = "src/blkid.rs"
 [[bin]]
 name = "fdisk"
 path = "src/fdisk.rs"
+
+[[bin]]
+name = "more"
+path = "src/more.rs"
+
+[[bin]]
+name = "less"
+path = "src/less.rs"
+
+[[bin]]
+name = "expr"
+path = "src/expr.rs"
+
+[[bin]]
+name = "seq"
+path = "src/seq.rs"
+
+[[bin]]
+name = "fold"
+path = "src/fold.rs"
+
+[[bin]]
+name = "mknod"
+path = "src/mknod.rs"
+
+[[bin]]
+name = "mkfifo"
+path = "src/mkfifo.rs"
+
+[[bin]]
+name = "tsort"
+path = "src/tsort.rs"
+
+[[bin]]
+name = "tty"
+path = "src/tty.rs"
+
+[[bin]]
+name = "logname"
+path = "src/logname.rs"
+
+[[bin]]
+name = "nohup"
+path = "src/nohup.rs"
+
+[[bin]]
+name = "shuf"
+path = "src/shuf.rs"
+
+[[bin]]
+name = "users"
+path = "src/users.rs"
+
+[[bin]]
+name = "split"
+path = "src/split.rs"
+
+[[bin]]
+name = "sum"
+path = "src/sum.rs"
+
+[[bin]]
+name = "stdbuf"
+path = "src/stdbuf.rs"
+
+[[bin]]
+name = "md5sum"
+path = "src/md5sum.rs"
+
+[[bin]]
+name = "base64"
+path = "src/base64.rs"

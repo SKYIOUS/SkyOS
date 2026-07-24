@@ -8,24 +8,23 @@ pub(crate) fn draw_clipboard(canvas: &mut Canvas, snap: &RenderSnapshot) {
         Some(c) => c,
         None => return,
     };
-    if !cb.panel_open {
+    if cb.is_empty() {
         return;
     }
+    let hist = cb.history();
     let pw = 280u32;
-    let ph = (cb.history.len() as u32 * 28 + 16).min(300);
+    let ph = (hist.len() as u32 * 28 + 16).min(300);
     let px = (snap.screen_w - pw) / 2;
     let py = (snap.screen_h - ph) / 3;
-    canvas.draw_rect_alpha(0, 0, snap.screen_w, snap.screen_h, 0x40000000);
-    canvas.draw_rounded_rect(px, py, pw, ph, 8, 0xFF2D2D2D);
-    canvas.draw_rounded_rect_outline(px, py, pw, ph, 8, 0xFF555555);
-    canvas.draw_string(px + 10, py + 6, "Clipboard History", 0xFFFFFFFF, 0);
-    for (i, entry) in cb.history.iter().enumerate() {
+    crate::core::dialog::draw_backdrop(canvas, snap.screen_w, snap.screen_h);
+    crate::core::dialog::draw_panel(canvas, px, py, pw, ph, "Clipboard History");
+    for (i, entry) in cb.history().iter().enumerate() {
         let iy = py + 30 + i as u32 * 28;
         if iy + 24 > py + ph {
             break;
         }
         let hover =
-            crate::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24).hit_test(snap.mouse);
+            crate::core::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24).hit_test(snap.mouse);
         let bg = if hover { 0xFF3A3A5C } else { 0xFF2D2D2D };
         canvas.draw_rounded_rect(px + 4, iy, pw - 8, 24, 4, bg);
         let txt = if entry.text.len() > 28 {
@@ -34,37 +33,6 @@ pub(crate) fn draw_clipboard(canvas: &mut Canvas, snap: &RenderSnapshot) {
             &entry.text
         };
         canvas.draw_string(px + 10, iy + 5, txt, 0xFFD0D0D0, 0);
-        if entry.pinned {
-            canvas.draw_char(px + pw - 22, iy + 5, 'P', 0xFFFFAA00, 0);
-        }
-    }
-}
-
-pub(crate) fn draw_notifications(canvas: &mut Canvas, snap: &RenderSnapshot) {
-    let mut ny = 10i32;
-    for n in snap.notifications {
-        let c = if n.priority >= 2 {
-            0xFFFF4444u32
-        } else {
-            snap.theme.accent
-        };
-        canvas.draw_rounded_rect(snap.screen_w - 310, ny as u32, 300, 64, 8, 0xFF2D2D2D);
-        canvas.draw_rounded_rect_outline(snap.screen_w - 310, ny as u32, 300, 64, 8, c);
-        canvas.draw_string(snap.screen_w - 302, ny as u32 + 6, &n.title, 0xFFFFFFFF, 0);
-        let body = if n.body.len() > 36 {
-            &n.body[..36]
-        } else {
-            &n.body
-        };
-        canvas.draw_string(snap.screen_w - 302, ny as u32 + 26, body, 0xFFB0B0B0, 0);
-        if n.timeout > 0 {
-            let frac = n.ticks_left.max(1) as u32 * 290 / n.timeout;
-            canvas.draw_rect(snap.screen_w - 305, ny as u32 + 56, frac, 3, c);
-        }
-        ny += 72;
-        if ny > 300 {
-            break;
-        }
     }
 }
 

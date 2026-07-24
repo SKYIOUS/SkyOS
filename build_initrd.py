@@ -73,6 +73,8 @@ def build_initrd(root_dir: str, output_path: str):
         'var/cache',
         'var/spool',
         'var/spkg',
+        'var/spkg/cache',
+        'etc/spkg',
         'home/root',
         'mnt/cdrom',
         'mnt/usb',
@@ -85,6 +87,7 @@ def build_initrd(root_dir: str, output_path: str):
         'etc/passwd': None,
         'etc/shadow': None,
         'etc/group': None,
+        'etc/spkg/repos.conf': None,
     }
 
     if os.path.exists(output_path):
@@ -120,6 +123,7 @@ def build_initrd(root_dir: str, output_path: str):
             'etc/passwd': PASSWD_CONTENT,
             'etc/shadow': SHADOW_CONTENT,
             'etc/group': GROUP_CONTENT,
+            'etc/spkg/repos.conf': REPOS_CONTENT,
         }
         for arcname, data in config_data.items():
             info = tarfile.TarInfo(name=arcname)
@@ -174,6 +178,15 @@ SHADOW_CONTENT = """root:$6$rounds=5000$usesalt$:12000:0:99999:7:::
 GROUP_CONTENT = """root:x:0:root
 wheel:x:1:root
 users:x:100:
+"""
+
+REPOS_CONTENT = """[repo.stable]
+url = "https://packages.skyos.dev/stable/"
+enabled = true
+
+[repo.testing]
+url = "https://packages.skyos.dev/testing/"
+enabled = false
 """
 
 INIT_TOML_CONTENT = """hostname = "skyos"

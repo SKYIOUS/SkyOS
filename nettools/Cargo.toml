@@ -41,3 +41,11 @@ path = "src/httpd.rs"
 [[bin]]
 name = "wget"
 path = "src/wget.rs"
+
+[[bin]]
+name = "ssh-server"
+path = "src/ssh_server.rs"
+
+[[bin]]
+name = "dhcp-client"
+path = "src/dhcp_client.rs"

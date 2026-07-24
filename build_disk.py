@@ -8,7 +8,7 @@ def run_command(command, cwd=None, env=None):
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
-    result = subprocess.run(command, cwd=cwd, shell=True, env=full_env)
+    result = subprocess.run(command, cwd=cwd, env=full_env)
     if result.returncode != 0:
         print(f"Error: Command failed with return code {result.returncode}")
         sys.exit(1)
@@ -42,7 +42,8 @@ def main():
     run_command(["cargo", "+nightly", "run", "--manifest-path", "builder/Cargo.toml"], cwd=root_dir, env={"RUST_BACKTRACE": "1"})
     
     # 3. Locate the output file
-    uefi_path = os.path.join(root_dir, "target", "x86_64-vahi", "debug", "bootimage-vahi_kernel.bin")
+    target_triple = os.environ.get("VAHI_TARGET_TRIPLE", "x86_64-vahi")
+    uefi_path = os.path.join(root_dir, "target", target_triple, "debug", "bootimage-vahi_kernel.bin")
     
     if not os.path.exists(uefi_path):
         print(f"Error: Could not find UEFI image at {uefi_path}")
@@ -62,16 +63,18 @@ def main():
         except Exception as e:
             print(f"Warning: Could not remove old VDI (is VirtualBox running?): {e}")
     
-    vbox_path = r"C:\Program Files\Oracle\VirtualBox\VBoxManage"
+    vbox_path = shutil.which("VBoxManage") or r"C:\Program Files\Oracle\VirtualBox\VBoxManage"
     try:
         run_command([vbox_path, "convertfromraw", output_uefi, output_vdi, "--format", "VDI"])
         print(f"SUCCESS: Created VirtualBox disk at {output_vdi}")
         
         # Resize to 64MB to satisfy some picky firmwares
         print("Resizing VDI to 64MB...")
-        # Use subprocess directly to avoid run_command's exit(1)
-        subprocess.run([vbox_path, "modifymedium", "disk", output_vdi, "--resize", "64"])
-        print("Resize attempt finished.")
+        r = subprocess.run([vbox_path, "modifymedium", "disk", output_vdi, "--resize", "64"])
+        if r.returncode != 0:
+            print(f"Warning: VDI resize returned {r.returncode} (non-fatal)")
+        else:
+            print("Resize finished.")
     except Exception as e:
         print("Warning: VBoxManage conversion failed.")
         print(f"Error detail: {e}")

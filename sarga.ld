@@ -42,7 +42,6 @@ SECTIONS {
     /DISCARD/ : {
         *(.note.gnu.property)
         *(.comment)
-        *(.ARM.exidx)
         *(.note.GNU-stack)
     }
 }

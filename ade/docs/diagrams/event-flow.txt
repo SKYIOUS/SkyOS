@@ -1,0 +1,8 @@
+Input → Desktop.handle_event()
+  ├─ Key → handle_a11y_key()? → yes: focus navigation
+  │        → no: handle_key() → shortcuts → app input
+  ├─ MouseClick → handle_click() → window/icon/context
+  ├─ MouseRight → context menu / system menu
+  ├─ MouseDrag → drag operation (move/resize/rubber)
+  ├─ MouseRelease → end drag
+  └─ Scroll → window scroll / notification scroll

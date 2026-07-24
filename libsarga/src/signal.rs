@@ -217,3 +217,77 @@ pub fn W_EXITCODE(code: i32, sig: i32) -> i32 {
 pub fn W_STOPCODE(sig: i32) -> i32 {
     (sig << 8) | 0x7f
 }
+
+// ── Signal stack ──────────────────────────────────────────────────
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct StackT {
+    pub ss_sp: *mut u8,
+    pub ss_flags: i32,
+    pub ss_size: usize,
+}
+
+pub const SS_ONSTACK: i32 = 1;
+pub const SS_DISABLE: i32 = 2;
+
+pub const SIGSTKSZ: usize = 8192;
+pub const MINSIGSTKSZ: usize = 2048;
+
+pub fn sigaltstack(ss: Option<&StackT>, old_ss: Option<&mut StackT>) -> Result<(), Error> {
+    let ss_ptr = ss.map_or(0, |s| s as *const StackT as u64);
+    let old_ptr = old_ss.map_or(0, |s| s as *mut StackT as u64);
+    let r = unsafe { syscall2(SYS_SIGALTSTACK, ss_ptr, old_ptr) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+// ── signalfd ──────────────────────────────────────────────────────
+
+/// Create a file descriptor for accepting signals.
+pub fn signalfd(fd: i64, mask: SigSet, flags: i32) -> Result<i64, Error> {
+    let r = unsafe { syscall3(SYS_SIGNALFD, fd as u64, &mask as *const u64 as u64, core::mem::size_of::<SigSet>() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
+pub fn signalfd4(fd: i64, mask: SigSet, flags: i32) -> Result<i64, Error> {
+    let r = unsafe { syscall4(SYS_SIGNALFD4, fd as u64, &mask as *const u64 as u64, core::mem::size_of::<SigSet>() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
+// ── Pause ─────────────────────────────────────────────────────────
+
+pub fn pause() -> Result<(), Error> {
+    let r = unsafe { syscall0(SYS_PAUSE) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+// ── Itimers ───────────────────────────────────────────────────────
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Itimerval {
+    pub it_interval: TimeVal,
+    pub it_value: TimeVal,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TimeVal {
+    pub tv_sec: u64,
+    pub tv_usec: u64,
+}
+
+pub const ITIMER_REAL: i32 = 0;
+pub const ITIMER_VIRTUAL: i32 = 1;
+pub const ITIMER_PROF: i32 = 2;
+
+pub fn getitimer(which: i32, val: &mut Itimerval) -> Result<(), Error> {
+    let r = unsafe { syscall2(SYS_GETITIMER, which as u64, val as *mut Itimerval as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+pub fn setitimer(which: i32, new: &Itimerval, old: Option<&mut Itimerval>) -> Result<(), Error> {
+    let old_ptr = old.map_or(0, |o| o as *mut Itimerval as u64);
+    let r = unsafe { syscall3(SYS_SETITIMER, which as u64, new as *const Itimerval as u64, old_ptr) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}

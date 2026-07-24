@@ -75,6 +75,7 @@ pub const SYS_MKDIR: u64 = 83;
 pub const SYS_UNLINK: u64 = 87;
 pub const SYS_SYMLINK: u64 = 88;
 pub const SYS_READLINK: u64 = 89;
+pub const SYS_RENAME: u64 = 82;
 pub const SYS_FCHMOD: u64 = 91;
 pub const SYS_FCHOWN: u64 = 93;
 pub const SYS_GETDENTS64: u64 = 217;
@@ -82,7 +83,7 @@ pub const SYS_SCHED_YIELD: u64 = 24;
 pub const SYS_CLOCK_GETTIME: u64 = 228;
 pub const SYS_FUTEX: u64 = 202;
 pub const SYS_MOUNT: u64 = 165;
-pub const SYS_UMOUNT2: u64 = 166;
+pub const SYS_UMOUNT2: u64 = 167;
 pub const SYS_ARCH_PRCTL: u64 = 158;
 pub const SYS_RESOLVE: u64 = 200;
 pub const SYS_BEEP: u64 = 104;
@@ -95,6 +96,88 @@ pub const SYS_SETUID: u64 = 303;
 pub const SYS_SETGID: u64 = 304;
 pub const SYS_GETEUID: u64 = 305;
 pub const SYS_GETEGID: u64 = 306;
+pub const SYS_GETRESUID: u64 = 118;
+pub const SYS_SETRESUID: u64 = 119;
+pub const SYS_GETRESGID: u64 = 314;
+pub const SYS_SETRESGID: u64 = 315;
+pub const SYS_GETGROUPS: u64 = 115;
+pub const SYS_SETGROUPS: u64 = 116;
+
+pub const SYS_GETPPID: u64 = 110;
+pub const SYS_GETPGRP: u64 = 111;
+pub const SYS_SETSID: u64 = 112;
+pub const SYS_GETPGID: u64 = 330;
+pub const SYS_SETPGID: u64 = 157;
+pub const SYS_GETSID: u64 = 331;
+pub const SYS_GETRLIMIT: u64 = 97;
+pub const SYS_SETRLIMIT: u64 = 98;
+pub const SYS_PRLIMIT64: u64 = 332;
+
+pub const SYS_SIGALTSTACK: u64 = 131;
+pub const SYS_SIGNALFD: u64 = 282;
+pub const SYS_SIGNALFD4: u64 = 289;
+pub const SYS_PAUSE: u64 = 34;
+pub const SYS_GETITIMER: u64 = 350;
+pub const SYS_SETITIMER: u64 = 351;
+pub const SYS_TIMES: u64 = 352;
+
+pub const SYS_SHMGET: u64 = 29;
+pub const SYS_SHMAT: u64 = 30;
+pub const SYS_SHMCTL: u64 = 31;
+pub const SYS_SHMDT: u64 = 67;
+pub const SYS_MEMFD_CREATE: u64 = 319;
+
+pub const SYS_TIMER_CREATE: u64 = 222;
+pub const SYS_TIMER_SETTIME: u64 = 223;
+pub const SYS_TIMER_GETTIME: u64 = 224;
+pub const SYS_TIMER_GETOVERRUN: u64 = 225;
+pub const SYS_TIMER_DELETE: u64 = 226;
+
+pub const SYS_LINK: u64 = 86;
+pub const SYS_LSTAT: u64 = 6;
+pub const SYS_UTIMENSAT: u64 = 280;
+pub const SYS_FALLOCATE: u64 = 285;
+pub const SYS_SENDFILE: u64 = 40;
+
+pub const SYS_EVENTFD: u64 = 284;
+pub const SYS_EVENTFD2: u64 = 290;
+
+pub const SYS_OPENAT: u64 = 257;
+pub const SYS_MKDIRAT: u64 = 258;
+pub const SYS_FSTATAT: u64 = 262;
+pub const SYS_UNLINKAT: u64 = 263;
+pub const SYS_RENAMEAT: u64 = 264;
+pub const SYS_LINKAT: u64 = 265;
+pub const SYS_SYMLINKAT: u64 = 266;
+pub const SYS_READLINKAT: u64 = 267;
+pub const SYS_FACCESSAT: u64 = 269;
+
+pub const SYS_SOCKETPAIR: u64 = 53;
+pub const SYS_SETSOCKOPT: u64 = 54;
+pub const SYS_GETSOCKOPT: u64 = 55;
+pub const SYS_SENDMSG: u64 = 46;
+pub const SYS_RECVMSG: u64 = 47;
+pub const SYS_GETSOCKNAME: u64 = 51;
+pub const SYS_GETPEERNAME: u64 = 52;
+
+pub const SYS_CHMOD: u64 = 90;
+pub const SYS_UMASK: u64 = 95;
+pub const SYS_SYNC: u64 = 36;
+pub const SYS_STATFS: u64 = 137;
+pub const SYS_MPROTECT: u64 = 10;
+pub const SYS_FCNTL: u64 = 72;
+pub const SYS_SCHED_SETATTR: u64 = 144;
+pub const SYS_SCHED_GETATTR: u64 = 145;
+pub const SYS_CAPGET: u64 = 307;
+pub const SYS_CAPSET: u64 = 308;
+pub const SYS_SIGPROCMASK: u64 = 309;
+pub const SYS_SYSINFO: u64 = 203;
+pub const SYS_SET_TID_ADDRESS: u64 = 218;
+pub const SYS_EXIT_GROUP: u64 = 231;
+pub const SYS_TRUNCATE: u64 = 76;
+pub const SYS_FTRUNCATE: u64 = 77;
+pub const SYS_SWAPON: u64 = 326;
+pub const SYS_SWAPOFF: u64 = 327;
 
 pub unsafe fn read(fd: i64, buf: *mut u8, len: usize) -> i64 {
     syscall3(SYS_READ, fd as u64, buf as u64, len as u64)
@@ -173,4 +256,237 @@ pub unsafe fn sys_futex(
 /// Get current thread ID.
 pub unsafe fn sys_gettid() -> i64 {
     syscall0(SYS_GETTID)
+}
+
+// ── Process groups ────────────────────────────────────────────────
+pub unsafe fn setpgid(pid: i64, pgid: i64) -> i64 {
+    syscall2(SYS_SETPGID, pid as u64, pgid as u64)
+}
+pub unsafe fn getpgid(pid: i64) -> i64 {
+    syscall1(SYS_GETPGID, pid as u64)
+}
+pub unsafe fn getpgrp() -> i64 {
+    syscall0(SYS_GETPGRP)
+}
+pub unsafe fn setsid() -> i64 {
+    syscall0(SYS_SETSID)
+}
+pub unsafe fn getsid(pid: i64) -> i64 {
+    syscall1(SYS_GETSID, pid as u64)
+}
+
+// ── Resource limits ───────────────────────────────────────────────
+pub unsafe fn getrlimit(resource: i32, rlim: *mut u8) -> i64 {
+    syscall2(SYS_GETRLIMIT, resource as u64, rlim as u64)
+}
+pub unsafe fn setrlimit(resource: i32, rlim: *const u8) -> i64 {
+    syscall2(SYS_SETRLIMIT, resource as u64, rlim as u64)
+}
+pub unsafe fn prlimit64(pid: i64, resource: i32, new: *const u8, old: *mut u8) -> i64 {
+    syscall4(SYS_PRLIMIT64, pid as u64, resource as u64, new as u64, old as u64)
+}
+
+// ── *at variants ──────────────────────────────────────────────────
+pub unsafe fn openat(dirfd: i64, path: *const u8, flags: i32, mode: u32) -> i64 {
+    syscall4(SYS_OPENAT, dirfd as u64, path as u64, flags as u64, mode as u64)
+}
+pub unsafe fn mkdirat(dirfd: i64, path: *const u8, mode: u32) -> i64 {
+    syscall3(SYS_MKDIRAT, dirfd as u64, path as u64, mode as u64)
+}
+pub unsafe fn unlinkat(dirfd: i64, path: *const u8, flags: i32) -> i64 {
+    syscall3(SYS_UNLINKAT, dirfd as u64, path as u64, flags as u64)
+}
+pub unsafe fn symlinkat(target: *const u8, dirfd: i64, path: *const u8) -> i64 {
+    syscall3(SYS_SYMLINKAT, target as u64, dirfd as u64, path as u64)
+}
+pub unsafe fn readlinkat(dirfd: i64, path: *const u8, buf: *mut u8, size: usize) -> i64 {
+    syscall4(SYS_READLINKAT, dirfd as u64, path as u64, buf as u64, size as u64)
+}
+pub unsafe fn renameat(olddirfd: i64, oldpath: *const u8, newdirfd: i64, newpath: *const u8) -> i64 {
+    syscall4(SYS_RENAMEAT, olddirfd as u64, oldpath as u64, newdirfd as u64, newpath as u64)
+}
+pub unsafe fn fstatat(dirfd: i64, path: *const u8, buf: *mut u8, flags: i32) -> i64 {
+    syscall4(SYS_FSTATAT, dirfd as u64, path as u64, buf as u64, flags as u64)
+}
+pub unsafe fn faccessat(dirfd: i64, path: *const u8, mode: i32, flags: i32) -> i64 {
+    syscall4(SYS_FACCESSAT, dirfd as u64, path as u64, mode as u64, flags as u64)
+}
+pub unsafe fn linkat(olddirfd: i64, oldpath: *const u8, newdirfd: i64, newpath: *const u8, flags: i32) -> i64 {
+    syscall5(SYS_LINKAT, olddirfd as u64, oldpath as u64, newdirfd as u64, newpath as u64, flags as u64)
+}
+
+// ── Socket/MSG ────────────────────────────────────────────────────
+pub unsafe fn sendmsg(sockfd: i64, msg: *const u8, flags: i32) -> i64 {
+    syscall3(SYS_SENDMSG, sockfd as u64, msg as u64, flags as u64)
+}
+pub unsafe fn recvmsg(sockfd: i64, msg: *mut u8, flags: i32) -> i64 {
+    syscall3(SYS_RECVMSG, sockfd as u64, msg as u64, flags as u64)
+}
+pub unsafe fn getsockname(sockfd: i64, addr: *mut u8, addrlen: *mut u32) -> i64 {
+    syscall3(SYS_GETSOCKNAME, sockfd as u64, addr as u64, addrlen as u64)
+}
+pub unsafe fn getpeername(sockfd: i64, addr: *mut u8, addrlen: *mut u32) -> i64 {
+    syscall3(SYS_GETPEERNAME, sockfd as u64, addr as u64, addrlen as u64)
+}
+pub unsafe fn getsockopt(sockfd: i64, level: i32, optname: i32, optval: *mut u8, optlen: *mut u32) -> i64 {
+    syscall5(SYS_GETSOCKOPT, sockfd as u64, level as u64, optname as u64, optval as u64, optlen as u64)
+}
+pub unsafe fn socketpair(domain: u64, type_: u64, protocol: u64, sv: *mut i32) -> i64 {
+    syscall4(SYS_SOCKETPAIR, domain, type_, protocol, sv as u64)
+}
+
+// ── Signals ───────────────────────────────────────────────────────
+pub unsafe fn sigaltstack(ss: *const u8, old_ss: *mut u8) -> i64 {
+    syscall2(SYS_SIGALTSTACK, ss as u64, old_ss as u64)
+}
+pub unsafe fn signalfd(fd: i64, mask: *const u64, size: usize) -> i64 {
+    syscall3(SYS_SIGNALFD, fd as u64, mask as u64, size as u64)
+}
+pub unsafe fn signalfd4(fd: i64, mask: *const u64, size: usize, flags: i32) -> i64 {
+    syscall4(SYS_SIGNALFD4, fd as u64, mask as u64, size as u64, flags as u64)
+}
+pub unsafe fn pause() -> i64 {
+    syscall0(SYS_PAUSE)
+}
+pub unsafe fn getitimer(which: i32, val: *mut u8) -> i64 {
+    syscall2(SYS_GETITIMER, which as u64, val as u64)
+}
+pub unsafe fn setitimer(which: i32, new: *const u8, old: *mut u8) -> i64 {
+    syscall3(SYS_SETITIMER, which as u64, new as u64, old as u64)
+}
+pub unsafe fn times(buf: *mut u8) -> i64 {
+    syscall1(SYS_TIMES, buf as u64)
+}
+
+// ── Shared memory ─────────────────────────────────────────────────
+pub unsafe fn shmget(key: i32, size: usize, flags: i32) -> i64 {
+    syscall3(SYS_SHMGET, key as u64, size as u64, flags as u64)
+}
+pub unsafe fn shmat(shmid: i32, addr: *const u8, flags: i32) -> i64 {
+    syscall3(SYS_SHMAT, shmid as u64, addr as u64, flags as u64)
+}
+pub unsafe fn shmdt(addr: *const u8) -> i64 {
+    syscall1(SYS_SHMDT, addr as u64)
+}
+pub unsafe fn shmctl(shmid: i32, cmd: i32, buf: *mut u8) -> i64 {
+    syscall3(SYS_SHMCTL, shmid as u64, cmd as u64, buf as u64)
+}
+pub unsafe fn memfd_create(name: *const u8, flags: u32) -> i64 {
+    syscall2(SYS_MEMFD_CREATE, name as u64, flags as u64)
+}
+
+// ── Timers ────────────────────────────────────────────────────────
+pub unsafe fn timer_create(clockid: i32, evp: *const u8, timerid: *mut i32) -> i64 {
+    syscall3(SYS_TIMER_CREATE, clockid as u64, evp as u64, timerid as u64)
+}
+pub unsafe fn timer_settime(timerid: i32, flags: i32, new: *const u8, old: *mut u8) -> i64 {
+    syscall4(SYS_TIMER_SETTIME, timerid as u64, flags as u64, new as u64, old as u64)
+}
+pub unsafe fn timer_gettime(timerid: i32, val: *mut u8) -> i64 {
+    syscall2(SYS_TIMER_GETTIME, timerid as u64, val as u64)
+}
+pub unsafe fn timer_getoverrun(timerid: i32) -> i64 {
+    syscall1(SYS_TIMER_GETOVERRUN, timerid as u64)
+}
+pub unsafe fn timer_delete(timerid: i32) -> i64 {
+    syscall1(SYS_TIMER_DELETE, timerid as u64)
+}
+
+// ── Credentials ───────────────────────────────────────────────────
+pub unsafe fn getresuid(ruid: *mut u32, euid: *mut u32, suid: *mut u32) -> i64 {
+    syscall3(SYS_GETRESUID, ruid as u64, euid as u64, suid as u64)
+}
+pub unsafe fn setresuid(ruid: u32, euid: u32, suid: u32) -> i64 {
+    syscall3(SYS_SETRESUID, ruid as u64, euid as u64, suid as u64)
+}
+pub unsafe fn getresgid(rgid: *mut u32, egid: *mut u32, sgid: *mut u32) -> i64 {
+    syscall3(SYS_GETRESGID, rgid as u64, egid as u64, sgid as u64)
+}
+pub unsafe fn setresgid(rgid: u32, egid: u32, sgid: u32) -> i64 {
+    syscall3(SYS_SETRESGID, rgid as u64, egid as u64, sgid as u64)
+}
+pub unsafe fn getgroups(size: i32, list: *mut u32) -> i64 {
+    syscall2(SYS_GETGROUPS, size as u64, list as u64)
+}
+pub unsafe fn setgroups(size: i32, list: *const u32) -> i64 {
+    syscall2(SYS_SETGROUPS, size as u64, list as u64)
+}
+
+// ── FS completion ─────────────────────────────────────────────────
+pub unsafe fn link(old: *const u8, new: *const u8) -> i64 {
+    syscall2(SYS_LINK, old as u64, new as u64)
+}
+pub unsafe fn lstat(path: *const u8, buf: *mut u8) -> i64 {
+    syscall2(SYS_LSTAT, path as u64, buf as u64)
+}
+pub unsafe fn utimensat(dirfd: i64, path: *const u8, times: *const u8, flags: i32) -> i64 {
+    syscall4(SYS_UTIMENSAT, dirfd as u64, path as u64, times as u64, flags as u64)
+}
+pub unsafe fn fallocate(fd: i64, mode: i32, offset: i64, len: i64) -> i64 {
+    syscall4(SYS_FALLOCATE, fd as u64, mode as u64, offset as u64, len as u64)
+}
+pub unsafe fn sendfile(out_fd: i64, in_fd: i64, offset: *mut i64, count: usize) -> i64 {
+    syscall4(SYS_SENDFILE, out_fd as u64, in_fd as u64, offset as u64, count as u64)
+}
+
+// ── Event ─────────────────────────────────────────────────────────
+pub unsafe fn eventfd(initval: u32, flags: i32) -> i64 {
+    syscall2(SYS_EVENTFD, initval as u64, flags as u64)
+}
+pub unsafe fn eventfd2(initval: u32, flags: i32) -> i64 {
+    syscall2(SYS_EVENTFD2, initval as u64, flags as u64)
+}
+
+// ── Misc ──────────────────────────────────────────────────────────
+pub unsafe fn chmod(path: *const u8, mode: u32) -> i64 {
+    syscall2(SYS_CHMOD, path as u64, mode as u64)
+}
+pub unsafe fn umask(mask: u32) -> i64 {
+    syscall1(SYS_UMASK, mask as u64)
+}
+pub unsafe fn sys_sync() -> i64 {
+    syscall0(SYS_SYNC)
+}
+pub unsafe fn statfs(path: *const u8, buf: *mut u8) -> i64 {
+    syscall2(SYS_STATFS, path as u64, buf as u64)
+}
+pub unsafe fn mprotect(addr: u64, len: usize, prot: i32) -> i64 {
+    syscall3(SYS_MPROTECT, addr, len as u64, prot as u64)
+}
+pub unsafe fn fcntl(fd: i64, cmd: i32, arg: u64) -> i64 {
+    syscall3(SYS_FCNTL, fd as u64, cmd as u64, arg)
+}
+pub unsafe fn sched_setattr(pid: i64, attr: *const u8, flags: u32) -> i64 {
+    syscall3(SYS_SCHED_SETATTR, pid as u64, attr as u64, flags as u64)
+}
+pub unsafe fn sched_getattr(pid: i64, attr: *mut u8, size: u32, flags: u32) -> i64 {
+    syscall4(SYS_SCHED_GETATTR, pid as u64, attr as u64, size as u64, flags as u64)
+}
+pub unsafe fn capget(hdr: *mut u8, data: *mut u8) -> i64 {
+    syscall2(SYS_CAPGET, hdr as u64, data as u64)
+}
+pub unsafe fn capset(hdr: *const u8, data: *const u8) -> i64 {
+    syscall2(SYS_CAPSET, hdr as u64, data as u64)
+}
+pub unsafe fn sys_sigprocmask(how: i32, set: *const u64, oldset: *mut u64) -> i64 {
+    syscall3(SYS_SIGPROCMASK, how as u64, set as u64, oldset as u64)
+}
+pub unsafe fn sys_sysinfo(info: *mut u8) -> i64 {
+    syscall1(SYS_SYSINFO, info as u64)
+}
+pub unsafe fn set_tid_address(tidptr: *const u32) -> i64 {
+    syscall1(SYS_SET_TID_ADDRESS, tidptr as u64)
+}
+pub unsafe fn exit_group(code: i32) -> ! {
+    syscall1(SYS_EXIT_GROUP, code as u64);
+    loop {}
+}
+pub unsafe fn truncate(path: *const u8, len: i64) -> i64 {
+    syscall2(SYS_TRUNCATE, path as u64, len as u64)
+}
+pub unsafe fn ftruncate(fd: i64, len: i64) -> i64 {
+    syscall2(SYS_FTRUNCATE, fd as u64, len as u64)
+}
+pub unsafe fn sys_getppid() -> i64 {
+    syscall0(SYS_GETPPID)
 }

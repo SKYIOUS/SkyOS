@@ -18,33 +18,34 @@ fmt:
 	cargo fmt --check
 
 clippy:
-	cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
+	cargo clippy --target x86_64-sarga.json -- -D warnings
 
 build:
-	cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json
+	cargo build --target x86_64-sarga.json
 
 build-release:
-	cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+	cargo build --target x86_64-sarga.json --release
 
+# NOTE: Make runs each dep regardless of prior failure. Use && if you need isolation.
 test: fmt clippy build-release qemu-test
 
 # --- Full ISO build ---
 
 kernel:
-	cd $(KERNEL_DIR)/kernel && cargo build --release -Zbuild-std=core,alloc --features net,smp,ai_rule
+	cd "$(KERNEL_DIR)/kernel" && cargo build --release -Zbuild-std=core,alloc --features net,smp,ai_rule,ext4
 
 userspace: build-release
 
 initrd: userspace
 	$(PYTHON) build_initrd.py
-	mkdir -p $(KERNEL_DIR)/SkyOS
-	cp initrd.tar $(KERNEL_DIR)/SkyOS/
+	mkdir -p "$(KERNEL_DIR)/SkyOS"
+	cp initrd.tar "$(KERNEL_DIR)/SkyOS/"
 
 bootimage: kernel initrd
-	cd $(KERNEL_DIR) && cargo run --release --manifest-path builder/Cargo.toml
+	cd "$(KERNEL_DIR)" && cargo run --release --manifest-path builder/Cargo.toml
 
 iso: bootimage
-	$(PYTHON) scripts/make_iso.py "release-$(shell date +%Y%m%d)"
+	$(PYTHON) scripts/make_iso.py "release.$(shell date +%Y%m%d)"
 
 # --- QEMU targets ---
 
@@ -92,4 +93,5 @@ run-nographic: iso
 
 clean:
 	cargo clean
+	cd "$(KERNEL_DIR)" && cargo clean
 	rm -rf release/ initrd.tar build/

@@ -2,6 +2,9 @@
 //! These provide a C-compatible interface for porting software.
 
 use crate::errno::Error;
+use crate::io;
+use crate::process;
+use crate::signal;
 use crate::syscall;
 use alloc::string::String;
 use alloc::string::ToString;
@@ -345,4 +348,52 @@ pub fn execve(path: &str, argv: &[*const u8], envp: &[*const u8]) -> i64 {
             envp.as_ptr() as u64,
         )
     }
+}
+
+/// execvpe — search PATH and execute with environment.
+pub fn execvpe(file: &str, argv: &[&str], envp: &[&str]) -> Result<(), Error> {
+    if file.contains('/') {
+        return process::execve(file, argv, envp);
+    }
+    // Default PATH when envp doesn't have it
+    for dir in ["/bin", "/usr/bin"] {
+        let full = alloc::format!("{}/{}", dir, file);
+        if process::execve(&full, argv, envp).is_ok() {
+            return Ok(());
+        }
+    }
+    Err(Error::ENOENT)
+}
+
+/// popen — pipe to/from a process (simplified: opens a command for reading).
+pub fn popen(command: &str, _mode: &str) -> Result<(i64, u64), Error> {
+    let mut fds = [0i32; 2];
+    let r = unsafe { syscall::syscall1(22, fds.as_mut_ptr() as u64) };
+    if r < 0 { return Err(Error::from_i64(r)); }
+
+    match process::fork() {
+        Ok(0) => {
+            // Child
+            let _ = unsafe { syscall::syscall2(33, fds[1] as u64, 1) }; // dup2 write->stdout
+            let _ = unsafe { syscall::syscall1(3, fds[0] as u64) };    // close read
+            let _ = unsafe { syscall::syscall1(3, fds[1] as u64) };
+            let args: [&str; 3] = ["/bin/sh", "-c", command];
+            let _ = process::execve("/bin/sh", &args, &[]);
+            process::exit(1);
+        }
+        Ok(pid) => {
+            // Parent
+            let _ = unsafe { syscall::syscall1(3, fds[1] as u64) }; // close write
+            Ok((fds[0] as i64, pid))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// pclose — close a popen'd stream and wait for process.
+pub fn pclose(fd: i64, pid: u64) -> Result<i32, Error> {
+    let _ = unsafe { syscall::syscall1(3, fd as u64) };
+    let mut status: i32 = 0;
+    let r = unsafe { syscall::syscall4(61, pid, (&mut status as *mut i32) as u64, 0, 0) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(status) }
 }

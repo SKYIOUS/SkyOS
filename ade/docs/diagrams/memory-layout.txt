@@ -1,0 +1,15 @@
+Desktop (heap, ~2KB struct)
+  ├── WindowManager (Vec<AppWindow>)
+  ├── DesktopIcons (Vec<DesktopIcon>)
+  ├── ServiceManager
+  │   ├── NotificationManager (Vec<Notification>, max 64)
+  │   ├── ClipboardManager (16-entry history)
+  │   ├── SessionManager
+  │   └── PowerManager
+  ├── IpcServer (Vec<Channel>, Vec<Message>)
+  ├── ServiceRegistry (Vec<ServiceInfo>)
+  ├── A11yTree (Vec<A11yNode>, 64-cap)
+  ├── Profiler (fixed-size, no alloc)
+  ├── Logger (fixed-size ring buffer)
+  ├── CrashDiagnostics (fixed-size)
+  └── Compositor (6 layer buffers, pre-allocated)

@@ -5,6 +5,40 @@ use crate::syscall::*;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// Resource limit structure.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Rlimit {
+    pub rlim_cur: u64,
+    pub rlim_max: u64,
+}
+
+/// System info structure.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SysInfo {
+    pub uptime: u64,
+    pub loads: [u64; 3],
+    pub totalram: u64,
+    pub freeram: u64,
+    pub sharedram: u64,
+    pub bufferram: u64,
+    pub totalswap: u64,
+    pub freeswap: u64,
+    pub procs: u16,
+    pub _pad: [u8; 22],
+}
+
+/// tms structure for times().
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Tms {
+    pub tms_utime: u64,
+    pub tms_stime: u64,
+    pub tms_cutime: u64,
+    pub tms_cstime: u64,
+}
+
 /// File metadata structure.
 #[derive(Debug, Clone, Copy)]
 pub struct Stat {
@@ -242,6 +276,169 @@ pub fn chdir(path: &str) -> Result<(), Error> {
     }
 }
 
+/// Open a file relative to a directory fd.
+pub fn openat(dirfd: i64, path: &str, flags: i32, mode: u32) -> Result<i64, Error> {
+    let mut p = Vec::from(path.as_bytes());
+    p.push(0);
+    let r = unsafe { syscall4(SYS_OPENAT, dirfd as u64, p.as_ptr() as u64, flags as u64, mode as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
+/// Create a directory relative to a directory fd.
+pub fn mkdirat(dirfd: i64, path: &str, mode: u32) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes());
+    p.push(0);
+    let r = unsafe { syscall3(SYS_MKDIRAT, dirfd as u64, p.as_ptr() as u64, mode as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Unlink a file relative to a directory fd.
+pub fn unlinkat(dirfd: i64, path: &str, flags: i32) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes());
+    p.push(0);
+    let r = unsafe { syscall3(SYS_UNLINKAT, dirfd as u64, p.as_ptr() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Create a symlink relative to a directory fd.
+pub fn symlinkat(target: &str, dirfd: i64, path: &str) -> Result<(), Error> {
+    let mut t = Vec::from(target.as_bytes()); t.push(0);
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall3(SYS_SYMLINKAT, t.as_ptr() as u64, dirfd as u64, p.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Read symlink target relative to a directory fd.
+pub fn readlinkat(dirfd: i64, path: &str, buf: &mut [u8]) -> Result<usize, Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall4(SYS_READLINKAT, dirfd as u64, p.as_ptr() as u64, buf.as_mut_ptr() as u64, buf.len() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+}
+
+/// Rename a file, potentially across directories.
+pub fn renameat(olddirfd: i64, oldpath: &str, newdirfd: i64, newpath: &str) -> Result<(), Error> {
+    let mut op = Vec::from(oldpath.as_bytes()); op.push(0);
+    let mut np = Vec::from(newpath.as_bytes()); np.push(0);
+    let r = unsafe { syscall4(SYS_RENAMEAT, olddirfd as u64, op.as_ptr() as u64, newdirfd as u64, np.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Get file stats relative to a directory fd.
+pub fn fstatat(dirfd: i64, path: &str, flags: i32) -> Result<Stat, Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let mut raw = [0u8; 144];
+    let r = unsafe { syscall4(SYS_FSTATAT, dirfd as u64, p.as_ptr() as u64, raw.as_mut_ptr() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(Stat::from_bytes(&raw)) }
+}
+
+/// Check file access relative to a directory fd.
+pub fn faccessat(dirfd: i64, path: &str, mode: i32, flags: i32) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall4(SYS_FACCESSAT, dirfd as u64, p.as_ptr() as u64, mode as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Link a file (hard link).
+pub fn link(old: &str, new: &str) -> Result<(), Error> {
+    let mut o = Vec::from(old.as_bytes()); o.push(0);
+    let mut n = Vec::from(new.as_bytes()); n.push(0);
+    let r = unsafe { syscall2(SYS_LINK, o.as_ptr() as u64, n.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Get file stats without following symlinks.
+pub fn lstat(path: &str) -> Result<Stat, Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let mut raw = [0u8; 144];
+    let r = unsafe { syscall2(SYS_LSTAT, p.as_ptr() as u64, raw.as_mut_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(Stat::from_bytes(&raw)) }
+}
+
+/// Set file timestamps with nanosecond precision.
+pub fn utimensat(dirfd: i64, path: &str, times: &[u8; 32], flags: i32) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall4(SYS_UTIMENSAT, dirfd as u64, p.as_ptr() as u64, times.as_ptr() as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Pre-allocate space for a file.
+pub fn fallocate(fd: i64, mode: i32, offset: i64, len: i64) -> Result<(), Error> {
+    let r = unsafe { syscall4(SYS_FALLOCATE, fd as u64, mode as u64, offset as u64, len as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Copy data between file descriptors efficiently.
+pub fn sendfile(out_fd: i64, in_fd: i64, offset: Option<&mut i64>, count: usize) -> Result<usize, Error> {
+    let off_ptr = offset.map_or(0, |o| o as *mut i64 as u64);
+    let r = unsafe { syscall4(SYS_SENDFILE, out_fd as u64, in_fd as u64, off_ptr, count as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+}
+
+/// Truncate a file to a specified length.
+pub fn truncate(path: &str, len: i64) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall2(SYS_TRUNCATE, p.as_ptr() as u64, len as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Truncate an open file to a specified length.
+pub fn ftruncate(fd: i64, len: i64) -> Result<(), Error> {
+    let r = unsafe { syscall2(SYS_FTRUNCATE, fd as u64, len as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Change permissions of a file.
+pub fn chmod(path: &str, mode: u32) -> Result<(), Error> {
+    let mut p = Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall2(SYS_CHMOD, p.as_ptr() as u64, mode as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Change filesystem permissions mask.
+pub fn umask(mask: u32) -> u32 {
+    unsafe { syscall1(SYS_UMASK, mask as u64) as u32 }
+}
+
+/// Get filesystem statistics.
+pub fn statfs(path: &str) -> Result<crate::fs::StatFs, i64> {
+    crate::fs::statfs(path)
+}
+
+/// Read a symbolic link target.
+pub fn readlink(path: &str, buf: &mut [u8]) -> Result<usize, Error> {
+    let mut p = alloc::vec::Vec::from(path.as_bytes()); p.push(0);
+    let r = unsafe { syscall3(SYS_READLINK, p.as_ptr() as u64, buf.as_mut_ptr() as u64, buf.len() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+}
+
+/// Create a symbolic link.
+pub fn symlink(target: &str, linkpath: &str) -> Result<(), Error> {
+    let mut t = alloc::vec::Vec::from(target.as_bytes()); t.push(0);
+    let mut l = alloc::vec::Vec::from(linkpath.as_bytes()); l.push(0);
+    let r = unsafe { syscall2(SYS_SYMLINK, t.as_ptr() as u64, l.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Rename a file.
+pub fn rename(old: &str, new: &str) -> Result<(), Error> {
+    let mut o = alloc::vec::Vec::from(old.as_bytes()); o.push(0);
+    let mut n = alloc::vec::Vec::from(new.as_bytes()); n.push(0);
+    let r = unsafe { syscall2(SYS_RENAME, o.as_ptr() as u64, n.as_ptr() as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+}
+
+/// Create an eventfd file descriptor.
+pub fn eventfd(initval: u32, flags: i32) -> Result<i64, Error> {
+    let r = unsafe { syscall2(SYS_EVENTFD, initval as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
+/// Create an eventfd2 file descriptor (with flags support).
+pub fn eventfd2(initval: u32, flags: i32) -> Result<i64, Error> {
+    let r = unsafe { syscall2(SYS_EVENTFD2, initval as u64, flags as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+}
+
 /// Reads directory entries from an open file descriptor.
 pub fn getdents64(fd: i64, buf: &mut [u8]) -> Result<usize, Error> {
     // SAFETY: getdents64 syscall is safe here
@@ -264,6 +461,41 @@ pub fn nanosleep(ns: u64) -> Result<(), Error> {
     } else {
         Ok(())
     }
+}
+
+/// Get system information.
+pub fn sysinfo() -> Result<SysInfo, Error> {
+    let mut info = SysInfo {
+        uptime: 0, loads: [0; 3], totalram: 0, freeram: 0,
+        sharedram: 0, bufferram: 0, totalswap: 0, freeswap: 0,
+        procs: 0, _pad: [0; 22],
+    };
+    let r = unsafe { syscall1(SYS_SYSINFO, (&mut info as *mut SysInfo) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(info) }
+}
+
+/// Get process times.
+pub fn times(buf: &mut Tms) -> Result<u64, Error> {
+    let r = unsafe { syscall1(SYS_TIMES, buf as *mut Tms as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as u64) }
+}
+
+/// Get parent process ID.
+pub fn getppid() -> u64 {
+    unsafe { syscall0(SYS_GETPPID) as u64 }
+}
+
+/// Get resource limits.
+pub fn getrlimit(resource: i32) -> Result<Rlimit, Error> {
+    let mut rlim = Rlimit { rlim_cur: 0, rlim_max: 0 };
+    let r = unsafe { syscall2(SYS_GETRLIMIT, resource as u64, (&mut rlim as *mut Rlimit) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(rlim) }
+}
+
+/// Set resource limits.
+pub fn setrlimit(resource: i32, rlim: &Rlimit) -> Result<(), Error> {
+    let r = unsafe { syscall2(SYS_SETRLIMIT, resource as u64, (rlim as *const Rlimit) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
 }
 
 /// Flushes filesystem buffers to disk.

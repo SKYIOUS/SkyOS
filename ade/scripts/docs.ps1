@@ -1,0 +1,13 @@
+Write-Host "ADE Documentation"
+Write-Host "See docs/ directory:"
+Get-ChildItem -Path "..\docs" -Recurse -Filter "*.md" | ForEach-Object { Write-Host "  $($_.FullName)" }
+Write-Host ""
+Write-Host "Architecture: docs/Architecture.md"
+Write-Host "Rendering:    docs/Rendering.md"
+Write-Host "IPC:          docs/IPC.md"
+Write-Host "Window Mgr:   docs/WindowManager.md"
+Write-Host "Desktop API:  docs/DesktopAPI.md"
+Write-Host "Services:     docs/Services.md"
+Write-Host "Compositor:   docs/Compositor.md"
+Write-Host "Developer:    docs/DeveloperGuide.md"
+Write-Host "Contribute:   docs/ContributionGuide.md"
