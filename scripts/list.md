@@ -2,51 +2,53 @@
 
 ## Build Scripts
 
+### `SARGA OS/build_disk.py` (PRIMARY BUILD ENTRY POINT)
+Single cross-platform build script that handles the entire build pipeline:
+- Builds userspace binaries for x86_64-sarga target
+- Creates initrd.tar with FHS directory structure
+- Builds kernel with bootloader integration
+- Creates UEFI bootimage (skyos_uefi.img)
+- Optionally converts to VirtualBox VDI format
+- Optionally creates bootable ISO image
+
+```
+python build_disk.py                          # Full build (userspace → kernel → UEFI image → VDI)
+python build_disk.py --kernel-only            # Kernel + UEFI image only (faster for kernel dev)
+python build_disk.py --userspace-only         # Userspace only
+python build_disk.py --no-vdi                 # Skip VDI creation
+python build_disk.py --iso --version 0.6.0    # Full build + ISO output
+python build_disk.py --release                # Build in release mode
+```
+
+### `SARGA OS/build_initrd.py`
+Creates initrd.tar from built userspace binaries. Called automatically by build_disk.py.
+```
+python build_initrd.py [root_dir]
+```
+
+### `SARGA OS/scripts/make_iso.py`
+Creates UEFI-bootable ISOHybrid from UEFI bootimage. Called automatically by build_disk.py with --iso flag.
+```
+python scripts/make_iso.py [version]
+```
+
+### `SARGA OS/scripts/release_build.ps1`
+Production release build with optimizations. Wraps build_disk.py with release flags.
+```
+.\scripts\release_build.ps1
+```
+
 ### `SARGA OS/Makefile`
-Top-level GNU Makefile. Targets: `all` (build), `clean`, `run` (QEMU).
+Legacy GNU Makefile. Targets: `all` (build), `clean`, `run` (QEMU).
 ```
 make [all|clean|run]
 ```
 
 ### `SARGA OS/build.sh`
-Builds SARGA OS workspace (Linux/WSL). Compiles all workspace members for `x86_64-unknown-none`, then creates disk image.
+Legacy shell script. Use build_disk.py instead.
 ```
 ./build.sh [all | component_name]
 ```
-
-### `SARGA OS/build.ps1`
-PowerShell equivalent of `build.sh` (Windows). Calls WSL for `disk/create_disk.sh`.
-```
-.\build.ps1 [all | component_name]
-```
-
-### `SKYIOUS KERNEL/build_userspace.ps1`
-Builds all userspace binaries (init, sargash, svc, vahid, sarga-disp, skypkg, login, passwd, skybuild, setup, coreutils, etc.) for the `x86_64-sarga` target. Copies to `SARGA OS/bin/`, then creates `initrd.tar`.
-```
-.\build_userspace.ps1
-```
-
-### `SKYIOUS KERNEL/make_bootimage.ps1`
-Full pipeline: builds userspace → builds kernel → runs Rust builder → produces UEFI bootimage.
-```
-.\make_bootimage.ps1
-```
-
-### `SKYIOUS KERNEL/make_bootimage.sh`
-Bash equivalent of `make_bootimage.ps1` (Linux/WSL). Uses old `velox` naming.
-```
-./make_bootimage.sh
-```
-
-### `SKYIOUS KERNEL/build_disk.py`
-Builds kernel, runs Rust builder, converts bootimage to VDI (VirtualBox) via VBoxManage.
-```
-python build_disk.py
-```
-
-### `SKYIOUS KERNEL/kernel/build.rs`
-Cargo build script — monitors `linker.ld` and `initrd.tar` for changes, triggers kernel rebuild.
-_(Automatic — no manual invocation needed.)_
 
 ### `SKYIOUS KERNEL/builder/src/main.rs`
 Rust binary that wraps kernel ELF with UEFI bootloader (bootloader crate v0.11). Produces `bootimage-vahi_kernel.bin`.

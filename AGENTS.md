@@ -3,9 +3,9 @@
 ## Build & Run
 
 ```powershell
-python build_disk.py                          # full build (kernel → UEFI image → VDI)
-.\make_bootimage.ps1                          # kernel + UEFI image only
-python scripts/make_iso.py [version]          # create bootable .iso from bootimage (requires WSL + xorriso)
+python build_disk.py                          # full build (userspace → kernel → UEFI image → VDI)
+python build_disk.py --kernel-only            # kernel + UEFI image only (faster for kernel dev)
+python build_disk.py --iso --version 0.6.0    # full build + ISO output
 qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
 qemu-system-x86_64 -bios OVMF.fd -cdrom release\skyos-<version>.iso -m 512M -smp 2 -nographic
 ```

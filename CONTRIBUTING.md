@@ -169,11 +169,14 @@ cargo build --target x86_64-sarga.json --release    # Release build for SARGA ta
 cargo build -p <crate>          # Build a single crate
 cargo build --target x86_64-sarga.json --release -p ade    # Build just the desktop env
 
-# Full build (Linux/WSL)
-./build.sh all
+# Full build (cross-platform)
+python build_disk.py
 
-# Full build (Windows)
-.\build.ps1 all
+# Kernel-only build (faster for kernel development)
+python build_disk.py --kernel-only
+
+# Userspace-only build
+python build_disk.py --userspace-only
 ```
 
 ---

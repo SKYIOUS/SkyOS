@@ -119,7 +119,7 @@ jobs:
             -device e1000,netdev=net0 -netdev user,id=net0 \
             2>&1 | tee qemu_log.txt
 
-      - name: Check boot log
+      - name: Check boot log and selftests
         working-directory: SkyOS
         run: |
           if grep -q "login:" qemu_log.txt; then
@@ -131,4 +131,20 @@ jobs:
             echo "FAIL: No login prompt found in QEMU output"
             cat qemu_log.txt
             exit 1
+          fi
+          
+          # Check for self-test failures (TAP format: "not ok")
+          if grep -q "not ok" qemu_log.txt; then
+            echo "FAIL: Self-test failures detected"
+            grep "not ok" qemu_log.txt
+            exit 1
+          fi
+          
+          # Verify TAP header was emitted
+          if grep -q "TAP version 13" qemu_log.txt; then
+            echo "PASS: Self-test TAP output detected"
+            # Extract and display summary
+            grep "# .* passed" qemu_log.txt || true
+          else
+            echo "WARN: No TAP output found (selftests may not have run)"
           fi

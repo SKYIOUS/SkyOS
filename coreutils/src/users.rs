@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use libsarga::{args, io, println, sarga_main};
+use libsarga::{args, io, print, println, sarga_main};
 
 fn user_main() -> i32 {
     match io::read_to_string("/etc/passwd") {

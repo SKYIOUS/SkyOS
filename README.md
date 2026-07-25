@@ -248,10 +248,19 @@ Shell: **sash** (Sarga Shell)
 
 ```bash
 # Build all userspace binaries
-./build.sh all
+python build_disk.py
 
-# Or using PowerShell on Windows
-.\build.ps1 all
+# Build kernel only (faster for kernel development)
+python build_disk.py --kernel-only
+
+# Build userspace only
+python build_disk.py --userspace-only
+
+# Build with ISO output
+python build_disk.py --iso --version 0.6.0
+
+# Build in release mode
+python build_disk.py --release
 
 # Build a specific component
 cargo build --target x86_64-sarga.json --release -p sash
@@ -262,8 +271,8 @@ cargo build --target x86_64-sarga.json --release -p ade
 ### Release Build
 
 ```powershell
-# Full release pipeline: build, stage, initrd, kernel rebuild, disk image
-.\scripts\release_build.ps1
+# Full release pipeline with optimizations
+python build_disk.py --release --iso --version 0.6.0
 ```
 
 ### Build Outputs

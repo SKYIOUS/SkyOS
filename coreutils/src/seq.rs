@@ -14,7 +14,7 @@ fn user_main() -> i32 {
     if incr == 0.0 { return 1; }
     let mut i = first;
     while if incr > 0.0 { i <= last } else { i >= last } {
-        if i == i.trunc() { println!("{}", i as i64); } else { println!("{}", i); }
+        if i == (i as i64) as f64 { println!("{}", i as i64); } else { println!("{}", i); }
         i += incr;
     }
     0

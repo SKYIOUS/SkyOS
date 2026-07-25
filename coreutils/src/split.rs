@@ -2,6 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::String;
+use alloc::string::ToString;
 use libsarga::{args, fs, io, print, println, sarga_main};
 
 fn user_main() -> i32 {
