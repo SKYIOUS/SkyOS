@@ -68,71 +68,12 @@ fn lookup_user(username: &str) -> Option<(u32, u32, Vec<u8>, Vec<u8>)> {
     None
 }
 
-fn hex_decode(s: &[u8]) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(s.len() / 2);
-    for chunk in s.chunks(2) {
-        let hi = (chunk[0] as char).to_digit(16)? as u8;
-        let lo = (chunk[1] as char).to_digit(16)? as u8;
-        out.push((hi << 4) | lo);
-    }
-    Some(out)
-}
-
 fn verify_password(username: &str, password: &str) -> bool {
     let data = match read_whole_file(SHADOW_PATH) {
         Ok(d) => d,
         Err(_) => return false,
     };
-    for line in data.split(|&b| b == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        let mut parts = line.splitn(2, |&b| b == b':');
-        let name = parts.next().unwrap_or(b"");
-        if name == username.as_bytes() {
-            let rest = parts.next().unwrap_or(b"");
-
-            // PBKDF2 format: PBKDF2-<salt-hex>:<dk-hex>[:iterations]
-            if rest.starts_with(b"PBKDF2-") {
-                let rest2 = &rest[7..];
-                let mut parts2 = rest2.splitn(2, |&b| b == b':');
-                let salt_hex = parts2.next().unwrap_or(b"");
-                let rest3 = parts2.next().unwrap_or(b"");
-
-                let salt_bytes = match hex_decode(salt_hex) {
-                    Some(s) if s.len() == 16 => s,
-                    _ => return false,
-                };
-                let mut salt_arr = [0u8; 16];
-                salt_arr.copy_from_slice(&salt_bytes);
-
-                let mut dk_hex = rest3;
-                let mut iterations: u32 = 10000;
-                if let Some(pos) = rest3.iter().position(|&b| b == b':') {
-                    dk_hex = &rest3[..pos];
-                    let iter_str = core::str::from_utf8(&rest3[pos + 1..]).unwrap_or("10000");
-                    iterations = iter_str.parse().unwrap_or(10000);
-                }
-                let stored_dk = match hex_decode(dk_hex) {
-                    Some(s) if s.len() == 32 => s,
-                    _ => return false,
-                };
-
-                let pw = password.as_bytes();
-                let mut dk_out = [0u8; 32];
-                if libsarga::hash::pbkdf2_sha256(pw, &salt_arr, &mut dk_out, iterations).is_ok() {
-                    return dk_out == stored_dk.as_slice();
-                }
-                return false;
-            }
-
-            return false;
-        }
-    }
-    false
+    libsarga::hash::verify_password(&data, username, password)
 }
 
 fn user_main() -> i32 {

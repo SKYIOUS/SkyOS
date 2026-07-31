@@ -595,32 +595,8 @@ fn lookup_var(name: &str, ctx: &ScriptContext) -> String {
 }
 
 fn glob_match(pattern: &str, word: &str) -> bool {
-    let pat: Vec<char> = pattern.chars().collect();
-    let w: Vec<char> = word.chars().collect();
-    glob_inner(&pat, &w, 0, 0)
-}
-
-fn glob_inner(p: &[char], w: &[char], pi: usize, wi: usize) -> bool {
-    if pi >= p.len() {
-        return wi >= w.len();
-    }
-    match p[pi] {
-        '*' => {
-            if pi + 1 >= p.len() {
-                return true;
-            }
-            let mut j = wi;
-            while j <= w.len() {
-                if glob_inner(p, w, pi + 1, j) {
-                    return true;
-                }
-                j += 1;
-            }
-            false
-        }
-        '?' => wi < w.len() && glob_inner(p, w, pi + 1, wi + 1),
-        c => wi < w.len() && w[wi] == c && glob_inner(p, w, pi + 1, wi + 1),
-    }
+    // ponytail: glob-matcher treats '/' as a separator in `*`; case words here are plain strings
+    glob_matcher::glob_match(pattern, word)
 }
 
 fn read_file(path: &str) -> String {

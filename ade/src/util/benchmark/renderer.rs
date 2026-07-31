@@ -7,7 +7,15 @@ use libsarga::io;
 
 pub(crate) fn bench_compositor() -> BenchmarkResult {
     let start = 0u64;
-    let mut comp = Compositor::new(320, 200);
+    let mut comp = match Compositor::new(320, 200) {
+        Some(c) => c,
+        None => return BenchmarkResult {
+            name: "compositor_clear_fill",
+            duration_ticks: 0,
+            allocation_count: 0,
+            memory_delta: 0,
+        },
+    };
 
     // Fill wallpaper layer with a pattern
     {

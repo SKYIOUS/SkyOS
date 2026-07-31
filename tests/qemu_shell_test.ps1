@@ -1,10 +1,15 @@
 # SkyOS QEMU Shell Test
 # Boots QEMU, logs in via serial, runs commands, checks output.
 param(
-    [string]$KernelDir = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL",
+    [string]$KernelDir = "",
     [string]$IsoPath = "",
     [int]$TimeoutSeconds = 180
 )
+
+$scriptDir = Split-Path -Parent $PSCommandPath
+if (-not $KernelDir) {
+    $KernelDir = Join-Path $scriptDir "..\kernel"
+}
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

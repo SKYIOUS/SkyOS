@@ -2,7 +2,6 @@ pub(crate) mod app_db;
 pub(crate) mod app_registry;
 pub(crate) mod automation;
 pub(crate) mod benchmark;
-pub(crate) mod clipboard_service;
 pub(crate) mod config;
 pub(crate) mod crash_diagnostics;
 pub(crate) mod crash_manager;

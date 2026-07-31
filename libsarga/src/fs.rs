@@ -191,7 +191,7 @@ pub fn umount(target: &str) -> Result<(), i64> {
     }
     buf[..bytes.len()].copy_from_slice(bytes);
     buf[bytes.len()] = 0;
-    let r = unsafe { syscall2(166, buf.as_ptr() as u64, 0) };
+    let r = unsafe { syscall2(crate::syscall::SYS_UMOUNT2, buf.as_ptr() as u64, 0) };
     if r < 0 {
         Err(-r)
     } else {

@@ -28,6 +28,7 @@ pub mod start;
 pub mod stdio;
 pub mod sync;
 pub mod syscall;
+pub mod time;
 pub mod thread;
 pub mod toml;
 pub mod vahiai;

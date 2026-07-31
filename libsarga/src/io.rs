@@ -480,6 +480,14 @@ pub fn times(buf: &mut Tms) -> Result<u64, Error> {
     if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as u64) }
 }
 
+/// Get the current time for the given clock ID (CLOCK_REALTIME=0, CLOCK_MONOTONIC=1).
+/// Returns (seconds, nanoseconds).
+pub fn clock_gettime(clock_id: i64) -> Result<(i64, i64), Error> {
+    let mut ts = crate::posix::Timespec { sec: 0, nsec: 0 };
+    let r = unsafe { syscall2(SYS_CLOCK_GETTIME, clock_id as u64, (&mut ts as *mut crate::posix::Timespec) as u64) };
+    if r < 0 { Err(Error::from_i64(r)) } else { Ok((ts.sec, ts.nsec)) }
+}
+
 /// Get parent process ID.
 pub fn getppid() -> u64 {
     unsafe { syscall0(SYS_GETPPID) as u64 }

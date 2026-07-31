@@ -9,7 +9,7 @@ The VFS is built around two primary traits:
 -   **`VfsNode`**: Represents an object in the filesystem tree, which can be a file, directory, device, or pipe.
 -   **`FileSystem`**: Represents a mounted filesystem instance, responsible for providing the root `VfsNode` of its own tree.
 
-A global `VFS` manager (an `Arc<Mutex<VfsManager>>`) tracks all mounted filesystems and handles path resolution.
+A global `VFS` manager (a `pub static VFS: SchedLock<VfsManager>`) tracks all mounted filesystems and handles path resolution.
 
 ## 2. `VfsNode` Trait
 
@@ -19,19 +19,21 @@ The `VfsNode` trait is the core abstraction. All filesystem objects must impleme
 pub trait VfsNode: Send + Sync {
     fn name(&self) -> String;
     fn is_dir(&self) -> bool;
-    fn read(&self) -> Result<Vec<u8>, ()>;
-    fn write(&self, data: &[u8]) -> Result<(), ()>;
-    fn stat(&self) -> Result<Stat, ()>;
-    fn children(&self) -> Result<Vec<Arc<dyn VfsNode>>, ()>;
+    fn read(&mut self, max_len: usize) -> Result<Vec<u8>, Error>;
+    fn write(&self, data: &[u8]) -> Result<usize, Error>;
+    fn stat(&self) -> Result<Stat, Error>;
+    fn children(&self) -> Result<Vec<Arc<dyn VfsNode>>, Error>;
     // ... other methods like create, mkdir, unlink ...
 }
 ```
+
+(Actual signature in `vfs/mod.rs`: `read(&mut self, max_len)` and `write(&self, data)`.)
 
 ## 3. Path Resolution
 
 Path resolution starts at the root (`/`) and traverses the VFS tree.
 
-1.  The `VfsManager` starts with the root filesystem (`Tmpfs`).
+1.  The `VfsManager` starts with the root filesystem (ramfs).
 2.  It splits the path into components (e.g., `/home/user/file` -> `home`, `user`, `file`).
 3.  For each component, it checks if the current path is a mount point. If so, it switches to the root of the mounted filesystem.
 4.  It calls the `children()` method on the current directory node and finds the node with the matching name.
@@ -39,10 +41,15 @@ Path resolution starts at the root (`/`) and traverses the VFS tree.
 
 ## 4. Supported Filesystems
 
--   **`Tmpfs` (`ramfs.rs`)**: A simple in-memory filesystem used for the root (`/`) and temporary files.
--   **`Ext2` (`ext2.rs`)**: A read-only implementation of the Second Extended Filesystem.
--   **`FAT32` (`fat.rs`)**: A wrapper around the `fatfs` crate for interoperability with FAT32-formatted devices.
--   **`Pipe` (`pipe.rs`)**: An in-memory pipe for inter-process communication (IPC), exposed via the `sys_pipe` syscall.
+-   **`ramfs.rs`**: In-memory filesystem used for the root (`/`) and `/tmp`.
+-   **`devfs.rs`**: Device filesystem mounted at `/dev`.
+-   **`ctlfs.rs`**: Control filesystem mounted at `/ctl`.
+-   **`pipe.rs`**: In-memory pipe for inter-process communication (IPC), exposed via `sys_pipe`.
+-   **`tarfs.rs`**: Read-only tar archive filesystem (boot image payload).
+-   **`skyfs.rs`**: SkyOS native filesystem.
+-   **`ext2.rs`**: Read-write Second Extended Filesystem (inode/block writes implemented).
+-   **`ext4.rs`**: Ext4 support (boot falls back ext4 → ext2 → SkyFS).
+-   **`fat.rs`**: Wrapper around the `fatfs` crate for FAT32-formatted devices.
 
 ## 5. File Descriptors
 

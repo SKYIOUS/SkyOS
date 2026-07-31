@@ -806,12 +806,8 @@ fn format_size(s: u64) -> alloc::string::String {
 }
 
 fn format_date(ts: u64) -> alloc::string::String {
-    // Simple: days since epoch
     let days = ts / 86400;
-    let y = 1970 + days / 365;
-    let rem = days % 365;
-    let m = 1 + rem / 30;
-    let d = 1 + rem % 30;
+    let (y, m, d) = libsarga::time::civil_from_days(days);
     alloc::format!("{}-{:02}-{:02}", y, m, d)
 }
 

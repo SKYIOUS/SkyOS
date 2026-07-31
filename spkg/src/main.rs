@@ -139,8 +139,10 @@ fn cmd_install(name: &str) {
             None => { libsarga::println!("spkg: package '{}' not found", pkg_name); continue; }
         };
         // Find which repo has it
-        let r = repo_name.clone();
-        let repo = repos.iter().find(|r2| r2.name == r).unwrap();
+        let repo = match repos.iter().find(|r2| r2.name == repo_name) {
+            Some(r) => r,
+            None => { libsarga::println!("spkg: repo '{}' not found", repo_name); continue; }
+        };
         // Try cache first, then download
         let data = match install::fetch_cached_spkg(&repo.name, entry) {
             Ok(d) => d,
@@ -230,7 +232,10 @@ fn cmd_upgrade() {
             if let (Some(iv), Some(ev)) = (iv, ev) {
                 if ev.compare(&iv) > 0 {
                     libsarga::println!("spkg: upgrading {} {} -> {}", inst.name, inst.version, entry.version);
-                    let repo = repos.iter().find(|r| r.name == *repo_name).unwrap();
+                    let repo = match repos.iter().find(|r| r.name == *repo_name) {
+                        Some(r) => r,
+                        None => { libsarga::println!("spkg: repo '{}' not found", repo_name); continue; }
+                    };
                     let data = match install::download_package(repo, entry) {
                         Ok(d) => d,
                         Err(e) => { libsarga::println!("spkg: download failed: {}", e); continue; }

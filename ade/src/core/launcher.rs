@@ -72,6 +72,7 @@ pub(crate) fn spawn_app_at(
         title: alloc::string::String::from(title),
         content: alloc::vec::Vec::new(),
         scroll: 0,
+        id: 0,
         pid: None,
         focused: true,
         dragging: false,

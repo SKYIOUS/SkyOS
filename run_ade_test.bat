@@ -2,9 +2,10 @@
 REM Launch SARGA OS with ADE fixes — PS/2 mouse, 800x600 framebuffer
 REM No -usb -device usb-tablet (kernel only supports PS/2 mouse)
 
-set BOOTIMG=C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin
-set BIOS=C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\OVMF.fd
-set LOG=C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\qemu_display.log
+set SCRIPT_DIR=%~dp0
+set BOOTIMG=%SCRIPT_DIR%kernel\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin
+set BIOS=%SCRIPT_DIR%OVMF.fd
+set LOG=%SCRIPT_DIR%qemu_display.log
 
 del "%LOG%" 2>nul
 

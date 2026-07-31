@@ -4,7 +4,7 @@ use libsarga::theme::Theme;
 
 // Window API v1.0 — STABLE
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WindowId(pub(crate) usize);
+pub struct WindowId(pub(crate) u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowState {
@@ -75,6 +75,7 @@ pub struct AppWindow {
     pub(crate) title: alloc::string::String,
     pub(crate) content: alloc::vec::Vec<alloc::string::String>,
     pub(crate) scroll: u32,
+    pub(crate) id: u64,
     pub(crate) pid: Option<u64>,
     pub(crate) focused: bool,
     pub(crate) dragging: bool,

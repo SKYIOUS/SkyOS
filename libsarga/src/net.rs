@@ -640,12 +640,19 @@ impl HttpClient {
         client.socket.write(request.as_bytes())?;
 
         // Read response
+        // ponytail: 32MB cap bounds memory against a hostile/hung server; raise if packages outgrow it
+        const MAX_RESPONSE: usize = 32 * 1024 * 1024;
         let mut response = alloc::vec::Vec::new();
         let mut buffer = [0u8; 4096];
         loop {
             match client.socket.read(&mut buffer) {
                 Ok(0) => break,
-                Ok(n) => response.extend_from_slice(&buffer[..n]),
+                Ok(n) => {
+                    if response.len() + n > MAX_RESPONSE {
+                        return Err(Error::from_i64(-28)); // ENOSPC
+                    }
+                    response.extend_from_slice(&buffer[..n]);
+                }
                 Err(_) => break,
             }
         }

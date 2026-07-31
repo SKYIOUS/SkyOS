@@ -1,7 +1,8 @@
 # SkyOS Login Test — send username+password, expect shell prompt
-$repo = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL"
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repo = Join-Path $scriptDir "..\kernel"
 $qemu = "qemu-system-x86_64"
-$bios = "$env:USERPROFILE\.cargo\bootimage\OVMF-pure-efi.fd"
+$bios = Join-Path $scriptDir "..\OVMF.fd"
 
 Write-Host "=== SkyOS Login Test ==="
 

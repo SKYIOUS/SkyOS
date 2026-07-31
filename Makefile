@@ -2,7 +2,7 @@
 # ==================
 # Targets are designed for WSL/Linux with QEMU and xorriso.
 
-KERNEL_DIR ?= ../SKYIOUS\ KERNEL
+KERNEL_DIR ?= kernel
 SHELL := /bin/bash
 PYTHON ?= python3
 

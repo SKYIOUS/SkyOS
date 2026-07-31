@@ -30,7 +30,13 @@ fn user_main() -> i32 {
     };
 
     let mut desktop = Desktop::new(desktop_win.width, desktop_win.height);
-    let mut compositor = Compositor::new(desktop_win.width, desktop_win.height);
+    let mut compositor = match Compositor::new(desktop_win.width, desktop_win.height) {
+        Some(c) => c,
+        None => {
+            io::print_str("[ade] failed to allocate compositor buffers\n");
+            return 0;
+        }
+    };
     if (0..libsarga::args::argc()).any(|i| libsarga::args::get(i as usize) == Some("--selftest")) {
         let ok = util::testing::run_all(&mut desktop);
         io::print_str(if ok { "[ade] selftest PASS\n" } else { "[ade] selftest FAIL\n" });

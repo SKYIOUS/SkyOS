@@ -1,39 +1,21 @@
 # Synchronization Primitives
 
-SkyOS provides a full set of synchronization primitives built on atomic operations and the scheduler.
+SkyOS uses the `spin` crate's `Mutex`/`RwLock` throughout the kernel, plus futexes for userspace.
 
 ## Spinlocks
 
-Spinlocks are the lowest-level synchronization primitive, used in interrupt handlers and extremely short critical sections. They disable interrupts on the local CPU while held to prevent deadlocks.
+`spin::Mutex` is the primary kernel lock (`use spin::Mutex` in scheduler, process, futex, keyboard, VFS, etc.). Interrupt handlers use `try_lock` to avoid deadlocks.
 
 ```rust
-pub struct Spinlock<T> {
-    locked: AtomicBool,
-    data: UnsafeCell<T>,
-}
-```
-
-Spinlocks are marked with `SpinlockIrqSave` to track interrupt state on acquisition and restore it on release.
-
-## Mutexes
-
-For longer critical sections, the kernel uses sleeping mutexes. When a thread cannot acquire a mutex, it is removed from the run queue and placed in a wait queue. The mutex owner's priority is temporarily boosted to prevent priority inversion.
-
-## Conditional Variables
-
-Condition variables allow threads to wait for a condition to become true. They are used with mutexes:
-
-```rust
-let mut data = mutex.lock();
-while !condition(&data) {
-    condvar.wait(&mut data);
-}
+// spin crate Mutex — the kernel does not define a custom Spinlock type.
 ```
 
 ## Futexes
 
-Futexes (fast userspace mutexes) provide a hybrid approach: the fast path is entirely in userspace using atomic compare-and-swap, and only contention triggers a syscall. This makes them the preferred synchronization mechanism for performance-sensitive userspace code.
+Futexes (`syscalls/futex.rs`, `SYS_FUTEX`) provide a hybrid approach: the fast path is entirely in userspace using atomic compare-and-swap, and only contention triggers a syscall. This is the preferred synchronization mechanism for performance-sensitive userspace code.
 
-## Barrier
+## Other Notes
 
-Barriers synchronize a group of threads at a point in execution. The kernel barrier implementation uses a generation counter to handle reuse safely.
+- **No sleeping mutexes**: the kernel uses spinlocks, not sleepable mutexes with wait queues.
+- **No condvars, barriers, or semaphores** exist in the kernel.
+- Blocking (sleep, pipe I/O, futex wait) is implemented via thread state + global sleep/block queues in the scheduler, not condvar primitives.

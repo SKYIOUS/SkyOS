@@ -33,15 +33,15 @@ Skyious is a monolithic kernel with a modular design, written from scratch in Ru
 
 ### 3.3 Scheduling & Concurrency
 
-- **Preemptive Scheduler:** A global, priority-based round-robin scheduler (`task/scheduler.rs`) manages `Thread`s.
+- **Preemptive Scheduler:** A per-CPU **stride scheduler** (`task/scheduler.rs`) manages `Thread`s using tickets/`pass` proportional-share (see SCHEDULER.md). New threads spawn into a global `pending_queue`; idle CPUs steal work.
 - **SMP:** The kernel boots Application Processors (APs), each of which enters the scheduler loop to begin executing threads.
 - **Async Executor:** A cooperative async/await executor (`task/executor.rs`) runs tasks like the kernel shell. It is run within a dedicated kernel thread.
 
 ### 3.4 Virtual Filesystem (VFS)
 
-- **Trait-based:** A `VfsNode` trait provides a unified interface for files, directories, and devices.
-- **Filesystems:** Supports `Tmpfs` (for `/`), `Ext2` (read-only), `FAT32`, and `Pipe` for IPC.
-- **Mounting:** A `VfsManager` handles mounting filesystems at different paths.
+- **Trait-based:** `VfsNode` and `FileSystem` traits provide a unified interface for files, directories, and devices.
+- **Filesystems:** ramfs (root), devfs, ctlfs, pipe, tarfs, skyfs, ext2 (**read-write**), ext4, and FAT32 (via `fatfs` crate).
+- **Mounting:** A `VfsManager` (`pub static VFS: SchedLock<VfsManager>`) handles mounting filesystems at different paths.
 
 ### 3.5 Syscalls
 
@@ -51,6 +51,8 @@ Skyious is a monolithic kernel with a modular design, written from scratch in Ru
 ### 3.6 Drivers
 
 - **PCI:** The PCI bus is enumerated at boot to discover devices.
-- **Storage:** A block device trait abstracts storage controllers like AHCI.
+- **Storage:** A block device trait abstracts storage controllers: AHCI, NVMe, PATA, and VirtIO block.
 - **Network:** E1000 and VirtIO network drivers are supported, integrated with the `smoltcp` networking stack.
-- **Graphics:** A framebuffer driver uses the UEFI GOP to provide a graphical console.
+- **USB:** UHCI, XHCI, and HID drivers.
+- **Audio:** HDA and PC speaker.
+- **Graphics:** VirtIO GPU plus BGA framebuffer with a graphical console (UEFI GOP).

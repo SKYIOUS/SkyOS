@@ -74,7 +74,7 @@ fn cmd_build(args: &[&str]) {
     // Package binary into .skp format
     let binary_path = alloc::format!("target/x86_64-skyos/release/{}", pkg_name);
     let skp_path = alloc::format!("{}.skp", pkg_name);
-    let pkg_status = run_cmd("/bin/skypkg", &["pack", &binary_path, "-o", &skp_path]);
+    let pkg_status = run_cmd("/bin/spkg", &["pack", &binary_path, "-o", &skp_path]);
     if pkg_status == 0 {
         puts(&alloc::format!("Created package: {}", skp_path));
     } else {
@@ -124,7 +124,7 @@ fn cmd_info(_args: &[&str]) {
     puts("SkyOS Developer Toolchain");
     puts("Target: x86_64-skyos");
     puts("C Library: libsarga (Rust, no_std)");
-    puts("Package format: .skp (skypkg)");
+    puts("Package format: .skp (spkg)");
     puts("Build system: Cargo + custom target JSON");
 }
 
@@ -139,7 +139,7 @@ fn cmd_install(args: &[&str]) {
     } else {
         alloc::format!("{}.skp", pkg_name)
     };
-    let status = run_cmd("/bin/skypkg", &["install", &skp_path]);
+    let status = run_cmd("/bin/spkg", &["install", &skp_path]);
     if status == 0 {
         puts(&alloc::format!("Installed: {}", pkg_name));
     } else {
@@ -150,7 +150,7 @@ fn cmd_install(args: &[&str]) {
 fn cmd_repo(args: &[&str]) {
     let repo_path = args.first().copied().unwrap_or("/repo");
     puts(&alloc::format!("Generating local repo at: {}", repo_path));
-    let status = run_cmd("/bin/skypkg", &["repo-index", repo_path]);
+    let status = run_cmd("/bin/spkg", &["repo-index", repo_path]);
     if status == 0 {
         puts("Repository index created.");
     } else {

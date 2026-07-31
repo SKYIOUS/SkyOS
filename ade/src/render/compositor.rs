@@ -642,15 +642,18 @@ impl<'a> Canvas<'a> {
 // ── LayerBuffer ─────────────────────────────────────────────────────────────
 
 /// One compositor layer: an offscreen pixel buffer.
+#[derive(Default)]
 struct LayerBuffer {
     buf: Vec<u32>,
 }
 
 impl LayerBuffer {
-    fn new(pixels: usize) -> Self {
-        LayerBuffer {
-            buf: vec![0u32; pixels],
-        }
+    /// Allocate exactly `pixels` zeroed entries. Returns `Err(())` on OOM
+    /// instead of panicking through the global alloc error handler.
+    fn alloc(&mut self, pixels: usize) -> Result<(), ()> {
+        self.buf.try_reserve_exact(pixels).map_err(|_| ())?;
+        self.buf.resize(pixels, 0);
+        Ok(())
     }
 
     fn clear(&mut self) {
@@ -671,22 +674,22 @@ pub(crate) struct Compositor {
 }
 
 impl Compositor {
-    pub fn new(w: u32, h: u32) -> Self {
+    /// Returns `None` if any layer buffer allocation fails (OOM).
+    pub fn new(w: u32, h: u32) -> Option<Self> {
         let pixels = (w * h) as usize;
-        Compositor {
-            layers: [
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-            ],
+        let mut layers: [LayerBuffer; LAYER_COUNT] = Default::default();
+        for l in layers.iter_mut() {
+            if l.alloc(pixels).is_err() {
+                return None;
+            }
+        }
+        Some(Compositor {
+            layers,
             w,
             h,
             damage: DamageTracker::new(),
             first_frame: true,
-        }
+        })
     }
 
     /// Reset every layer buffer to transparent black.

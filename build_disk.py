@@ -8,8 +8,7 @@ import tempfile
 def run_command(command, cwd=None, env=None, check=True):
     print(f"Running: {' '.join(command)}")
     full_env = os.environ.copy()
-    cargo_path = os.path.join(os.path.expanduser("~"), ".cargo", "bin")
-    full_env["PATH"] = os.pathsep.join([cargo_path, full_env.get("PATH", "")])
+    # Use PATH from environment instead of hardcoding ~/.cargo/bin
     if env:
         full_env.update(env)
     result = subprocess.run(command, cwd=cwd, env=full_env, shell=True)
@@ -57,10 +56,19 @@ def build_kernel(kernel_dir):
 
 def _ensure_nightly_cargo_wrapper():
     """Create a wrapper script that invokes nightly cargo for build.rs subprocesses."""
-    nightly_bin = os.path.join(os.path.expanduser("~"), ".rustup", "toolchains",
-                               "nightly-x86_64-pc-windows-msvc", "bin")
-    nightly_cargo = os.path.join(nightly_bin, "cargo.exe")
-    nightly_rustc = os.path.join(nightly_bin, "rustc.exe")
+    # Use rustup to find nightly toolchain instead of hardcoding path
+    try:
+        result = subprocess.run(["rustup", "which", "cargo", "--toolchain", "nightly"], 
+                               capture_output=True, text=True, check=True)
+        nightly_cargo = result.stdout.strip()
+        nightly_rustc = nightly_cargo.replace("cargo.exe", "rustc.exe")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback to hardcoded path if rustup not available
+        nightly_bin = os.path.join(os.path.expanduser("~"), ".rustup", "toolchains",
+                                   "nightly-x86_64-pc-windows-msvc", "bin")
+        nightly_cargo = os.path.join(nightly_bin, "cargo.exe")
+        nightly_rustc = os.path.join(nightly_bin, "rustc.exe")
+    
     wrapper_path = os.path.join(tempfile.gettempdir(), "opencode", "cargo-nightly-wrapper.cmd")
     os.makedirs(os.path.dirname(wrapper_path), exist_ok=True)
     with open(wrapper_path, "w") as f:

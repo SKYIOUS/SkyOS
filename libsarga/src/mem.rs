@@ -1,4 +1,5 @@
 use crate::errno::Error;
+use crate::sync::RawMutex;
 use crate::syscall::*;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -45,6 +46,7 @@ const SLAB_SIZES: &[usize] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 struct SlabAllocator {
     free_lists: [AtomicUsize; SLAB_SIZES.len()], // Each stores a pointer to free list head
+    lock: RawMutex,
 }
 
 impl SlabAllocator {
@@ -52,6 +54,7 @@ impl SlabAllocator {
         const ZERO: AtomicUsize = AtomicUsize::new(0);
         SlabAllocator {
             free_lists: [ZERO; SLAB_SIZES.len()],
+            lock: RawMutex::new(),
         }
     }
 
@@ -61,25 +64,31 @@ impl SlabAllocator {
 
     unsafe fn alloc_from_slab(&self, layout: Layout) -> Option<*mut u8> {
         if let Some(idx) = self.slab_index(layout.size()) {
-            let head = self.free_lists[idx].swap(0, Ordering::Acquire);
+            self.lock.lock();
+            // SAFETY: free-list head is either 0 or a block pointer written by dealloc_to_slab
+            let head = self.free_lists[idx].load(Ordering::Acquire);
             if head != 0 {
                 // Pop from free list
                 let ptr = head as *mut u8;
                 // Read next pointer from first word
                 let next = *(ptr as *const usize);
                 self.free_lists[idx].store(next, Ordering::Release);
+                self.lock.unlock();
                 return Some(ptr);
             }
+            self.lock.unlock();
         }
         None
     }
 
     unsafe fn dealloc_to_slab(&self, ptr: *mut u8, layout: Layout) {
         if let Some(idx) = self.slab_index(layout.size()) {
+            self.lock.lock();
             // Push to free list
             let head = self.free_lists[idx].load(Ordering::Acquire);
             *(ptr as *mut usize) = head;
             self.free_lists[idx].store(ptr as usize, Ordering::Release);
+            self.lock.unlock();
         }
     }
 }

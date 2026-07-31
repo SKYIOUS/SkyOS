@@ -1,7 +1,8 @@
 # SkyOS Panic Recovery Test — trigger kernel panic, verify reboot
-$repo = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL"
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repo = Join-Path $scriptDir "..\kernel"
 $qemu = "qemu-system-x86_64"
-$bios = "$env:USERPROFILE\.cargo\bootimage\OVMF-pure-efi.fd"
+$bios = Join-Path $scriptDir "..\OVMF.fd"
 
 Write-Host "=== SkyOS Panic Recovery Test ==="
 

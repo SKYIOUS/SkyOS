@@ -31,20 +31,26 @@ fn copy_file(src: &str, dst: &str) -> i64 {
     }
     let mut buf = [0u8; 65536];
     loop {
-        let n = unsafe { syscall::syscall3(0, src_fd as u64, buf.as_mut_ptr() as u64, 65536) };
-        if (n as i64) <= 0 {
-            break;
+        match io::read(src_fd, &mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if io::write_all(dst_fd, &buf[..n]).is_err() {
+                    println!("cp: {}: write failed", dst);
+                    let _ = io::close(src_fd);
+                    let _ = io::close(dst_fd);
+                    return -1;
+                }
+            }
+            Err(_) => {
+                println!("cp: {}: read failed", src);
+                let _ = io::close(src_fd);
+                let _ = io::close(dst_fd);
+                return -1;
+            }
         }
-        unsafe {
-            syscall::syscall3(1, dst_fd as u64, buf.as_ptr() as u64, n as u64);
-        }
     }
-    unsafe {
-        syscall::syscall1(3, src_fd as u64);
-    }
-    unsafe {
-        syscall::syscall1(3, dst_fd as u64);
-    }
+    let _ = io::close(src_fd);
+    let _ = io::close(dst_fd);
     0
 }
 

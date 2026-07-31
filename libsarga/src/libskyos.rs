@@ -68,6 +68,9 @@ pub fn list_dir(path: &str) -> Option<Vec<String>> {
         };
         let mut off = 0;
         while off < n as usize {
+            if off + 18 > n as usize {
+                break;
+            }
             let d_ino = u64::from_ne_bytes(buf[off..off + 8].try_into().unwrap());
             let d_reclen = u16::from_ne_bytes(buf[off + 16..off + 18].try_into().unwrap()) as usize;
             let name_start = off + 19;
@@ -83,6 +86,9 @@ pub fn list_dir(path: &str) -> Option<Vec<String>> {
                 }
             }
             off += d_reclen;
+            if d_reclen == 0 {
+                break;
+            }
         }
     }
     let _ = io::close(fd);

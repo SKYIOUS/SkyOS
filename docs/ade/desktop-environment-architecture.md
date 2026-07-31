@@ -145,16 +145,20 @@ Window Manager Lifecycle
 
 ### Code Snippets
 
-**File: ade/src/core/window_manager.rs (Lines 44-50)**
+**File: ade/src/core/window_manager.rs (Lines 50-64)**
 ```rust
     /// WindowManager API v1.0
-    pub fn create(&mut self, window: AppWindow) -> WindowId {
+    pub fn create(&mut self, mut window: AppWindow) -> WindowId {
+        window.id = self.next_id;
+        let id = WindowId(window.id);
+        self.next_id += 1;
         self.windows.push(window);
-        let id = WindowId(self.windows.len() - 1);
         self.focused = Some(id.0);
         id
     }
 ```
+
+WindowId is a stable u64 (monotonic `next_id` counter), not a Vec index. All lookups resolve ids to positions via `find_index()` linear scan — windows count is small. `focused`/`dragging` store stable ids so they survive window removal.
 
 **File: ade/src/core/window_manager.rs (Lines 103-112)**
 ```rust

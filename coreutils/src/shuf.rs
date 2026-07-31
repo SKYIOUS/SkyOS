@@ -21,6 +21,19 @@ impl XorShift {
     }
 }
 
+fn entropy_seed() -> u64 {
+    if let Ok(fd) = io::open("/dev/urandom", 0) {
+        let mut buf = [0u8; 8];
+        if io::read(fd, &mut buf).is_ok() {
+            let _ = io::close(fd);
+            return u64::from_le_bytes(buf);
+        }
+        let _ = io::close(fd);
+    }
+    let clock = unsafe { libsarga::syscall::syscall1(96, 0) } as u64;
+    0x9E37_79B9_7F4A_7C15 ^ clock
+}
+
 fn user_main() -> i32 {
     let lines: Vec<alloc::string::String> = if args::argc() > 1 {
         match io::read_to_string(args::get(1).unwrap()) {
@@ -33,7 +46,7 @@ fn user_main() -> i32 {
         all.lines().map(|l| l.to_string()).collect()
     };
 
-    let mut rng = XorShift::new(42);
+    let mut rng = XorShift::new(entropy_seed() | 1);
     let mut shuffled = lines.clone();
     let n = shuffled.len();
     for i in (1..n).rev() {

@@ -17,7 +17,7 @@ pub(crate) fn bench_create_destroy(desktop: &mut Desktop) -> BenchmarkResult {
             x: i as i32 * 10, y: i as i32 * 10, w: 200, h: 150,
             prev_x: 0, prev_y: 0, prev_w: 200, prev_h: 150,
             title: String::from("Bench"),
-            content: Vec::new(), scroll: 0, pid: None,
+            content: Vec::new(), scroll: 0, id: 0, pid: None,
             focused: true, dragging: false, drag_ox: 0, drag_oy: 0,
             state: WindowState::Normal, prev_state: WindowState::Normal,
             flags: VisualFlags::new(), selection: None, anim: None,

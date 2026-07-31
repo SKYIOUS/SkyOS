@@ -15,20 +15,23 @@ The global `SCHEDULER` is a `spin::Mutex` containing the scheduler state.
 
 ### 2.1 Scheduling Policy
 
--   **Priority-Based Round-Robin:**
-    -   There are 8 priority levels (0=lowest, 7=highest).
-    -   The scheduler maintains an array of 8 ready queues (`ready_queues`), one for each priority level.
-    -   When scheduling, it picks a thread from the highest-priority non-empty queue.
-    -   Threads at the same priority level are scheduled in a round-robin fashion.
+-   **Stride Scheduling (proportional share):**
+    -   Each thread carries `tickets` (default 20), `stride`, and `pass` (`STRIDE_MAX = 1<<20`).
+    -   The scheduler keeps a max-heap (`stride_heap`) of `PassOrd(Box<Thread>)` ordered by minimum `pass`.
+    -   `pick_next()` pops the lowest-`pass` thread from the heap, then work-steals from other CPUs' heaps (up to 3 attempts) before falling back to the global `pending_queue`.
+    -   Legacy per-CPU `ready_queues`/`flush_ready_queues()` scaffolding remains but the direct `push_thread` path is dead code (`#[allow(dead_code)]`).
+-   **Per-CPU state:** each CPU has its own `PerCpuScheduler` with a `stride_heap` and `current_thread`; newly spawned threads go to a global `pending_queue` and are stolen by idle CPUs.
 
 ### 2.2 Thread States
 
 A `Thread` can be in one of the following states (`ThreadStatus`):
 
--   `Ready`: The thread is ready to run and is waiting in one of the `ready_queues`.
+-   `Ready`: The thread is ready to run and is waiting in the `stride_heap` or `pending_queue`.
 -   `Running`: The thread is currently executing on a CPU.
 -   `Blocked`: The thread is waiting for an event (e.g., I/O, `sys_nanosleep`). Blocked threads are moved to a `sleep_queue`.
 -   `Exited`: The thread has finished execution and is waiting to be reaped.
+
+Global shared queues hold sleep/block/futex states; per-CPU schedulers read `crate::smp::get_cpu_id()`.
 
 ### 2.3 Context Switching
 
@@ -40,7 +43,7 @@ A `Thread` can be in one of the following states (`ThreadStatus`):
 
 -   The BSP (Bootstrap Processor) initializes the kernel and starts the APs (Application Processors) using the SIPI sequence.
 -   Each AP performs its own initialization (GDT, IDT, LAPIC) and then enters the main scheduler loop (`task::scheduler::schedule()`).
--   All cores share the global `SCHEDULER` mutex. To prevent deadlocks, interrupt handlers use `try_lock` when interacting with the scheduler.
+-   Each core has its own `PerCpuScheduler`; scheduling state is not shared under one global mutex. Interrupt handlers interact with the scheduler via `try_lock` to avoid deadlocks.
 
 ## 4. Async Executor (`task/executor.rs`)
 

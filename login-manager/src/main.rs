@@ -4,73 +4,16 @@ extern crate alloc;
 use alloc::string::String;
 use libsarga::theme::Theme;
 use libsarga::{gui::Window, sarga_main};
-use libsarga::{io, process};
+use libsarga::{io, process, hash};
 
 const SHADOW_PATH: &str = "/etc/shadow";
-
-fn hex_decode(s: &[u8]) -> Option<alloc::vec::Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    let mut out = alloc::vec::Vec::with_capacity(s.len() / 2);
-    for chunk in s.chunks(2) {
-        let hi = (chunk[0] as char).to_digit(16)? as u8;
-        let lo = (chunk[1] as char).to_digit(16)? as u8;
-        out.push((hi << 4) | lo);
-    }
-    Some(out)
-}
 
 fn verify_password(username: &str, password: &str) -> bool {
     let data = match libsarga::fs::read_to_string(SHADOW_PATH) {
         Ok(d) => d.into_bytes(),
-        Err(_) => return username == "root",
+        Err(_) => return false,
     };
-    let lines: alloc::vec::Vec<&[u8]> = data.split(|&b| b == b'\n').collect();
-    for line in &lines {
-        if line.is_empty() {
-            continue;
-        }
-        let mut parts = line.splitn(2, |&b| b == b':');
-        let name = parts.next().unwrap_or(b"");
-        if name != username.as_bytes() {
-            continue;
-        }
-        let rest = parts.next().unwrap_or(b"");
-        if rest.starts_with(b"PBKDF2-") {
-            let inner = &rest[7..];
-            let mut parts2 = inner.splitn(2, |&b| b == b':');
-            let salt_hex = parts2.next().unwrap_or(b"");
-            let rest3 = parts2.next().unwrap_or(b"");
-            let salt_bytes = match hex_decode(salt_hex) {
-                Some(s) if s.len() == 16 => s,
-                _ => return false,
-            };
-            let mut salt_arr = [0u8; 16];
-            salt_arr.copy_from_slice(&salt_bytes);
-            let mut dk_hex = rest3;
-            let mut iterations: u32 = 10000;
-            if let Some(pos) = rest3.iter().position(|&b| b == b':') {
-                dk_hex = &rest3[..pos];
-                iterations = core::str::from_utf8(&rest3[pos + 1..])
-                    .unwrap_or("10000")
-                    .parse()
-                    .unwrap_or(10000);
-            }
-            let stored_dk = match hex_decode(dk_hex) {
-                Some(s) if s.len() == 32 => s,
-                _ => return false,
-            };
-            let pw = password.as_bytes();
-            let mut dk_out = [0u8; 32];
-            if libsarga::hash::pbkdf2_sha256(pw, &salt_arr, &mut dk_out, iterations).is_ok() {
-                return dk_out == stored_dk.as_slice();
-            }
-            return false;
-        }
-        return password == core::str::from_utf8(rest).unwrap_or("");
-    }
-    username == "root"
+    libsarga::hash::verify_password(&data, username, password)
 }
 
 fn user_main() -> i32 {

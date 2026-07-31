@@ -57,7 +57,7 @@ pub(crate) static APPS: &[AppEntry] = &[
     // More utilities
     AppEntry { name: "Text Extractor",  cat: AppCategory::Utilities,    exec: "/bin/skyextractor",  desc: "Extract text from files",      icon: 'X' },
     AppEntry { name: "Disk Usage",      cat: AppCategory::Utilities,    exec: "/bin/skydisk",       desc: "Analyze disk space usage",     icon: 'D' },
-    AppEntry { name: "Package Manager", cat: AppCategory::Utilities,    exec: "/bin/skypkg",        desc: "Install and remove packages",  icon: '#' },
+    AppEntry { name: "Package Manager", cat: AppCategory::Utilities,    exec: "/bin/spkg",          desc: "Install and remove packages",  icon: '#' },
     AppEntry { name: "Screenshot",      cat: AppCategory::Utilities,    exec: "/bin/skyscreenshot", desc: "Capture the screen",           icon: 'C' },
     AppEntry { name: "IPC Echo",        cat: AppCategory::Utilities,    exec: "/bin/ipc_echo",      desc: "Test the ADE IPC channel",     icon: '=' },
 ];

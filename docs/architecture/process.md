@@ -1,40 +1,38 @@
 # Process and Thread Model
 
-SkyOS implements a lightweight task model where processes and threads share the same underlying task structure.
+SkyOS has distinct `Process` and `Thread` types.
 
-## Task Structure
+## Structure
 
-Every execution context is represented by a `Task` struct containing:
+Processes are reference-counted `Arc<Process>` stored in `PROCESS_TABLE: Mutex<BTreeMap<u64, Arc<Process>>>`, with `CURRENT_PROCESS` tracking the running one:
 
 ```rust
-pub struct Task {
-    id: TaskId,
-    state: TaskState,
-    context: TaskContext,
-    memory: MemorySpace,
-    scheduler_info: SchedulerInfo,
-    parent: Option<TaskId>,
-    children: Vec<TaskId>,
-    ipc_ports: Vec<IpcPort>,
+pub struct Process {
+    pid: u64,
+    fd_table: Mutex<Vec<Option<FileDescriptor>>>,  // per-process
+    fd_flags: ...,
+    handle_table: HandleTable,
+    vmas: Mutex<Vec<Vma>>,
+    children: Vec<...>,
+    brk: ...,
+    exit_code: ...,
+    credentials, capabilities, signal state, ...
 }
 ```
 
-Tasks are reference-counted through `Arc<Task>` and live in the global task registry.
+`FileDescriptor` is an enum: `File { node, offset } | PtyMaster | PtySlave | EventFd`.
 
-## Processes vs Threads
+## Threads
 
-The distinction between processes and threads is minimal:
-- **Processes** have their own address space (`MemorySpace`)
-- **Threads** share their parent's address space
-- Both are scheduled independently by the async executor
+`Thread { _id, stack, stack_ptr, status, process: Option<Arc<Process>>, priority, sleep_until, futex_wake_addr, pipe_block_key, fs_base, pass, stride, tickets }`. Each thread has its own kernel stack (with guard page) and is scheduled independently by the stride scheduler.
 
 ## Process Lifecycle
 
-1. **Creation**: `fork()` or `exec()` creates a new task. `fork()` copies the parent address space (copy-on-write); `exec()` replaces it.
-2. **Scheduling**: Tasks are placed in the run queue and await their timeslice.
-3. **Blocking**: Tasks block on timers, I/O, IPC messages, or synchronization primitives.
-4. **Termination**: `exit()` transitions the task to `Zombie` state until the parent calls `wait()`.
+1. **Creation**: `fork()` clones the address space (copy-on-write via `clone_cow()`); `exec()` replaces it.
+2. **Scheduling**: Threads run under the preemptive stride scheduler.
+3. **Blocking**: Threads block on sleep (`sleep_until`), futex, pipe, or I/O.
+4. **Termination**: `exit()` leaves a zombie until the parent `wait4()`s.
 
 ## Thread Local Storage
 
-Each task has a TLS area pointed to by the `FS` segment base register. The kernel allocates TLS during task creation and switches it on context switches.
+Each thread has TLS pointed to by the `FS` segment base. `read_fs_base()`/`write_fs_base()` use the `wrfsbase` instruction when available, else MSR `0xC0000100`. TLS is switched on context switches.

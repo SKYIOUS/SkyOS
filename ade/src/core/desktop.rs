@@ -100,7 +100,7 @@ pub struct Desktop {
     shortcuts: ShortcutManager,
     tiling_mode: TilingMode,
     prev_tiling_geos: alloc::vec::Vec<(i32, i32, u32, u32)>,
-    focus_history: VecDeque<usize>,
+    focus_history: VecDeque<u64>,
     switcher_active: bool,
     switcher_idx: usize,
     pub(crate) app_reg: crate::util::app_registry::AppRegistry,
@@ -128,7 +128,7 @@ pub struct Desktop {
     pub(crate) focus_visible: bool,
     tooltip_hover_ticks: u32,
     tooltip_last_hover: Option<u32>,
-    system_menu_for: Option<usize>,
+    system_menu_for: Option<WindowId>,
     pub(crate) ipc_server: crate::ipc::IpcServer,
     pub(crate) ipc_transport: crate::ipc::transport::IpcTransport,
     pub(crate) service_registry: crate::ipc::ServiceRegistry,
@@ -293,9 +293,7 @@ impl Desktop {
             self.damage.mark_full();
         }
         // Process closing windows (remove after shrink animation)
-        let closed = self.wm.process_closing();
-        for cid in closed {
-            self.wm.close(cid);
+        if !self.wm.process_closing().is_empty() {
             self.damage.mark_full();
         }
         self.services.tick(self.clock_ticks);
@@ -458,11 +456,13 @@ impl Desktop {
 
     fn restore_geometries(&mut self) {
         for (i, &(x, y, w, h)) in self.prev_tiling_geos.iter().enumerate() {
-            if let Some(aw) = self.wm.lookup_mut(WindowId(i)) {
-                aw.x = x;
-                aw.y = y;
-                aw.w = w;
-                aw.h = h;
+            if let Some(wid) = self.wm.id_at(i) {
+                if let Some(aw) = self.wm.lookup_mut(wid) {
+                    aw.x = x;
+                    aw.y = y;
+                    aw.w = w;
+                    aw.h = h;
+                }
             }
         }
         self.prev_tiling_geos.clear();
@@ -477,11 +477,13 @@ impl Desktop {
             return;
         }
         if n == 1 {
-            if let Some(w) = self.wm.lookup_mut(WindowId(0)) {
-                w.x = 0;
-                w.y = 0;
-                w.w = sw;
-                w.h = th;
+            if let Some(wid) = self.wm.id_at(0) {
+                if let Some(w) = self.wm.lookup_mut(wid) {
+                    w.x = 0;
+                    w.y = 0;
+                    w.w = sw;
+                    w.h = th;
+                }
             }
             return;
         }
@@ -489,17 +491,19 @@ impl Desktop {
         let stack_w = sw - master_w;
         let stack_h = th / (n as u32 - 1);
         for i in 0..n {
-            if let Some(w) = self.wm.lookup_mut(WindowId(i)) {
-                if i == 0 {
-                    w.x = 0;
-                    w.y = 0;
-                    w.w = master_w;
-                    w.h = th;
-                } else {
-                    w.x = master_w as i32;
-                    w.y = ((i as u32 - 1) * stack_h) as i32;
-                    w.w = stack_w;
-                    w.h = stack_h;
+            if let Some(wid) = self.wm.id_at(i) {
+                if let Some(w) = self.wm.lookup_mut(wid) {
+                    if i == 0 {
+                        w.x = 0;
+                        w.y = 0;
+                        w.w = master_w;
+                        w.h = th;
+                    } else {
+                        w.x = master_w as i32;
+                        w.y = ((i as u32 - 1) * stack_h) as i32;
+                        w.w = stack_w;
+                        w.h = stack_h;
+                    }
                 }
             }
         }
@@ -512,11 +516,13 @@ impl Desktop {
         let sw = self.screen_w;
         let th = self.taskbar_y();
         for i in 0..self.wm.len() {
-            if let Some(w) = self.wm.lookup_mut(WindowId(i)) {
-                w.x = 0;
-                w.y = 0;
-                w.w = sw;
-                w.h = th;
+            if let Some(wid) = self.wm.id_at(i) {
+                if let Some(w) = self.wm.lookup_mut(wid) {
+                    w.x = 0;
+                    w.y = 0;
+                    w.w = sw;
+                    w.h = th;
+                }
             }
         }
         self.tiling_mode = TilingMode::Monocle;
@@ -544,7 +550,11 @@ impl Desktop {
             return;
         }
         if !self.switcher_active {
-            let current = self.wm.active().map(|id| id.0).unwrap_or(0);
+            let current = self
+                .wm
+                .active()
+                .and_then(|id| self.wm.position_of(id))
+                .unwrap_or(0);
             self.switcher_idx = current;
             self.switcher_active = true;
         } else {
@@ -707,8 +717,8 @@ impl Desktop {
             crate::sec::a11y::A11yRole::Window => {
                 // bring window to front
                 let win_idx = node.label.parse::<usize>().unwrap_or(usize::MAX);
-                if win_idx < self.wm.len() {
-                    self.wm.bring_to_front(WindowId(win_idx));
+                if let Some(wid) = self.wm.id_at(win_idx) {
+                    self.wm.bring_to_front(wid);
                 }
             }
             crate::sec::a11y::A11yRole::Icon => {
@@ -783,49 +793,43 @@ impl Desktop {
             // Window system menu actions
             "restore" => {
                 if let Some(wi) = self.system_menu_for {
-                    if wi < self.wm.len() {
-                        self.wm.restore(WindowId(wi));
-                    }
+                    self.wm.restore(wi);
                 }
                 self.system_menu_for = None;
             }
             "move" => {
                 if let Some(wi) = self.system_menu_for {
-                    if wi < self.wm.len() {
-                        if let Some(w) = self.wm.lookup(WindowId(wi)) {
-                            self.wm.begin_drag(WindowId(wi), self.mouse_x, self.mouse_y);
-                        }
+                    if self.wm.lookup(wi).is_some() {
+                        self.wm.begin_drag(wi, self.mouse_x, self.mouse_y);
                     }
                 }
                 self.system_menu_for = None;
             }
             "size" => {
                 if let Some(wi) = self.system_menu_for {
-                    if wi < self.wm.len() {
-                        if let Some(w) = self.wm.lookup(WindowId(wi)) {
-                            self.resize_win = Some(WindowId(wi));
-                            self.resize_edges = 4;
-                            self.resize_rect = (w.x, w.y, w.w, w.h);
-                        }
+                    if let Some(w) = self.wm.lookup(wi) {
+                        self.resize_win = Some(wi);
+                        self.resize_edges = 4;
+                        self.resize_rect = (w.x, w.y, w.w, w.h);
                     }
                 }
                 self.system_menu_for = None;
             }
             "minimize" => {
                 if let Some(wi) = self.system_menu_for {
-                    self.wm.minimize(WindowId(wi), self.screen_w, self.taskbar_y());
+                    self.wm.minimize(wi, self.screen_w, self.taskbar_y());
                 }
                 self.system_menu_for = None;
             }
             "maximize" => {
                 if let Some(wi) = self.system_menu_for {
-                    self.wm.toggle_maximize(WindowId(wi), self.screen_w, self.taskbar_y());
+                    self.wm.toggle_maximize(wi, self.screen_w, self.taskbar_y());
                 }
                 self.system_menu_for = None;
             }
             "close" => {
                 if let Some(wi) = self.system_menu_for {
-                    self.wm.close(WindowId(wi));
+                    self.wm.close(wi);
                 }
                 self.system_menu_for = None;
             }
@@ -945,8 +949,8 @@ impl Desktop {
                 }
                 0x0D | 0x0A | 0x1B => {
                     // Enter / Escape → confirm selection
-                    if self.switcher_idx < self.wm.len() {
-                        self.wm.bring_to_front(WindowId(self.switcher_idx));
+                    if let Some(wid) = self.wm.id_at(self.switcher_idx) {
+                        self.wm.bring_to_front(wid);
                     }
                     self.switcher_active = false;
                     self.damage.mark_full();
@@ -1087,6 +1091,7 @@ impl Desktop {
             title: alloc::string::String::from("File Explorer"),
             content: alloc::vec::Vec::new(),
             scroll: 0,
+            id: 0,
             pid: None,
             focused: true,
             dragging: false,
@@ -1300,8 +1305,8 @@ impl Desktop {
             drop(snap);
             if let Some((idx, _action)) = hit {
                 self.task_manager.selected = idx;
-                if idx < self.wm.len() {
-                    self.wm.bring_to_front(WindowId(idx));
+                if let Some(wid) = self.wm.id_at(idx) {
+                    self.wm.bring_to_front(wid);
                 }
                 self.damage.mark_full();
                 return;
@@ -1328,10 +1333,12 @@ impl Desktop {
                         let s = self.wm.iter();
                         s[i].state == WindowState::Minimized
                     };
-                    if is_min {
-                        self.wm.restore(WindowId(i));
+                    if let Some(wid) = self.wm.id_at(i) {
+                        if is_min {
+                            self.wm.restore(wid);
+                        }
+                        self.wm.bring_to_front(wid);
                     }
-                    self.wm.bring_to_front(WindowId(i));
                     return;
                 }
             }
@@ -1370,15 +1377,19 @@ impl Desktop {
                 let s = self.wm.iter();
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
+            let wid = match self.wm.id_at(i) {
+                Some(wid) => wid,
+                None => continue,
+            };
             let wr = Rect::new(x, y, w, h);
             if Rect::new(x, y, w, TITLE_H as u32).hit_test(pt) {
                 if self.double_click {
                     self.wm
-                        .toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
+                        .toggle_maximize(wid, self.screen_w, self.taskbar_y());
                     return;
                 }
-                self.wm.bring_to_front(WindowId(i));
-                self.wm.begin_drag(WindowId(i), mx, my);
+                self.wm.bring_to_front(wid);
+                self.wm.begin_drag(wid, mx, my);
                 return;
             }
 
@@ -1390,7 +1401,7 @@ impl Desktop {
             )
             .hit_test(pt)
             {
-                self.wm.close(WindowId(i));
+                self.wm.close(wid);
                 return;
             }
             if Rect::new(
@@ -1402,7 +1413,7 @@ impl Desktop {
             .hit_test(pt)
             {
                 self.wm
-                    .toggle_maximize(WindowId(i), self.screen_w, self.taskbar_y());
+                    .toggle_maximize(wid, self.screen_w, self.taskbar_y());
                 return;
             }
             if Rect::new(
@@ -1413,24 +1424,23 @@ impl Desktop {
             )
             .hit_test(pt)
             {
-                self.wm.minimize(WindowId(i), self.screen_w, self.taskbar_y());
+                self.wm.minimize(wid, self.screen_w, self.taskbar_y());
                 return;
             }
 
             let edges = Self::hit_window_edge(x, y, w, h, mx, my);
             if edges != 0 {
-                self.resize_win = Some(WindowId(i));
+                self.resize_win = Some(wid);
                 self.resize_edges = edges;
                 self.resize_rect = (x, y, w, h);
-                self.wm.bring_to_front(WindowId(i));
+                self.wm.bring_to_front(wid);
                 return;
             }
 
             // Explorer content click
             if wr.hit_test(pt) {
                 let is_explorer = { self.wm.iter()[i].explorer_id.is_some() };
-                if is_explorer {
-                    let exp_id = self.wm.iter()[i].explorer_id.unwrap();
+                if let Some(exp_id) = self.wm.iter()[i].explorer_id {
                     if let Some(exp_state) = self.explorers.iter_mut().find(|e| e.id == exp_id) {
                         let aw_ref = &self.wm.iter()[i];
                         crate::util::explorer::handle_explorer_click(
@@ -1441,10 +1451,10 @@ impl Desktop {
                             self.double_click,
                         );
                     }
-                    self.wm.bring_to_front(WindowId(i));
+                    self.wm.bring_to_front(wid);
                     return;
                 }
-                self.wm.bring_to_front(WindowId(i));
+                self.wm.bring_to_front(wid);
                 return;
             }
         }
@@ -1494,8 +1504,10 @@ impl Desktop {
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
             if Rect::new(x, y, w, 22).hit_test(pt) {
-                self.system_menu_for = Some(i);
-                self.context_menu = Some((mx, my, SYSTEM_MENU));
+                if let Some(wid) = self.wm.id_at(i) {
+                    self.system_menu_for = Some(wid);
+                    self.context_menu = Some((mx, my, SYSTEM_MENU));
+                }
                 self.damage.mark_full();
                 return;
             }
@@ -1513,7 +1525,9 @@ impl Desktop {
             for i in 0..self.wm.len() {
                 let bx = btn_x + i as i32 * 120;
                 if mx >= bx && mx < bx + 115 {
-                    self.wm.close(WindowId(i));
+                    if let Some(wid) = self.wm.id_at(i) {
+                        self.wm.close(wid);
+                    }
                     self.damage.mark_full();
                     return;
                 }
@@ -1527,7 +1541,9 @@ impl Desktop {
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
             if Rect::new(x, y, w, 22).hit_test(pt) {
-                self.wm.close(WindowId(i));
+                if let Some(wid) = self.wm.id_at(i) {
+                    self.wm.close(wid);
+                }
                 self.damage.mark_full();
                 return;
             }

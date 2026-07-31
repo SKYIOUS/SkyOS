@@ -8,3 +8,4 @@ license.workspace = true
 font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
 ttf-parser = { version = "0.20", default-features = false }
 miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }

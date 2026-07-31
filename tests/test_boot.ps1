@@ -1,7 +1,8 @@
 # SkyOS Boot Test — nographic serial-only
-$bootimg = "C:\Users\nanda\bootimg.bin"
+$scriptDir = Split-Path -Parent $PSCommandPath
+$bootimg = Join-Path $scriptDir "..\kernel\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin"
 $qemu = "qemu-system-x86_64"
-$bios = "C:\Program Files\qemu\OVMF.fd"
+$bios = Join-Path $scriptDir "..\OVMF.fd"
 
 Write-Host "=== SkyOS Boot Test ==="
 $outFile = Join-Path $env:TEMP "boot_test.txt"

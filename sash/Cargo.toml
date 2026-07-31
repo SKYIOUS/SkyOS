@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 libsarga = { path = "../libsarga" }
+glob-matcher = "0.1"

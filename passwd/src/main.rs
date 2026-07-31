@@ -42,28 +42,37 @@ fn read_whole_file(path: &str) -> Result<Vec<u8>, Error> {
     Ok(buf)
 }
 
-fn hex_nibble(v: u8) -> u8 {
-    if v < 10 {
-        b'0' + v
-    } else {
-        b'a' + v - 10
-    }
-}
-
 fn hex_encode(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        out.push(hex_nibble(b >> 4));
-        out.push(hex_nibble(b & 0xf));
-    }
-    out
+    hex::encode(bytes).into_bytes()
 }
 
 fn generate_salt() -> [u8; 16] {
     let mut salt = [0u8; 16];
-    let tick_bytes = 0x9E3779B97F4A7C15u64.to_le_bytes();
-    salt[..8].copy_from_slice(&tick_bytes);
-    salt[8..16].copy_from_slice(&tick_bytes);
+    
+    // Try to read from /dev/urandom if available (best entropy source)
+    if let Ok(fd) = libsarga::io::open("/dev/urandom", 0) {
+        let mut buf = [0u8; 16];
+        if libsarga::io::read(fd, &mut buf).is_ok() {
+            let _ = libsarga::io::close(fd);
+            return buf;
+        }
+        let _ = libsarga::io::close(fd);
+    }
+    
+    // Fallback: use clock-based entropy (better than fixed constant)
+    // NOTE: This is not cryptographically secure. A proper getrandom syscall should be added.
+    let pid = libsarga::process::getpid();
+    let time = libsarga::io::clock_gettime(0).unwrap_or((0, 0));
+    
+    let mut seed = pid.wrapping_mul(0x9E3779B97F4A7C15)
+        .wrapping_add(time.0 as u64)
+        .wrapping_add(time.1 as u64);
+    
+    for i in 0..16 {
+        seed = seed.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+        salt[i] = (seed >> 8) as u8;
+    }
+    
     salt
 }
 

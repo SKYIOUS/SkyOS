@@ -44,7 +44,7 @@ jobs:
           
           # List of binaries to include in the update
           BINARIES=(
-            init sash sargash login-manager login passwd svc vahid
+            init sash login-manager login passwd svc vahid
             coreutils/skyos-coreutils
           )
           

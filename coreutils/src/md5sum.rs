@@ -4,16 +4,14 @@ extern crate alloc;
 use alloc::string::String;
 use core::fmt::Write;
 use libsarga::{args, io, print, println, sarga_main};
+use md5::{Digest, Md5};
 
 fn md5(data: &[u8]) -> [u8; 16] {
-    // Simple non-cryptographic hash for now (ponytail: real MD5 later)
-    let mut h = [0u32; 4];
-    for (i, &b) in data.iter().enumerate() {
-        h[i % 4] = h[i % 4].wrapping_add(b as u32);
-        h[i % 4] = h[i % 4].wrapping_mul(2654435761);
-    }
+    let mut hasher = Md5::new();
+    hasher.update(data);
+    let digest = hasher.finalize();
     let mut out = [0u8; 16];
-    for i in 0..4 { out[i*4..][..4].copy_from_slice(&h[i].to_le_bytes()); }
+    out.copy_from_slice(&digest);
     out
 }
 

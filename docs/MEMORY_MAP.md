@@ -7,16 +7,16 @@ This document defines the virtual address space layout for the Skyious kernel.
 | Start Address           | End Address             | Size      | Description                |
 |-------------------------|-------------------------|-----------|----------------------------|
 | `0xFFFF_8000_0000_0000` | `0xFFFF_8FFF_FFFF_FFFF` | 1 TB      | Physical Memory Mapping    |
-| `0xFFFF_C000_0000_0000` | `0xFFFF_C000_007F_FFFF` | 8 MB      | Kernel Heap (Planned)      |
-| `0xFFFF_D000_0000_0000` | `0xFFFF_DFFF_FFFF_FFFF` | 1 TB      | Kernel Stacks (Planned)    |
-| `0xFFFF_E000_0000_0000` | `0xFFFF_EFFF_FFFF_FFFF` | 1 TB      | VMALLOC Region (Planned)   |
+| `0xFFFF_C000_0000_0000` | `0xFFFF_C000_07FF_FFFF` | 128 MB    | Kernel Heap                |
+| `0xFFFF_D000_0000_0000` | `0xFFFF_DFFF_FFFF_FFFF` | 1 TB      | Kernel Stacks (dynamic)    |
+| `0xFFFF_E000_0000_0000` | `0xFFFF_EFFF_FFFF_FFFF` | 1 TB      | VMALLOC Region             |
 
 ## Current Implementation Details
 
-- **Physical Memory Mapping**: Currently uses the offset provided by the bootloader at initialization. This is stored in `PHYSICAL_MEMORY_OFFSET`.
-- **Kernel Heap**: 
-    - **Current**: `0xFFFF_C000_0000_0000` (8 MB)
-- **Dynamic Allocations**: Handled by the Slab Allocator (for small objects) and the Buddy Allocator (for physical frames).
+- **Physical Memory Mapping**: Uses the offset provided by the bootloader at initialization (`PHYSICAL_MEMORY_OFFSET`).
+- **Kernel Heap**: `0xFFFF_C000_0000_0000`, **128 MiB** (`HEAP_SIZE = 128 * 1024 * 1024` in `allocator.rs`).
+- **Kernel Stacks**: Allocated dynamically per thread with a guard page (`memory/stack.rs`) — not a fixed pre-mapped region.
+- **Dynamic Allocations**: Handled by the Slab Allocator (`FixedSizeBlockAllocator`, `memory/slab.rs`) for small objects and the Buddy Allocator (`memory/buddy.rs`) for physical frames; large objects fall back to `linked_list_allocator`.
 
 ## Design Goals
 
