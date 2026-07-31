@@ -85,6 +85,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipc_echo"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "libsarga"
 version = "0.1.0"
 dependencies = [
