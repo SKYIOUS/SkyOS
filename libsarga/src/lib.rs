@@ -15,6 +15,7 @@ pub mod init;
 #[allow(dead_code)]
 pub mod init_services;
 pub mod io;
+pub mod ipc;
 pub mod libskyos;
 pub mod mem;
 pub mod net;

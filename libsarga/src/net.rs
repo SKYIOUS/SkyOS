@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 /// Socket domain.
 #[repr(u64)]
 pub enum SocketDomain {
+    /// Unix domain sockets (socketpair).
+    Unix = 1,
     /// IPv4 internet protocols.
     Inet = 2,
     /// IPv6 internet protocols.
