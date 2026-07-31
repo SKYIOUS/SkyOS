@@ -130,6 +130,7 @@ pub struct Desktop {
     tooltip_last_hover: Option<u32>,
     system_menu_for: Option<usize>,
     pub(crate) ipc_server: crate::ipc::IpcServer,
+    pub(crate) ipc_transport: crate::ipc::transport::IpcTransport,
     pub(crate) service_registry: crate::ipc::ServiceRegistry,
     pub(crate) crash_manager: crate::util::crash_manager::CrashManager,
     pub(crate) desktop_entries: alloc::vec::Vec<crate::util::desktop_entry::DesktopEntry>,
@@ -198,6 +199,7 @@ impl Desktop {
             tooltip_last_hover: None,
             system_menu_for: None,
             ipc_server: crate::ipc::IpcServer::new(),
+            ipc_transport: crate::ipc::transport::IpcTransport::new(),
             service_registry: {
                 let mut reg = crate::ipc::ServiceRegistry::new();
                 reg.register_defaults();
@@ -241,6 +243,7 @@ impl Desktop {
                     }
                     self.lifecycle.remove(pid);
                     self.permissions.unregister(pid);
+                    self.ipc_transport.unregister(pid);
                     self.wm.close_by_pid(pid);
                     self.damage.mark_full();
                 }
@@ -267,7 +270,13 @@ impl Desktop {
             self.damage.mark_full();
         }
         self.reap_children();
+        let reqs = self.ipc_transport.ingest();
+        for req in reqs {
+            self.ipc_server.submit_request(req);
+        }
         self.process_ipc();
+        let responses = self.ipc_server.drain_responses();
+        self.ipc_transport.deliver(responses);
         let mut anim_active = false;
         for w in self.wm.iter_mut() {
             if w.flags.opacity < 255 {

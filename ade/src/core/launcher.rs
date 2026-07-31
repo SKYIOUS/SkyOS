@@ -91,9 +91,25 @@ pub(crate) fn spawn_app_at(
     app_win.content.push(alloc::string::String::new());
 
     if !path.is_empty() {
+        let ipc_pair = libsarga::net::socketpair(
+            libsarga::net::SocketDomain::Unix as u64,
+            libsarga::net::SocketType::Stream as u64,
+            0,
+        )
+        .ok();
         match libsarga::process::fork() {
             Ok(0) => {
-                let _ = libsarga::process::execve(path, &[path], &[]);
+                match ipc_pair {
+                    Some((server_fd, client_fd)) => {
+                        let _ = libsarga::io::close(server_fd);
+                        let fd_arg = alloc::format!("{}", client_fd);
+                        let argv = [path, "--ipc-fd", fd_arg.as_str()];
+                        let _ = libsarga::process::execve(path, &argv, &[]);
+                    }
+                    None => {
+                        let _ = libsarga::process::execve(path, &[path], &[]);
+                    }
+                }
                 libsarga::process::exit(1);
             }
             Ok(pid) => {
@@ -106,11 +122,19 @@ pub(crate) fn spawn_app_at(
                 desktop.lifecycle.register(pid, app_idx);
                 desktop.permissions.register(pid, crate::sec::perms::default_grant());
                 desktop.lifecycle.mark_running(pid);
+                if let Some((server_fd, client_fd)) = ipc_pair {
+                    let _ = libsarga::io::close(client_fd);
+                    desktop.ipc_transport.register(pid, server_fd);
+                }
                 app_win
                     .content
                     .push(alloc::format!("[launched {} pid={}]", title, pid));
             }
             Err(e) => {
+                if let Some((server_fd, client_fd)) = ipc_pair {
+                    let _ = libsarga::io::close(server_fd);
+                    let _ = libsarga::io::close(client_fd);
+                }
                 app_win.content.push(alloc::format!("[fork failed: {}]", e));
             }
         }

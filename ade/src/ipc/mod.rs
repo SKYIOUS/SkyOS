@@ -7,6 +7,7 @@ pub(crate) mod registry;
 pub(crate) mod request;
 pub(crate) mod response;
 pub(crate) mod server;
+pub(crate) mod transport;
 
 pub(crate) use message::{ApplicationId, IpcMessage, IpcRequest, IpcResponse, IpcTarget, MessageBus, RequestId};
 pub(crate) use registry::{ServiceId, ServiceRegistry};
