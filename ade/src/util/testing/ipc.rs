@@ -259,7 +259,7 @@ pub(crate) fn test_ipc_gate_granted(desktop: &mut crate::core::desktop::Desktop)
     desktop.ipc_server.submit_request(ServiceRequest {
         request_id: RequestId(1),
         service: ServiceId::Clipboard,
-        method: "copy",
+        method: alloc::string::String::from("copy"),
         args: b"hello".to_vec(),
         sender: app,
     });
@@ -277,7 +277,7 @@ pub(crate) fn test_ipc_gate_granted(desktop: &mut crate::core::desktop::Desktop)
     desktop.ipc_server.submit_request(ServiceRequest {
         request_id: RequestId(2),
         service: ServiceId::Clipboard,
-        method: "paste",
+        method: alloc::string::String::from("paste"),
         args: Vec::new(),
         sender: app,
     });
@@ -303,7 +303,7 @@ pub(crate) fn test_ipc_gate_denied(desktop: &mut crate::core::desktop::Desktop) 
     desktop.ipc_server.submit_request(ServiceRequest {
         request_id: RequestId(3),
         service: ServiceId::Clipboard,
-        method: "copy",
+        method: alloc::string::String::from("copy"),
         args: b"secret".to_vec(),
         sender: app,
     });

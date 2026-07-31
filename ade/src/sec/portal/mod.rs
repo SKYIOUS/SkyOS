@@ -18,6 +18,7 @@ pub(crate) fn dispatch(desktop: &mut Desktop, app: ApplicationId, req: &ServiceR
             request_id: req.request_id,
             success: false,
             data: alloc::vec::Vec::new(),
+            recipient: app,
         },
     }
 }

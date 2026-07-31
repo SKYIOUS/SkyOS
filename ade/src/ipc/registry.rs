@@ -16,6 +16,37 @@ pub(crate) enum ServiceId {
     Power,
 }
 
+impl ServiceId {
+    pub(crate) fn to_wire(self) -> u8 {
+        match self {
+            ServiceId::Clipboard => libsarga::ipc::SVC_CLIPBOARD,
+            ServiceId::Notification => libsarga::ipc::SVC_NOTIFICATION,
+            ServiceId::Launcher => libsarga::ipc::SVC_LAUNCHER,
+            ServiceId::FileDialog => libsarga::ipc::SVC_FILE_DIALOG,
+            ServiceId::Settings => libsarga::ipc::SVC_SETTINGS,
+            ServiceId::Session => libsarga::ipc::SVC_SESSION,
+            ServiceId::Window => libsarga::ipc::SVC_WINDOW,
+            ServiceId::Theme => libsarga::ipc::SVC_THEME,
+            ServiceId::Power => libsarga::ipc::SVC_POWER,
+        }
+    }
+
+    pub(crate) fn from_wire(w: u8) -> Option<ServiceId> {
+        match w {
+            libsarga::ipc::SVC_CLIPBOARD => Some(ServiceId::Clipboard),
+            libsarga::ipc::SVC_NOTIFICATION => Some(ServiceId::Notification),
+            libsarga::ipc::SVC_LAUNCHER => Some(ServiceId::Launcher),
+            libsarga::ipc::SVC_FILE_DIALOG => Some(ServiceId::FileDialog),
+            libsarga::ipc::SVC_SETTINGS => Some(ServiceId::Settings),
+            libsarga::ipc::SVC_SESSION => Some(ServiceId::Session),
+            libsarga::ipc::SVC_WINDOW => Some(ServiceId::Window),
+            libsarga::ipc::SVC_THEME => Some(ServiceId::Theme),
+            libsarga::ipc::SVC_POWER => Some(ServiceId::Power),
+            _ => None,
+        }
+    }
+}
+
 /// IPC API v1.0 — STABLE
 #[derive(Clone, Debug)]
 pub(crate) struct ServiceInfo {

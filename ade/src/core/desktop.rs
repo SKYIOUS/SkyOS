@@ -1760,6 +1760,7 @@ impl Desktop {
                     request_id: req.request_id,
                     success: false,
                     data: alloc::vec::Vec::new(),
+                    recipient: app,
                 }
             };
             self.ipc_server.submit_response(resp);
