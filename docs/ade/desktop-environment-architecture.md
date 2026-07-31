@@ -236,6 +236,8 @@ IPC Service Request Flow
 > once per frame by `Desktop::process_ipc`, which gates each request on the
 > service's `required_permissions` against the sender's grant, then routes through
 > the security portal. Responses collect on `IpcServer::pending_responses`.
+>
+> Transport: each externally spawned app gets an AF_UNIX socketpair (`libsarga::net::socketpair(1, 1, 0)`). The server end lives in `IpcTransport` (ade/src/ipc/transport.rs); the client end is inherited across fork+exec and passed to the child as `--ipc-fd <n>`. Each frame is `u32 LE length | payload`, `<= 4096` bytes; one write = one queued datagram = one read pops it whole. Requests never carry a sender — the server maps fd → pid (authoritative identity for the permission gate). The kernel reports `POLLIN` on unix sockets only when data is queued, so the server can poll(timeout 0) then read without blocking.
 
 ### Locations
 
@@ -307,6 +309,7 @@ Permission System Architecture
 │   └── unregister(pid) <-- desktop.reap_children
 ├── Grant
 │   └── default_grant() <-- launcher.rs (flat default; manifests drive per-app grants later)
+│       └── on the transport path, identity is fd→pid derived at spawn, not client-declared
 └── Service Registry Integration
     └── find_by_permission(perm) <-- registry.rs
         └── filter services by perms <-- 4e
@@ -761,7 +764,7 @@ The ADE Desktop Environment architecture demonstrates a clean separation of conc
 
 1. **Application Launch** - Event-driven process spawning with lifecycle tracking
 2. **Window Management** - Z-ordered window collection with focus and animation
-3. **IPC Services** - Portal-based request routing with permission validation
+3. **IPC Services** - Portal-based request routing with permission validation (real transport: AF_UNIX socketpair, see Trace 3)
 4. **Security** - Bitwise permission sets with per-process registration
 5. **Rendering** - Damage-based composition with layer-based alpha blending
 6. **System Services** - Centralized service manager with per-frame tick propagation
