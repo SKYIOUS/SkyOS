@@ -1705,8 +1705,8 @@ impl Desktop {
         ))
     }
 
-    pub fn permission_check(&self, app: crate::ipc::ApplicationId, perm: u32) -> bool {
-        self.permissions.check(app.0, perm)
+    pub fn permission_check(&self, app: crate::ipc::ApplicationId, perm: crate::ipc::permission::AppPermission) -> bool {
+        self.permissions.check(app.0, perm.bits())
     }
 
     pub fn snapshot(&self) -> RenderSnapshot<'_> {

@@ -7,6 +7,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use bitflags::bitflags;
 
 /// Plugin version
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,30 +27,21 @@ impl Version {
     }
 }
 
-/// Plugin capability flags
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum PluginCapability {
-    /// Read file system
-    FileRead = 1 << 0,
-    /// Write file system
-    FileWrite = 1 << 1,
-    /// Access network
-    Network = 1 << 2,
-    /// Access audio
-    Audio = 1 << 3,
-    /// Access input devices
-    Input = 1 << 4,
-    /// Create windows/UI
-    Windowing = 1 << 5,
-    /// Access clipboard
-    Clipboard = 1 << 6,
-    /// System information
-    SystemInfo = 1 << 7,
-    /// Create processes
-    ProcessManagement = 1 << 8,
-    /// Access device
-    DeviceAccess = 1 << 9,
+bitflags! {
+    /// Plugin capability flags
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct PluginCapability: u32 {
+        const FILE_READ = 1 << 0;
+        const FILE_WRITE = 1 << 1;
+        const NETWORK = 1 << 2;
+        const AUDIO = 1 << 3;
+        const INPUT = 1 << 4;
+        const WINDOWING = 1 << 5;
+        const CLIPBOARD = 1 << 6;
+        const SYSTEM_INFO = 1 << 7;
+        const PROCESS_MANAGEMENT = 1 << 8;
+        const DEVICE_ACCESS = 1 << 9;
+    }
 }
 
 /// Plugin lifecycle state
@@ -86,7 +78,7 @@ pub struct PluginMetadata {
     pub version: Version,
     pub author: String,
     pub description: String,
-    pub capabilities: u32,
+    pub capabilities: PluginCapability,
     pub dependencies: Vec<PluginDependency>,
     pub entry_point: String,
 }
@@ -103,7 +95,7 @@ pub struct Plugin {
 /// Plugin sandbox configuration
 pub struct SandboxConfig {
     pub id: u32,
-    pub capabilities: u32,
+    pub capabilities: PluginCapability,
     pub memory_limit_kb: u32,
     pub cpu_time_limit_ms: u32,
     pub isolated: bool,
@@ -318,7 +310,7 @@ impl PluginManager {
     /// Check if plugin has capability
     pub fn check_capability(&self, plugin_id: &str, capability: PluginCapability) -> bool {
         if let Some(plugin) = self.get_plugin(plugin_id) {
-            (plugin.metadata.capabilities & (capability as u32)) != 0
+            plugin.metadata.capabilities.contains(capability)
         } else {
             false
         }
@@ -327,7 +319,7 @@ impl PluginManager {
     /// Request new capability
     pub fn request_capability(&mut self, plugin_id: &str, capability: PluginCapability) -> bool {
         if let Some(plugin) = self.get_plugin(plugin_id) {
-            self.events.push(PluginEvent::CapabilityRequested(plugin.sandbox_id, capability as u32));
+            self.events.push(PluginEvent::CapabilityRequested(plugin.sandbox_id, capability.bits()));
             true
         } else {
             false
@@ -402,7 +394,7 @@ mod tests {
             version: Version::new(1, 0, 0),
             author: String::from("Test"),
             description: String::from("Test plugin"),
-            capabilities: PluginCapability::FileRead as u32,
+            capabilities: PluginCapability::FILE_READ,
             dependencies: Vec::new(),
             entry_point: String::from("main"),
         };
@@ -423,15 +415,15 @@ mod tests {
             version: Version::new(1, 0, 0),
             author: String::from("Test"),
             description: String::from("Test"),
-            capabilities: PluginCapability::FileRead as u32 | PluginCapability::Audio as u32,
+            capabilities: PluginCapability::FILE_READ | PluginCapability::AUDIO,
             dependencies: Vec::new(),
             entry_point: String::from("main"),
         };
 
         pm.discover_plugins(alloc::vec![metadata]);
         pm.load_plugin("test");
-        assert!(pm.check_capability("test", PluginCapability::FileRead));
-        assert!(pm.check_capability("test", PluginCapability::Audio));
-        assert!(!pm.check_capability("test", PluginCapability::Network));
+        assert!(pm.check_capability("test", PluginCapability::FILE_READ));
+        assert!(pm.check_capability("test", PluginCapability::AUDIO));
+        assert!(!pm.check_capability("test", PluginCapability::NETWORK));
     }
 }

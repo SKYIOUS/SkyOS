@@ -2,6 +2,8 @@
 name = "ade"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [dependencies]
 libsarga = { path = "../libsarga" }
+bitflags = "2.4"

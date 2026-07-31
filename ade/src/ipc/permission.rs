@@ -1,44 +1,58 @@
 #![allow(dead_code)]
+use bitflags::bitflags;
 
-pub(crate) const PERM_CLIPBOARD: u32 = 0x0001;
-pub(crate) const PERM_NOTIFICATIONS: u32 = 0x0002;
-pub(crate) const PERM_FILESYSTEM: u32 = 0x0004;
-pub(crate) const PERM_WINDOW_CONTROL: u32 = 0x0008;
-pub(crate) const PERM_SETTINGS: u32 = 0x0010;
-pub(crate) const PERM_POWER: u32 = 0x0020;
-pub(crate) const PERM_CAMERA: u32 = 0x0040;
-pub(crate) const PERM_MICROPHONE: u32 = 0x0080;
-pub(crate) const PERM_NETWORK: u32 = 0x0100;
-pub(crate) const PERM_USB: u32 = 0x0200;
-pub(crate) const PERM_BLUETOOTH: u32 = 0x0400;
-pub(crate) const PERM_LOCATION: u32 = 0x0800;
-
-pub(crate) struct PermissionSet {
-    pub perms: u32,
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(crate) struct AppPermission: u32 {
+        const CLIPBOARD = 0x0001;
+        const NOTIFICATIONS = 0x0002;
+        const FILESYSTEM = 0x0004;
+        const WINDOW_CONTROL = 0x0008;
+        const SETTINGS = 0x0010;
+        const POWER = 0x0020;
+        const CAMERA = 0x0040;
+        const MICROPHONE = 0x0080;
+        const NETWORK = 0x0100;
+        const USB = 0x0200;
+        const BLUETOOTH = 0x0400;
+        const LOCATION = 0x0800;
+    }
 }
+
+// Legacy aliases for compatibility
+pub(crate) use AppPermission as PermissionSet;
 
 impl PermissionSet {
     pub fn new() -> Self {
-        PermissionSet { perms: 0 }
+        Self::empty()
     }
 
-    pub fn all() -> Self {
-        PermissionSet { perms: u32::MAX }
+    pub fn grant(&mut self, perm: Self) {
+        self.insert(perm);
     }
 
-    pub fn grant(&mut self, perm: u32) {
-        self.perms |= perm;
+    pub fn revoke(&mut self, perm: Self) {
+        self.remove(perm);
     }
 
-    pub fn revoke(&mut self, perm: u32) {
-        self.perms &= !perm;
+    pub fn check(&self, perm: Self) -> bool {
+        self.contains(perm)
     }
 
-    pub fn check(&self, perm: u32) -> bool {
-        self.perms & perm == perm
-    }
-
-    pub fn has_any(&self, perms: u32) -> bool {
-        self.perms & perms != 0
+    pub fn has_any(&self, perms: Self) -> bool {
+        self.intersects(perms)
     }
 }
+
+pub(crate) const PERM_CLIPBOARD: AppPermission = AppPermission::CLIPBOARD;
+pub(crate) const PERM_NOTIFICATIONS: AppPermission = AppPermission::NOTIFICATIONS;
+pub(crate) const PERM_FILESYSTEM: AppPermission = AppPermission::FILESYSTEM;
+pub(crate) const PERM_WINDOW_CONTROL: AppPermission = AppPermission::WINDOW_CONTROL;
+pub(crate) const PERM_SETTINGS: AppPermission = AppPermission::SETTINGS;
+pub(crate) const PERM_POWER: AppPermission = AppPermission::POWER;
+pub(crate) const PERM_CAMERA: AppPermission = AppPermission::CAMERA;
+pub(crate) const PERM_MICROPHONE: AppPermission = AppPermission::MICROPHONE;
+pub(crate) const PERM_NETWORK: AppPermission = AppPermission::NETWORK;
+pub(crate) const PERM_USB: AppPermission = AppPermission::USB;
+pub(crate) const PERM_BLUETOOTH: AppPermission = AppPermission::BLUETOOTH;
+pub(crate) const PERM_LOCATION: AppPermission = AppPermission::LOCATION;
