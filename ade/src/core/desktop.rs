@@ -131,7 +131,6 @@ pub struct Desktop {
     system_menu_for: Option<usize>,
     pub(crate) ipc_server: crate::ipc::IpcServer,
     pub(crate) service_registry: crate::ipc::ServiceRegistry,
-    pub(crate) app_lifecycle: crate::sys::app_lifecycle::AppLifecycleManager,
     pub(crate) crash_manager: crate::util::crash_manager::CrashManager,
     pub(crate) desktop_entries: alloc::vec::Vec<crate::util::desktop_entry::DesktopEntry>,
     pub(crate) permissions: crate::sec::perms::PermissionManager,
@@ -199,8 +198,11 @@ impl Desktop {
             tooltip_last_hover: None,
             system_menu_for: None,
             ipc_server: crate::ipc::IpcServer::new(),
-            service_registry: crate::ipc::ServiceRegistry::new(),
-            app_lifecycle: crate::sys::app_lifecycle::AppLifecycleManager::new(),
+            service_registry: {
+                let mut reg = crate::ipc::ServiceRegistry::new();
+                reg.register_defaults();
+                reg
+            },
             crash_manager: crate::util::crash_manager::CrashManager::new(),
             desktop_entries: alloc::vec::Vec::new(),
             permissions: crate::sec::perms::PermissionManager::new(),
@@ -221,8 +223,24 @@ impl Desktop {
     pub fn reap_children(&mut self) {
         loop {
             match process::waitpid(-1, 1) {
-                Ok((pid, _)) if pid > 0 => {
-                    self.lifecycle.mark_terminated(pid);
+                Ok((pid, status)) if pid > 0 => {
+                    use crate::sys::lifecycle::ExitClass;
+                    match crate::sys::lifecycle::exit_class(status) {
+                        ExitClass::Clean => self.lifecycle.mark_terminated(pid),
+                        cls => {
+                            self.lifecycle.mark_crashed(pid);
+                            let reason = match cls {
+                                ExitClass::Killed => alloc::string::String::from("killed"),
+                                ExitClass::Signal(sig) => alloc::format!("signal {}", sig),
+                                ExitClass::Error(code) => alloc::format!("exit {}", code),
+                                ExitClass::Clean => unreachable!(),
+                            };
+                            self.services
+                                .notify("Application Crashed", &reason, 2, 8000);
+                        }
+                    }
+                    self.lifecycle.remove(pid);
+                    self.permissions.unregister(pid);
                     self.wm.close_by_pid(pid);
                     self.damage.mark_full();
                 }
@@ -249,6 +267,7 @@ impl Desktop {
             self.damage.mark_full();
         }
         self.reap_children();
+        self.process_ipc();
         let mut anim_active = false;
         for w in self.wm.iter_mut() {
             if w.flags.opacity < 255 {
@@ -1706,7 +1725,45 @@ impl Desktop {
     }
 
     pub fn permission_check(&self, app: crate::ipc::ApplicationId, perm: crate::ipc::permission::AppPermission) -> bool {
-        self.permissions.check(app.0, perm.bits())
+        self.permissions.check(app.0, perm)
+    }
+
+    /// Drains pending IPC service requests, gates each on the service's required
+    /// permissions for the caller, and dispatches allowed ones through the
+    /// security portal. Runs once per frame from `tick()`.
+    pub fn process_ipc(&mut self) {
+        use crate::ipc::permission::AppPermission;
+        // ponytail: soft-real-time ceiling — never stall a frame on a huge
+        // queue; leftovers drain next frame. Load-bearing once a real IPC
+        // transport lets external processes enqueue requests.
+        const MAX_REQUESTS_PER_FRAME: usize = 64;
+        let mut requests = self.ipc_server.drain_requests();
+        if requests.len() > MAX_REQUESTS_PER_FRAME {
+            self.ipc_server.pending_requests = requests.split_off(MAX_REQUESTS_PER_FRAME);
+        }
+        for req in requests {
+            let app = req.sender;
+            let granted = self.permissions.granted(app.0);
+            let allowed = self
+                .service_registry
+                .find(req.service)
+                .map(|info| {
+                    granted.map_or(false, |g| {
+                        g.contains(AppPermission::from_bits_truncate(info.required_permissions))
+                    })
+                })
+                .unwrap_or(false);
+            let resp = if allowed {
+                crate::sec::portal::dispatch(self, app, &req)
+            } else {
+                crate::ipc::ServiceResponse {
+                    request_id: req.request_id,
+                    success: false,
+                    data: alloc::vec::Vec::new(),
+                }
+            };
+            self.ipc_server.submit_response(resp);
+        }
     }
 
     pub fn snapshot(&self) -> RenderSnapshot<'_> {

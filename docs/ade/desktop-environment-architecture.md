@@ -208,8 +208,13 @@ impl AppWindow {
 ```
 IPC Service Request Flow
 ├── IPC Server Layer
-│   └── IpcServer::send() <-- server.rs:56
-│       └── pending_messages.push(msg) <-- 3a
+│   ├── IpcServer::submit_request(req) <-- server.rs
+│   │   └── pending_requests.push(req) <-- 3a
+│   └── IpcServer::send(Message) <-- server.rs:56 (channel path)
+│       └── pending_messages.push(msg)
+├── Desktop::process_ipc() <-- desktop.rs (per frame, from tick)
+│   └── permission gate: granted ∩ required_permissions
+│       └── denied → ServiceResponse{ success:false }
 ├── Security Portal Dispatcher
 │   └── portal::dispatch() <-- 3b
 │       ├── Match ServiceId <-- 3c
@@ -222,9 +227,15 @@ IPC Service Request Flow
 │       │   └── Other service handlers
 │       └── Return ServiceResponse
 └── Service Registry
+    ├── ServiceRegistry::register_defaults() <-- registry.rs (from Desktop::new)
     └── ServiceRegistry::find() <-- registry.rs:41
         └── services.iter().find() <-- 3f
 ```
+
+> Wiring: service requests are submitted via `IpcServer::submit_request` and drained
+> once per frame by `Desktop::process_ipc`, which gates each request on the
+> service's `required_permissions` against the sender's grant, then routes through
+> the security portal. Responses collect on `IpcServer::pending_responses`.
 
 ### Locations
 
@@ -286,19 +297,18 @@ pub(crate) fn dispatch(desktop: &mut Desktop, app: ApplicationId, req: &Servi...
 
 ```
 Permission System Architecture
-├── PermissionManager <-- perms.rs:42
-│   ├── register(pid, perms) <-- perms.rs:53
+├── PermissionManager (sec/perms.rs) — single permission type: AppPermission
+│   ├── register(pid, perms: AppPermission) <-- launcher::spawn_app_at
 │   │   └── app_perms.push((pid, perms)) <-- 4a
-│   └── check(pid, perm) <-- perms.rs:57
-│       └── find process & validate <-- 4b
-│           └── set.has(perm) <-- 4d
-├── PermissionSet Operations
-│   ├── grant(perm) <-- perms.rs:28
-│   │   └── perms |= perm <-- 4c
-│   └── has(perm) <-- perms.rs:36
-│       └── perms & perm == perm
+│   ├── check(pid, perm: AppPermission) <-- desktop.permission_check
+│   │   └── find process & validate <-- 4b
+│   │       └── set.contains(perm) <-- 4d
+│   ├── granted(pid) -> Option<AppPermission> <-- desktop.process_ipc
+│   └── unregister(pid) <-- desktop.reap_children
+├── Grant
+│   └── default_grant() <-- launcher.rs (flat default; manifests drive per-app grants later)
 └── Service Registry Integration
-    └── find_by_permission(perm) <-- registry.rs:49
+    └── find_by_permission(perm) <-- registry.rs
         └── filter services by perms <-- 4e
 ```
 
@@ -306,40 +316,53 @@ Permission System Architecture
 
 | ID | Title | Description | Path:LineNumber |
 |----|-------|-------------|-----------------|
-| 4a | Permission Registration | PermissionManager associates capability set with process ID | `ade/src/sec/perms.rs:54` |
-| 4b | Permission Check | Runtime validation queries process permissions before granting access | `ade/src/sec/perms.rs:58` |
-| 4c | Grant Permission | Bitwise OR adds new capability to permission set | `ade/src/sec/perms.rs:29` |
-| 4d | Has Permission | Bitwise AND validates all required permission bits are set | `ade/src/sec/perms.rs:37` |
+| 4a | Permission Registration | Launcher grants default AppPermission set when a process starts | `ade/src/core/launcher.rs:107` |
+| 4b | Permission Check | `desktop.permission_check` validates capability before gated API calls | `ade/src/sec/perms.rs:24` |
+| 4c | Default Grant | Flat default grant (clipboard/notifications/filesystem/window/settings, no power/hardware) | `ade/src/sec/perms.rs:45` |
+| 4d | Has Permission | bitflags `contains` validates all required permission bits are set | `ade/src/sec/perms.rs:28` |
 | 4e | Service Permission Filter | Registry filters services by required permission capabilities | `ade/src/ipc/registry.rs:50` |
+| 4f | Permission Cleanup | Reaped child process's grant is removed from the manager | `ade/src/core/desktop.rs:239` |
 
 ### Code Snippets
 
-**File: ade/src/sec/perms.rs (Lines 27-31)**
+**File: ade/src/sec/perms.rs (Lines 24-50)**
 ```rust
+/// Permission API v1.0
+pub(crate) struct PermissionManager {
+    pub app_perms: Vec<(u64, AppPermission)>, // pid → permissions
+}
 
-    pub fn grant(&mut self, perm: u32) {
-        self.perms |= perm;
-    }
-```
-
-**File: ade/src/sec/perms.rs (Lines 35-39)**
-```rust
-
-    pub fn has(&self, perm: u32) -> bool {
-        self.perms & perm == perm
-    }
-```
-
-**File: ade/src/sec/perms.rs (Lines 52-60)**
-```rust
-    pub fn register(&mut self, pid: u64, perms: PermissionSet) {
+impl PermissionManager {
+    pub fn register(&mut self, pid: u64, perms: AppPermission) {
         self.app_perms.push((pid, perms));
     }
 
-    pub fn check(&self, pid: u64, perm: u32) -> bool {
+    pub fn check(&self, pid: u64, perm: AppPermission) -> bool {
         self.app_perms
             .iter()
             .find(|(p, _)| *p == pid)
+            .map(|(_, set)| set.contains(perm))
+            .unwrap_or(false)
+    }
+
+    pub fn granted(&self, pid: u64) -> Option<AppPermission> {
+        self.app_perms
+            .iter()
+            .find(|(p, _)| *p == pid)
+            .map(|(_, set)| *set)
+    }
+
+    pub fn unregister(&mut self, pid: u64) {
+        self.app_perms.retain(|(p, _)| *p != pid);
+    }
+}
+```
+
+**File: ade/src/core/launcher.rs (Lines 104-109)**
+```rust
+                desktop.lifecycle.register(pid, app_idx);
+                desktop.permissions.register(pid, crate::sec::perms::default_grant());
+                desktop.lifecycle.mark_running(pid);
 ```
 
 **File: ade/src/ipc/registry.rs (Lines 48-52)**
@@ -635,28 +658,25 @@ Desktop Tick Cycle
 Desktop Event Loop (main.rs)
 ├── tick() frame update <-- 8c
 │   └── process::waitpid(-1, 1) reap children <-- desktop.rs:223
-│       └── match Ok((pid, _)) if pid > 0 <-- desktop.rs:224
-│           ├── lifecycle.mark_terminated(pid) <-- 8d
-│           │   └── LifecycleManager::mark_terminated() <-- lifecycle.rs:64
-│           │       └── p.state = Terminated <-- lifecycle.rs:67
-│           └── wm.close_by_pid(pid) <-- 8e
-│               └── WindowManager::close_by_pid() <-- window_manager.rs:62
-│                   └── windows.remove(pos) <-- window_manager.rs:64
+│       ├── match Ok((pid, status)) if pid > 0 <-- desktop.rs:224
+│       │   ├── exit_class(status): 0=Clean, 1..127=Error, 128+sig=Signal, <0=Killed
+│       │   │   ├── Clean → lifecycle.mark_terminated(pid) <-- 8d
+│       │   │   └── else → lifecycle.mark_crashed(pid) + crash notification <-- 8f
+│       │   ├── lifecycle.remove(pid) — no unbounded proc accumulation
+│       │   ├── permissions.unregister(pid) — grant revoked on every exit
+│       │   └── wm.close_by_pid(pid) <-- 8e
+│       │       └── WindowManager::close_by_pid() <-- window_manager.rs:62
+│       │           └── windows.remove(pos) <-- window_manager.rs:64
+│       └── else break
 
 Application Launch Flow (launcher.rs)
-└── spawn_app_from_registry() <-- launcher.rs:23
-    └── fork() success path <-- launcher.rs:99
-        └── lifecycle.register(pid, app_idx) <-- 8a
-            └── LifecycleManager::register() <-- lifecycle.rs:44
-                └── procs.push(AppLifecycle) with state <-- lifecycle.rs:45
-                    ├── state: Starting → Running <-- 8b
-                    ├── restart: OnCrash policy <-- lifecycle.rs:49
-                    └── crash_count: 0 <-- lifecycle.rs:49
-
-Crash Detection Path
-└── lifecycle.mark_crashed(pid) <-- 8f
-    └── p.state = AppState::Crashed <-- lifecycle.rs:77
-        └── p.crash_count += 1 for throttling <-- lifecycle.rs:78
+└── spawn_app_at() fork success path <-- launcher.rs:99
+    ├── lifecycle.register(pid, app_idx) <-- 8a
+    │   └── LifecycleManager::register() <-- lifecycle.rs:44
+    │       └── procs.push(AppLifecycle) state: Starting <-- lifecycle.rs:45
+    ├── permissions.register(pid, default_grant()) — everyday caps, no power
+    ├── lifecycle.mark_running(pid) → Running <-- 8b
+    └── window + launch notification
 ```
 
 ### Locations
@@ -666,23 +686,43 @@ Crash Detection Path
 | 8a | Process Registration | LifecycleManager tracks new process with restart policy | `ade/src/sys/lifecycle.rs:45` |
 | 8b | State Transition | Process marked as running after successful startup | `ade/src/sys/lifecycle.rs:58` |
 | 8c | Child Reaping | Desktop tick reaps terminated child processes non-blocking | `ade/src/core/desktop.rs:223` |
-| 8d | Termination Mark | Lifecycle manager updates process state to terminated | `ade/src/core/desktop.rs:225` |
-| 8e | Window Cleanup | Window manager removes windows associated with dead process | `ade/src/core/desktop.rs:226` |
-| 8f | Crash Detection | Lifecycle marks abnormal termination for restart policy | `ade/src/sys/lifecycle.rs:77` |
-| 8g | Crash Counter | Crash count incremented for restart throttling logic | `ade/src/sys/lifecycle.rs:78` |
+| 8d | Termination Mark | Clean exits (wait status 0) marked terminated | `ade/src/core/desktop.rs:229` |
+| 8e | Window Cleanup | Window manager removes windows associated with dead process | `ade/src/core/desktop.rs:244` |
+| 8f | Crash Detection | Non-clean exits classified (Error/Signal/Killed) and marked crashed | `ade/src/sys/lifecycle.rs:27` |
+| 8g | Crash Counter | Crash count incremented for restart throttling logic | `ade/src/sys/lifecycle.rs:97` |
 
 ### Code Snippets
 
-**File: ade/src/core/desktop.rs (Lines 221-228)**
+**File: ade/src/core/desktop.rs (Lines 225-247)**
 ```rust
     pub fn reap_children(&mut self) {
         loop {
             match process::waitpid(-1, 1) {
-                Ok((pid, _)) if pid > 0 => {
-                    self.lifecycle.mark_terminated(pid);
+                Ok((pid, status)) if pid > 0 => {
+                    use crate::sys::lifecycle::ExitClass;
+                    match crate::sys::lifecycle::exit_class(status) {
+                        ExitClass::Clean => self.lifecycle.mark_terminated(pid),
+                        cls => {
+                            self.lifecycle.mark_crashed(pid);
+                            let reason = match cls {
+                                ExitClass::Killed => alloc::string::String::from("killed"),
+                                ExitClass::Signal(sig) => alloc::format!("signal {}", sig),
+                                ExitClass::Error(code) => alloc::format!("exit {}", code),
+                                ExitClass::Clean => unreachable!(),
+                            };
+                            self.services
+                                .notify("Application Crashed", &reason, 2, 8000);
+                        }
+                    }
+                    self.lifecycle.remove(pid);
+                    self.permissions.unregister(pid);
                     self.wm.close_by_pid(pid);
                     self.damage.mark_full();
                 }
+                _ => break,
+            }
+        }
+    }
 ```
 
 **File: ade/src/sys/lifecycle.rs (Lines 43-47)**

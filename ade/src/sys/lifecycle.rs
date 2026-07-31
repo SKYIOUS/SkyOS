@@ -13,6 +13,30 @@ pub(crate) enum AppState {
     Crashed,
 }
 
+/// How a process exited, derived from the raw wait4 status.
+/// The kernel encodes this per Unix convention: 0 = clean exit,
+/// 1..=127 = exit code, 128+sig = killed by fatal signal, negative = killed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExitClass {
+    Clean,
+    Error(u32),
+    Signal(u32),
+    Killed,
+}
+
+/// Classifies a raw wait4 status into how the process exited.
+pub(crate) fn exit_class(status: i32) -> ExitClass {
+    if status == 0 {
+        ExitClass::Clean
+    } else if status < 0 {
+        ExitClass::Killed
+    } else if status > 128 {
+        ExitClass::Signal((status - 128) as u32)
+    } else {
+        ExitClass::Error(status as u32)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub(crate) enum RestartPolicy {

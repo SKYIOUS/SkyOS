@@ -31,6 +31,10 @@ fn user_main() -> i32 {
 
     let mut desktop = Desktop::new(desktop_win.width, desktop_win.height);
     let mut compositor = Compositor::new(desktop_win.width, desktop_win.height);
+    if (0..libsarga::args::argc()).any(|i| libsarga::args::get(i as usize) == Some("--selftest")) {
+        let ok = util::testing::run_all(&mut desktop);
+        io::print_str(if ok { "[ade] selftest PASS\n" } else { "[ade] selftest FAIL\n" });
+    }
     // Session lifecycle: desktop environment session established
     let _ = io::write_all(1, b"[ade] session established\n");
     // ponytail: terminal auto-launch removed — opens on icon click instead

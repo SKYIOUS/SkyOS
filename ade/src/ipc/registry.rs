@@ -59,6 +59,34 @@ impl ServiceRegistry {
         }
     }
 
+    /// Registers the services actually backed by `sec::portal` handlers, each
+    /// gated by the same permission its `desktop_api` entry enforces.
+    pub fn register_defaults(&mut self) {
+        use crate::ipc::permission::{
+            PERM_CLIPBOARD, PERM_FILESYSTEM, PERM_NOTIFICATIONS, PERM_POWER, PERM_SETTINGS,
+            PERM_WINDOW_CONTROL,
+        };
+        for (id, name, required) in [
+            (ServiceId::Clipboard, "clipboard", PERM_CLIPBOARD.bits()),
+            (ServiceId::Notification, "notification", PERM_NOTIFICATIONS.bits()),
+            (ServiceId::Launcher, "launcher", PERM_FILESYSTEM.bits()),
+            (ServiceId::FileDialog, "file_dialog", PERM_FILESYSTEM.bits()),
+            (ServiceId::Settings, "settings", PERM_SETTINGS.bits()),
+            (ServiceId::Session, "session", PERM_POWER.bits()),
+            (ServiceId::Window, "window", PERM_WINDOW_CONTROL.bits()),
+            (ServiceId::Theme, "theme", PERM_SETTINGS.bits()),
+            (ServiceId::Power, "power", PERM_POWER.bits()),
+        ] {
+            self.register(ServiceInfo {
+                id,
+                name,
+                version: 1,
+                required_permissions: required,
+                available: true,
+            });
+        }
+    }
+
     pub fn set_available(&mut self, id: ServiceId, available: bool) {
         for s in &mut self.services {
             if s.id == id {

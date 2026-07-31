@@ -2,9 +2,13 @@
 
 use crate::ipc::message::{
     ApplicationId, ChannelId, IpcTarget, Message, MessageBus, MessageId, MessagePayload, MessageType,
+    RequestId,
 };
 use crate::ipc::channel::{Channel, ChannelType};
+use crate::ipc::permission::AppPermission;
 use crate::ipc::registry::{ServiceId, ServiceInfo, ServiceRegistry};
+use crate::ipc::request::ServiceRequest;
+use crate::sec::perms::{default_grant, PermissionManager};
 use alloc::vec::Vec;
 use libsarga::io;
 
@@ -168,5 +172,151 @@ pub(crate) fn test_channels() -> bool {
     }
 
     io::print_str("[test] PASS test_channels\n");
+    true
+}
+
+pub(crate) fn test_permission_manager() -> bool {
+    let mut pm = PermissionManager::new();
+    if pm.granted(1).is_some() {
+        io::print_str("[test] FAIL test_permission_manager: empty manager grants\n");
+        return false;
+    }
+    pm.register(1, default_grant());
+    if !pm.check(1, AppPermission::CLIPBOARD) {
+        io::print_str("[test] FAIL test_permission_manager: CLIPBOARD not granted\n");
+        return false;
+    }
+    if pm.check(1, AppPermission::POWER) {
+        io::print_str("[test] FAIL test_permission_manager: POWER should be denied\n");
+        return false;
+    }
+    if pm.check(2, AppPermission::CLIPBOARD) {
+        io::print_str("[test] FAIL test_permission_manager: unregistered pid granted\n");
+        return false;
+    }
+    pm.unregister(1);
+    if pm.granted(1).is_some() {
+        io::print_str("[test] FAIL test_permission_manager: unregister failed\n");
+        return false;
+    }
+    io::print_str("[test] PASS test_permission_manager\n");
+    true
+}
+
+pub(crate) fn test_register_defaults() -> bool {
+    let mut reg = ServiceRegistry::new();
+    reg.register_defaults();
+    if reg.services.len() != 9 {
+        io::print_str("[test] FAIL test_register_defaults: expected 9 services\n");
+        return false;
+    }
+    if reg.find(ServiceId::Clipboard).map(|s| s.name) != Some("clipboard") {
+        io::print_str("[test] FAIL test_register_defaults: clipboard missing\n");
+        return false;
+    }
+    if !reg.all().iter().all(|s| s.available) {
+        io::print_str("[test] FAIL test_register_defaults: not all available\n");
+        return false;
+    }
+    io::print_str("[test] PASS test_register_defaults\n");
+    true
+}
+
+pub(crate) fn test_exit_class() -> bool {
+    use crate::sys::lifecycle::{exit_class, ExitClass};
+    if exit_class(0) != ExitClass::Clean {
+        io::print_str("[test] FAIL test_exit_class: clean exit misclassified\n");
+        return false;
+    }
+    if exit_class(-1) != ExitClass::Killed {
+        io::print_str("[test] FAIL test_exit_class: killed misclassified\n");
+        return false;
+    }
+    if exit_class(1) != ExitClass::Error(1) {
+        io::print_str("[test] FAIL test_exit_class: error exit misclassified\n");
+        return false;
+    }
+    if exit_class(127) != ExitClass::Error(127) {
+        io::print_str("[test] FAIL test_exit_class: error exit boundary misclassified\n");
+        return false;
+    }
+    if exit_class(137) != ExitClass::Signal(9) {
+        io::print_str("[test] FAIL test_exit_class: SIGKILL death misclassified\n");
+        return false;
+    }
+    if exit_class(139) != ExitClass::Signal(11) {
+        io::print_str("[test] FAIL test_exit_class: SIGSEGV death misclassified\n");
+        return false;
+    }
+    io::print_str("[test] PASS test_exit_class\n");
+    true
+}
+
+pub(crate) fn test_ipc_gate_granted(desktop: &mut crate::core::desktop::Desktop) -> bool {
+    let app = ApplicationId(60001);
+    desktop.permissions.register(app.0, default_grant());
+
+    desktop.ipc_server.submit_request(ServiceRequest {
+        request_id: RequestId(1),
+        service: ServiceId::Clipboard,
+        method: "copy",
+        args: b"hello".to_vec(),
+        sender: app,
+    });
+    desktop.process_ipc();
+    let mut resp = desktop.ipc_server.drain_responses();
+    if resp.len() != 1 {
+        io::print_str("[test] FAIL test_ipc_gate_granted: copy no response\n");
+        return false;
+    }
+    if !resp.remove(0).success {
+        io::print_str("[test] FAIL test_ipc_gate_granted: copy denied\n");
+        return false;
+    }
+
+    desktop.ipc_server.submit_request(ServiceRequest {
+        request_id: RequestId(2),
+        service: ServiceId::Clipboard,
+        method: "paste",
+        args: Vec::new(),
+        sender: app,
+    });
+    desktop.process_ipc();
+    let mut resp = desktop.ipc_server.drain_responses();
+    if resp.len() != 1 {
+        io::print_str("[test] FAIL test_ipc_gate_granted: paste no response\n");
+        return false;
+    }
+    let r = resp.remove(0);
+    if !r.success || r.data != b"hello".to_vec() {
+        io::print_str("[test] FAIL test_ipc_gate_granted: paste wrong value\n");
+        return false;
+    }
+
+    desktop.permissions.unregister(app.0);
+    io::print_str("[test] PASS test_ipc_gate_granted\n");
+    true
+}
+
+pub(crate) fn test_ipc_gate_denied(desktop: &mut crate::core::desktop::Desktop) -> bool {
+    let app = ApplicationId(60002); // never granted any permission
+    desktop.ipc_server.submit_request(ServiceRequest {
+        request_id: RequestId(3),
+        service: ServiceId::Clipboard,
+        method: "copy",
+        args: b"secret".to_vec(),
+        sender: app,
+    });
+    desktop.process_ipc();
+    let mut resp = desktop.ipc_server.drain_responses();
+    if resp.len() != 1 {
+        io::print_str("[test] FAIL test_ipc_gate_denied: no response\n");
+        return false;
+    }
+    if resp.remove(0).success {
+        io::print_str("[test] FAIL test_ipc_gate_denied: ungranted app succeeded\n");
+        return false;
+    }
+    io::print_str("[test] PASS test_ipc_gate_denied\n");
     true
 }

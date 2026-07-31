@@ -17,6 +17,5 @@ pub(crate) mod package;
 pub(crate) mod plugin;
 pub(crate) mod recovery;
 pub(crate) mod sdk;
-pub(crate) mod service_manager;
 pub(crate) mod testing;
 pub(crate) mod profiler;

@@ -104,6 +104,8 @@ pub(crate) fn spawn_app_at(
                     .map(|id| id.0)
                     .unwrap_or(0);
                 desktop.lifecycle.register(pid, app_idx);
+                desktop.permissions.register(pid, crate::sec::perms::default_grant());
+                desktop.lifecycle.mark_running(pid);
                 app_win
                     .content
                     .push(alloc::format!("[launched {} pid={}]", title, pid));
