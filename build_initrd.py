@@ -51,6 +51,7 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/pipe_signal_test':    'pipe_signal_test',
         'bin/perm_test':           'perm_test',
         'bin/dac_test':            'dac_test',
+        'bin/ipc_echo':            'ipc_echo',
     }
     for b in coreutils_bins:
         binaries[f'bin/{b}'] = b

@@ -31,6 +31,7 @@ members = [
     "search",
     "installer",
     "skyd-update",
+    "ipc_echo",
     "svc",
     "vahid",
     "libskyaudio",
