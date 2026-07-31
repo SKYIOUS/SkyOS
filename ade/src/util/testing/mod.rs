@@ -29,6 +29,11 @@ pub(crate) fn run_all(desktop: &mut crate::core::desktop::Desktop) -> bool {
     ok &= ipc::test_exit_class();
     ok &= ipc::test_ipc_gate_granted(desktop);
     ok &= ipc::test_ipc_gate_denied(desktop);
+    ok &= ipc::test_service_wire();
+    ok &= ipc::test_codec_roundtrip();
+    ok &= ipc::test_frame_roundtrip();
+    ok &= ipc::test_poll_empty_socket();
+    ok &= ipc::test_transport_end_to_end(desktop);
     ok &= services::test_notifications(desktop);
     ok &= services::test_clipboard(desktop);
     ok &= services::test_session(desktop);
