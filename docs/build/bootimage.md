@@ -1,57 +1,60 @@
 # UEFI Boot Image Creation
 
-SkyOS boots on UEFI systems using a custom bootloader.
+SkyOS boots on UEFI systems using the `bootloader` crate (v0.11), wired up by the `kernel/builder`
+crate.
 
 ## Boot Process
 
-1. **UEFI firmware** loads the bootloader (`skyos.efi`) from the EFI system partition
-2. **Bootloader** initializes UEFI services, sets up graphics output, and loads the kernel ELF
-3. **Kernel** is parsed and loaded into memory by the bootloader
-4. **Exit boot services** - UEFI boot services are terminated
-5. **Kernel entry** - Execution transitions to the kernel
+1. **UEFI firmware** loads the bootloader (`BOOTX64.EFI`) from the ESP
+2. **Bootloader** (`bootloader::UefiBoot`) initializes UEFI services, graphics output, and loads
+   the kernel ELF plus the initrd (embedded as a ramdisk)
+3. **Kernel** is parsed and mapped by the bootloader at its higher-half address
+4. **Exit boot services** — UEFI boot services are terminated
+5. **Kernel entry** — execution transitions to `kernel_main(BootInfo)`
 
 ## Boot Image Structure
 
-The boot image is a FAT32 partition with an embedded UEFI application:
+`kernel/builder` (run from `kernel/`) produces a disk image whose layout is created by the
+bootloader crate (MBR/GPT + FAT ESP containing the UEFI application, kernel, and ramdisk):
 
 ```
-bootimage-skyos.bin
-├── EFI/
-│   └── BOOT/
-│       └── BOOTX64.EFI    # UEFI bootloader
-├── kernel.elf             # The kernel binary
-└── initrd.img             # Initial ramdisk
+bootimage-vahi_kernel.bin
+├── ESP (FAT32)
+│   └── EFI/BOOT/BOOTX64.EFI     # UEFI bootloader + embedded kernel
+└── ramdisk (kernel/initrd.tar)
 ```
 
 ## Creating the Boot Image
 
-The boot image is created by the `bootimage` tool:
-
 ```bash
-# Build and create boot image in one step
-cargo bootimage
+# 1. Build the kernel (produces kernel/kernel/target/x86_64-unknown-none/<profile>/vahi_kernel)
+cd kernel/kernel && cargo +nightly build
 
-# Or build components separately
-cargo build --release
-cargo bootimage --kernel target/x86_64-skyos/release/skyos
+# 2. Build the initrd
+cd ../.. && python build_initrd.py
+
+# 3. Run the builder (from kernel/, outputs kernel/target/x86_64-vahi/<profile>/bootimage-vahi_kernel.bin)
+cargo run --release --manifest-path kernel/builder/Cargo.toml
 ```
 
-## Writing to Physical Media
+Or simply: `make bootimage` / `python build_disk.py --kernel-only`.
+
+The builder (`kernel/builder/src/main.rs`) picks the kernel from
+`kernel/kernel/target/x86_64-unknown-none/<profile>/vahi_kernel`, attaches
+`kernel/initrd.tar` when present, and writes the UEFI image with `bootloader::UefiBoot`.
+
+## Running
 
 ```bash
-# Write to USB drive (Linux)
-sudo dd if=bootimage-skyos.bin of=/dev/sdX bs=1M status=progress
-
-# Write to USB drive (macOS)
-sudo dd if=bootimage-skyos.bin of=/dev/disk2 bs=1m
+qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
 ```
 
 ## ISO Creation
 
-For optical media or virtual machines:
+`scripts/make_iso.py` builds a UEFI-bootable ISOHybrid (file-based El Torito + MBR + GPT) from the
+boot image:
 
 ```bash
-xorriso -as mkisofs -b bootimage-skyos.bin \
-    -no-emul-boot -boot-load-size 4 \
-    -o skyos.iso bootimage-skyos.bin
+python build_disk.py --iso --version 0.6.0
+# → release/skyos-0.6.0.iso
 ```

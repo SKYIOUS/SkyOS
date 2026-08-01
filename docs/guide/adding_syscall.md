@@ -1,49 +1,58 @@
 # Adding a New Syscall
 
-This guide walks through adding a new system call to SkyOS.
+This guide walks through adding a new system call to SkyOS. The kernel lives in the external repo
+(junctioned at `kernel/`); all paths below are under `kernel/kernel/src/`.
 
 ## Step 1: Define the Syscall Number
 
-Add a new entry in `src/syscalls/syscall_table.rs`:
+Add a constant in `kernel/kernel/src/syscalls/numbers.rs`:
 
 ```rust
-pub const SYS_MY_NEW_CALL: usize = 42; // Choose an unused number
+pub const SYS_MY_NEW_CALL: u64 = 500; // Choose an unused number
 ```
+
+Numbers follow the Linux x86_64 ABI where a POSIX equivalent exists; extensions use dedicated
+ranges (see `docs/syscalls/index.md`).
 
 ## Step 2: Implement the Handler
 
-Create a handler function in `src/syscalls/my_call.rs`:
+Handlers are free functions returning `u64` (0 or a positive value on success, a **negative errno**
+on failure). Add it to `kernel/kernel/src/syscalls/mod.rs` (or a submodule):
 
 ```rust
-pub fn sys_my_new_call(ctx: &mut SyscallContext) -> Result<usize, SysError> {
-    let arg1 = ctx.rdi as u64;
-    let arg2 = ctx.rsi as u64;
-    // Implementation logic
-    Ok(0)
+fn sys_my_new_call(arg1: u64, arg2: u64) -> u64 {
+    if arg1 > 0 {
+        errno::Errno::EINVAL as u64 * 0
+    } else {
+        // Implementation logic
+        0
+    }
 }
 ```
 
-## Step 3: Register in Dispatch Table
+User pointers must be read with `user_access::read_user_string` / `copy_from_user` / `copy_to_user`
+and never dereferenced directly.
 
-Add the entry to the dispatch match in `syscall_entry()`:
+## Step 3: Register in the Dispatch Table
+
+Add an arm to the `match numbers::SYS_...` in `syscall_entry()` (`syscalls/mod.rs`):
 
 ```rust
-SYS_MY_NEW_CALL => sys_my_new_call(context),
+numbers::SYS_MY_NEW_CALL => sys_my_new_call(arg1, arg2),
 ```
 
-## Step 4: Add Userspace Wrapper
+## Step 4: Add a Userspace Wrapper
 
-In `userspace/libc/src/syscalls.rs`:
+In `libsarga/src/syscall.rs` (syscall numbers) and the appropriate module (e.g. `libsarga/src/io.rs`):
 
 ```rust
-pub fn my_new_call(arg1: u64, arg2: u64) -> Result<usize, Errno> {
-    unsafe {
-        let ret = syscall2(SYS_MY_NEW_CALL, arg1, arg2);
-        if ret < 0 { Err(Errno::from(-ret)) } else { Ok(ret as usize) }
-    }
+pub fn my_new_call(arg1: u64, arg2: u64) -> Result<u64, Error> {
+    let ret = unsafe { syscall2(SYS_MY_NEW_CALL, arg1, arg2) };
+    if ret < 0 { Err(Error::from_errno(-ret)) } else { Ok(ret) }
 }
 ```
 
 ## Step 5: Add Documentation
 
-Update the syscall documentation in `docs/syscalls/` with the new entry, including its purpose, arguments, return values, and error conditions.
+Update `docs/syscalls/index.md` (and the relevant per-subsystem file under `docs/syscalls/`) with
+the new entry, including its purpose, arguments, return values, and error conditions.

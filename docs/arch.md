@@ -11,8 +11,8 @@ SkyOS is a monolithic kernel operating system with a modular userspace desktop e
 - Higher-half mapped at `0xFFFFFFFF80000000`
 - Memory: Buddy allocator (physical), Slab allocator (kernel heap at `0xFFFF_C000_0000_0000`, 128 MiB)
 - Scheduler: Per-CPU, preemptive, **stride scheduling** (tickets/pass proportional-share) - NOT priority round-robin
-- VFS: Trait-based (`VfsNode`, `FileSystem`); 8 filesystems: ramfs, devfs, ctlfs, pipe, tarfs, skyfs, ext2 (read-write), ext4, fat
-- Syscalls: x86_64 SYSCALL instruction, POSIX-compatible ABI (152 handlers)
+- VFS: Trait-based (`VfsNode`, `FileSystem`); 9 filesystems: ramfs, devfs, ctlfs, pipe, tarfs, skyfs, ext2 (read-write), ext4 (feature-gated), fat
+- Syscalls: x86_64 SYSCALL instruction, POSIX-compatible ABI (~170 handlers, 171 `SYS_*` constants)
 - Drivers: storage (ahci, nvme, pata, virtio_block), net (e1000, virtio), usb (uhci, xhci, hid), audio (hda, pcspeaker), gpu (virtio_gpu), framebuffer (bga)
 
 **Userspace Layer** (this repo):

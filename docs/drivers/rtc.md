@@ -1,51 +1,31 @@
 # Real-Time Clock Driver
 
-The Real-Time Clock (RTC) driver provides battery-backed wall-clock time and alarm functionality.
+The Real-Time Clock (RTC) driver (`kernel/kernel/src/drivers/rtc.rs`) provides battery-backed wall-clock time.
 
 ## Hardware Interface
 
-The RTC is accessed through CMOS memory at I/O ports 0x70 (index) and 0x71 (data). The driver reads time information as binary-coded decimal (BCD) values and converts them to integer format.
+The RTC is accessed through CMOS memory at I/O ports 0x70 (index) and 0x71 (data). The driver reads time fields as binary-coded decimal (BCD) values and converts them to binary.
+
+## Public API
 
 ```rust
-pub struct RtcTime {
-    pub second: u8,
-    pub minute: u8,
-    pub hour: u8,
-    pub day: u8,
-    pub month: u8,
-    pub year: u16,
-    pub century: Option<u8>,
-}
+pub fn init() -> Result<(), ()>;          // read CMOS time, store epoch base
+pub fn cleanup();                         // clear initialized flag
+pub fn read_realtime() -> (i64, i64);     // (seconds, nanoseconds) since epoch
 ```
+
+There is no `RtcTime` struct; time is returned as a (secs, nsecs) tuple.
 
 ## Time Reading
 
-The driver reads all time fields in a loop until two consecutive reads match, ensuring a consistent time snapshot:
+`cmos_read_time()`:
+1. Waits for the update-in-progress flag (`STATUS_UPDATE_IN_PROGRESS` in status reg A) to clear
+2. Reads second/minute/hour/day/month/year (registers 0x00–0x09), converting BCD→binary
+3. Reads the second field again after the next update; retries until two consecutive reads match
+4. Computes Unix seconds via `days_from_ymd` (Howard Hinnant's algorithm)
 
-```rust
-pub fn read_rtc_time() -> RtcTime {
-    loop {
-        let first = read_time_fields();
-        let second = read_time_fields();
-        if first == second {
-            return first;
-        }
-    }
-}
-```
+## Realtime
 
-## RTC Configuration
+`init()` stores the CMOS epoch as `RTC_EPOCH_SECS`. `read_realtime()` returns `epoch_base + elapsed_ms/1000` seconds and the millisecond remainder as nanoseconds, where elapsed time is derived from the timer ticks (`interrupts::get_ticks() * 10ms`). Reads return `(0,0)` before `init()` succeeds.
 
-The driver configures the RTC to:
-- Use binary format (not BCD)
-- Enable periodic interrupts (optional)
-- Set the century register if available
-- Configure alarm registers (if used)
-
-## Alarm Support
-
-The RTC alarm can trigger an interrupt at a specified time. This is used for wake-from-sleep functionality. Alarm registers store the target time; when the RTC matches, it raises IRQ 8.
-
-## NTP Integration
-
-The RTC time is used as the initial time source during boot. After the network stack is available, NTP provides more accurate time, and the RTC is updated periodically to maintain time across reboots.
+Note: NMI is disabled on every CMOS read (0x80 mask), and time is always read in BCD regardless of register B's binary flag.

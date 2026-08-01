@@ -74,13 +74,28 @@ Application Launch Flow (Trace 1)
         self.damage.mark_full();
 ```
 
-**File: ade/src/core/launcher.rs (Lines 92-98)**
+**File: ade/src/core/launcher.rs (Lines 94-115)**
 ```rust
-
     if !path.is_empty() {
+        let ipc_pair = libsarga::net::socketpair(
+            libsarga::net::SocketDomain::Unix as u64,
+            libsarga::net::SocketType::Stream as u64,
+            0,
+        )
+        .ok();
         match libsarga::process::fork() {
             Ok(0) => {
-                let _ = libsarga::process::execve(path, &[path], &[]);
+                match ipc_pair {
+                    Some((server_fd, client_fd)) => {
+                        let _ = libsarga::io::close(server_fd);
+                        let fd_arg = alloc::format!("{}", client_fd);
+                        let argv = [path, "--ipc-fd", fd_arg.as_str()];
+                        let _ = libsarga::process::execve(path, &argv, &[]);
+                    }
+                    None => {
+                        let _ = libsarga::process::execve(path, &[path], &[]);
+                    }
+                }
                 libsarga::process::exit(1);
             }
 ```
@@ -170,7 +185,7 @@ WindowId is a stable u64 (monotonic `next_id` counter), not a Vec index. All loo
             other.focused = false;
         }
         self.windows.push(w);
-        self.focused = Some(self.windows.len() - 1);
+        self.focused = Some(id.0);
     }
 ```
 

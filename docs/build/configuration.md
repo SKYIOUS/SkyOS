@@ -1,60 +1,57 @@
 # Feature Flags and Build Configuration
 
-SkyOS uses Cargo features for build-time configuration.
+SkyOS uses Cargo features for build-time configuration. The kernel manifest is `kernel/kernel/Cargo.toml`; the userspace workspace is the root `Cargo.toml`.
 
-## Feature Flags
+## Kernel Features (`kernel/kernel/Cargo.toml`)
 
 ```toml
 [features]
-default = ["acpi", "pci", "ps2"]
-acpi = ["dep:aml"]
-pci = []
-ps2 = []
-virtio = []
-e1000 = []
+default = ["smp", "net", "ai_rule", "ext4"]
+verification = []
+ai_rule = []
+ai_llm = []
 smp = []
-kasan = []
-profiling = []
-log_error = []
-log_warn = ["log_error"]
-log_info = ["log_warn"]
-log_debug = ["log_info"]
-log_trace = ["log_debug"]
+net = []
+uhci = []
+ext4 = []
+self_test = []
+ash = []
+gpu = []
+hypervisor = []
+objects_v2 = []
 ```
+
+- `smp` — SMP support (AP boot, per-CPU schedulers)
+- `net` — smoltcp networking (socket syscalls return `ENOSYS` when off)
+- `ai_rule` — Vahiai rule engine (default); `ai_llm` — LLM support
+- `ext4` — ext4 read-only filesystem
+- `self_test` — boot-time TAP self-tests to serial (CI gate)
+- `ash` — ASh language syscalls (310–313); `hypervisor` — hypervisor syscalls (340–349)
+- `uhci`, `gpu`, `objects_v2`, `verification` — optional subsystems
 
 ## Enabling Features
 
 ```bash
-# Build with specific features
-cargo build --features "virtio,e1000,smp"
+# Kernel, with self-tests for CI
+cargo build --release --target x86_64-unknown-none \
+    -Zbuild-std=core,alloc --features net,smp,ai_rule,self_test
 
-# Build with all features
-cargo build --features "log_trace,profiling,kasan"
+# Userspace workspace
+cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json
 ```
 
-## Kernel Parameters
+## Kernel Command-Line Parameters
 
-The kernel accepts parameters via the boot command line:
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `log_level` | Log filter (error/warn/info/debug/trace) | `info` |
-| `init` | Path to init program | `/sbin/init` |
-| `root` | Root filesystem device | `/dev/sda1` |
-| `mem` | Maximum memory (e.g., `mem=512M`) | All detected |
-| `norandmaps` | Disable ASLR | enabled |
-| `smp` | Number of CPUs to use | All available |
+The bootloader passes no configurable log-level/init/root/mem parameters — the kernel reads the `BootInfo` from `bootloader` v0.11 and mounts the initrd-provided root filesystem (tarfs) with a fixed `/sbin/init`-style bootstrap. There is no `log_level` parameter; serial logging is unconditional via `serial_write`.
 
 ## Build Profiles
 
-Debug builds include:
-- Runtime assertions and safety checks
-- KASAN (kernel address sanitizer)
-- Full debug symbols
-- Unoptimized code for faster compilation
+Debug builds (`profile.dev`):
+- `panic = "abort"`, stack-protector `-Z stack-protector=strong`
+- Unoptimized, full debug symbols
 
-Release builds include:
-- LTO (Link-Time Optimization)
-- Code generation optimizations (-O2)
-- Strip debug symbols (optional)
-- Profile-guided optimization (optional)
+Release builds (`profile.release`):
+- `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, stack-protector
+- Target rustflags (`.cargo/config.toml`): `-C target-feature=-mmx,-sse,+soft-float`, `-C link-arg=-Tlinker.ld`, `-C relocation-model=static`
+
+There is no KASAN, no `profiling`/`log_*` feature flags, and no PGO in the kernel build.

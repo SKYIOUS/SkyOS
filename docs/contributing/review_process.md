@@ -7,7 +7,7 @@ All changes to SkyOS must go through the code review process. This ensures code 
 Before opening a pull request, ensure the following checklist is complete:
 
 1. The code builds without warnings (`cargo build --all-targets`).
-2. All existing tests pass (`cargo test`).
+2. Existing tests pass (host-side suites via `cargo run --manifest-path tests/skyos-test/Cargo.toml -- run`; boot gate via `./tests/qemu_boot.sh`).
 3. New code includes appropriate tests (unit, integration, or both).
 4. The code has been formatted with `rustfmt`.
 5. No new `unsafe` blocks are introduced without a `// SAFETY:` comment.

@@ -1,6 +1,6 @@
 # SkyOS Documentation
 
-Welcome to the SkyOS kernel documentation. SkyOS is a modern, microkernel-based operating system written in Rust, designed with a focus on safety, performance, and asynchronous operation.
+Welcome to the SkyOS documentation. SkyOS is a monolithic operating system written in Rust, designed with a focus on safety, performance, and asynchronous operation. Its userspace desktop environment (ADE, libsarga, sash, coreutils) lives in this repository; the kernel source is an external dependency.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ Practical guides for building, running, and extending the kernel.
 - [Userspace](guide/userspace.md)
 
 ### [API Reference](api/syscalls_overview.md)
-Complete API reference for system calls, VFS, drivers, and the userspace libc.
+Complete API reference for system calls, VFS, drivers, and the userspace standard library (`libsarga`).
 
 - [Syscalls Overview](api/syscalls_overview.md)
 - [read() Syscall](api/syscall_read.md)

@@ -8,16 +8,11 @@ Every process in SkyOS runs in its own address space with hardware-enforced isol
 
 ## Capability Confinement
 
-Each process holds a capability table that defines what resources it may access. The kernel's system call dispatcher checks capability grants before servicing requests. A process can only affect resources for which it holds the corresponding capability. This confinement is enforced even for privileged processes; there is no omnipotent root user in the capability model. The spawn system call accepts a capability mask that allows a parent to create a child with strictly fewer privileges than itself.
+Each process holds a credentials set (`Credentials` in `objects/security.rs`) with effective/real/saved uid/gid plus a capability bitmask (`cap_effective`). `has_capability(bit)` in `syscalls/mod.rs` returns true when `euid == 0` **or** the bit is set — so root bypasses capability checks. `capset`/`capget` (syscalls 308/307) manage the bitmask; `capset` is root-only. Denials are recorded via `audit_log()`.
 
 ## Driver Isolation
 
-Device drivers run in a restricted execution environment. Drivers are sandboxed such that a buggy or malicious driver cannot compromise the entire kernel. The driver framework enforces access control at the driver boundary:
-
-- Drivers receive only the I/O ranges and interrupt vectors they explicitly request.
-- Driver-to-driver communication is mediated by the kernel, preventing direct memory sharing.
-- Driver memory allocations are tracked and cannot be used to corrupt kernel data structures.
-- Hardware DMA is restricted to buffers that the driver has explicitly registered.
+Drivers are built into the kernel and run with kernel privileges; there is no driver sandboxing. The kext framework (`kernel/kernel/src/kext/`) matches PCI/USB/platform nubs to driver families, but memory/DMA access is not isolated per driver.
 
 ## Userspace Sandboxing (Planned)
 
@@ -32,4 +27,4 @@ These features build on the existing capability infrastructure and extend the pr
 
 ## Audit and Monitoring
 
-The kernel's audit subsystem (in development) will log sandboxing-related events: capability checks, denied system calls, driver boundary violations, and process compartment boundary crossings. These logs are intended for security monitoring and forensic analysis.
+The kernel records security-relevant events via `audit_log()` (capability denials for mount, swap, chmod/chown, kill, etc.). Future work extends this into a full audit trail: capability checks, denied system calls, and process compartment boundary crossings.

@@ -1,55 +1,129 @@
 # GUI Subsystem Syscalls
 
-SkyOS provides kernel-level syscalls for the GUI compositor subsystem.
+SkyOS provides kernel-level syscalls for the in-kernel compositor (`src/gui/`). Each window is
+identified by a **handle** (an index into the compositor's window list). Userspace typically calls
+these through `libsarga::gui::Window` (`libsarga/src/gui.rs`).
 
-## skyos_create_window (syscall 300)
+Syscall numbers follow Linux x86_64 convention where applicable (see `SYSCALL_ABI.md` and
+`kernel/src/syscalls/numbers.rs`).
 
-Create a new window.
-
-```c
-int skyos_create_window(int x, int y, int width, int height, uint32_t flags);
-```
-
-Returns a window ID on success, or -1 on error.
-
-## skyos_get_buffer (syscall 301)
-
-Get the framebuffer for a window.
+## gui_create_window (100)
 
 ```c
-void* skyos_get_buffer(int window_id);
+u64 gui_create_window(const char* title, usize width, usize height);
 ```
 
-Returns a pointer to the window's pixel buffer (BGRA format, 32 bits per pixel), or NULL if the window ID is invalid.
+Creates a window with the given title and content size. The compositor allocates a shared physical
+framebuffer (`width * height` pixels, 32-bit) or falls back to an in-memory content buffer. Returns
+the window handle, or a negative errno on failure.
 
-## skyos_flush (syscall 302)
-
-Flush window updates to the display.
+## gui_get_buffer (101)
 
 ```c
-int skyos_flush(int window_id, int x, int y, int width, int height);
+u64 gui_get_buffer(u64 handle);
 ```
 
-The dirty rectangle specifies which portion of the window needs updating. Returns 0 on success.
+Returns the content area size of the window, packed as `width` in the low 32 bits and `height` in the
+high 32 bits. Returns 0 if the handle is invalid. (The user buffer itself comes from
+`gui_map_buffer`.)
 
-## skyos_map_buffer (syscall 303)
-
-Map a GPU-accessible buffer.
+## gui_map_buffer (103)
 
 ```c
-void* skyos_map_buffer(size_t size, uint32_t flags);
+u64 gui_map_buffer(u64 handle);
 ```
 
-Returns a pointer to a shared buffer that can be used for DMA with the GPU. The flags parameter controls caching behavior (write-combine, uncached, etc.).
+Maps the window's shared framebuffer into the calling process's address space and returns the virtual
+address (0 on failure). The region is registered as a VMA; pages are user-accessible and writable.
+`libsarga::gui::Window::create` calls this and wraps the result as `&mut [u32]`.
+
+## gui_flush (102)
+
+```c
+u64 gui_flush(u64 handle, const u32* buf);
+```
+
+Copies `buf` into the window's content buffer (no-op for physically-backed windows, which are drawn
+directly) and triggers a compositor render with the current cursor position. Returns 0 on success, or
+`EBADF`/`ENOSYS` for invalid handles.
+
+## gui_get_key (105)
+
+```c
+u64 gui_get_key(u64 handle);
+```
+
+Pops the next queued key event for the window (a keycode) or 0 if the queue is empty.
+
+## gui_get_mouse (120)
+
+```c
+u64 gui_get_mouse(u64 handle);
+```
+
+Returns the mouse state relative to the window's content area, packed as `x` (low 16 bits), `y`
+(bits 16-31), `buttons` (bits 32-39), `scroll` (bits 40-47). Returns 0 if the handle is invalid.
+
+## gui_set_title (121)
+
+```c
+u64 gui_set_title(u64 handle, const char* title);
+```
+
+Updates the window title (capped at 64 bytes). Returns 0 on success or `EINVAL` for an invalid handle
+or null pointer.
+
+## gui_destroy_window (122)
+
+```c
+u64 gui_destroy_window(u64 handle);
+```
+
+Removes the window from the compositor. Returns 0 on success or `EINVAL` for an invalid handle.
+
+## gui_resize_window (123)
+
+```c
+u64 gui_resize_window(u64 handle, u64 width, u64 height);
+```
+
+Resizes the window. Returns 0 on success or `EINVAL` for an invalid handle.
+
+## gui_move_window (124)
+
+```c
+u64 gui_move_window(u64 handle, u64 x, u64 y);
+```
+
+Moves the window. Returns 0 on success or `EINVAL` for an invalid handle.
+
+## beep (104)
+
+```c
+u64 beep(u32 freq_hz, u32 duration_ms);
+```
+
+Emits a PC-speaker tone. See `libsarga` `beep()`.
+
+## clipboard (125)
+
+```c
+u64 clipboard(u64 mode, u8* buf, u64 len);
+```
+
+Access the compositor clipboard. `mode` 0 = read into `buf` (returns bytes copied), 1 = write `buf`
+(returns `len`), 2 = get clipboard length.
+
+## notify (126)
+
+```c
+u64 notify(const char* text, u64 duration_ms, u64 kind);
+```
+
+Queues a desktop notification. `kind` 0 = Info, 1 = Warning, 2 = Error (text capped at 256 bytes,
+minimum 100 ms display time). Returns 0 on success or `EINVAL` for a null/non-UTF-8 text.
 
 ## Event Handling
 
-The display server receives input events through a dedicated event queue accessible via `read()` on a special device file. Events include:
-
-```c
-struct input_event {
-    uint32_t type;      // EV_KEY, EV_MOTION, EV_SCROLL
-    uint32_t code;      // Key code, button number, or axis
-    int32_t value;      // Press/release state or delta
-};
-```
+Input events are not delivered through a device file; applications poll `gui_get_key` /
+`gui_get_mouse` per frame from their event loop (the ADE desktop polls at ~60 Hz).

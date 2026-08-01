@@ -6,7 +6,7 @@ This document describes the design of the SkyOS scheduler, covering its architec
 
 SkyOS uses a hybrid scheduling model:
 
-1.  **Preemptive Multi-tasking:** For kernel `Thread`s, a preemptive, priority-based scheduler is used. Preemption is driven by the Local APIC (LAPIC) timer, which fires every 10ms.
+1.  **Preemptive Multi-tasking:** For kernel `Thread`s, a preemptive stride (proportional-share) scheduler is used. Preemption is driven by the Local APIC (LAPIC) timer, which fires every 10ms.
 2.  **Cooperative Multi-tasking:** For `async` tasks within a thread (e.g., the shell), a cooperative executor is used.
 
 The global `SCHEDULER` is a `spin::Mutex` containing the scheduler state.
@@ -19,7 +19,7 @@ The global `SCHEDULER` is a `spin::Mutex` containing the scheduler state.
     -   Each thread carries `tickets` (default 20), `stride`, and `pass` (`STRIDE_MAX = 1<<20`).
     -   The scheduler keeps a max-heap (`stride_heap`) of `PassOrd(Box<Thread>)` ordered by minimum `pass`.
     -   `pick_next()` pops the lowest-`pass` thread from the heap, then work-steals from other CPUs' heaps (up to 3 attempts) before falling back to the global `pending_queue`.
-    -   Legacy per-CPU `ready_queues`/`flush_ready_queues()` scaffolding remains but the direct `push_thread` path is dead code (`#[allow(dead_code)]`).
+    -   Wake paths (timer tick, `wake_pipe`, `wake_futex`, context-switch completion) stage threads into 8 priority-sorted `ready_queues` (priority 7 = highest); `pick_next()` flushes these into the `stride_heap` via `flush_ready_queues()` so the min-`pass` thread runs next. Only the direct `push_thread` heap path is dead code (`#[allow(dead_code)]`).
 -   **Per-CPU state:** each CPU has its own `PerCpuScheduler` with a `stride_heap` and `current_thread`; newly spawned threads go to a global `pending_queue` and are stolen by idle CPUs.
 
 ### 2.2 Thread States

@@ -1,60 +1,45 @@
 # How to Write and Run Tests
 
-SkyOS has a multi-layered testing strategy covering unit tests, integration tests, and in-QEMU tests.
+SkyOS has no `#[test]`-based test harness (kernel is `#![no_std]` + `#![no_main]`; `cargo test` does not work). Testing is split across host-side suites, on-OS integration binaries, and QEMU boot tests. See `docs/testing/integration.md` for the full picture.
 
-## Unit Tests
+## Host-Side Suites (`tests/skyos-test`)
 
-Standard Rust unit tests validate kernel components in isolation:
+Algorithms are validated host-side against mocks (e.g. the buddy allocator). Run with:
 
 ```bash
-cargo test --lib
+cargo run --manifest-path tests/skyos-test/Cargo.toml -- run
+cargo run --manifest-path tests/skyos-test/Cargo.toml -- run --category kernel::alloc
 ```
 
-Write unit tests in a `#[cfg(test)]` module at the bottom of each source file:
+Suites are Rust `Test { name, category, run: Fn() -> Result<(), String> }` entries in `tests/skyos-test-core/src/suites/`.
+
+## On-OS Integration Binaries (`tests/thread_test`)
+
+`tests/thread_test` is a `#![no_std]`/`#![no_main]` userspace crate that runs real syscalls at the login prompt (futex, DAC/perms, signals, pipe+signal interplay):
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
+use libsarga::{println, sarga_main};
 
-    #[test_case]
-    fn test_slab_allocation() {
-        let mut alloc = SlabAllocator::new(64);
-        let ptr = alloc.allocate().unwrap();
-        assert!(!ptr.is_null());
-        alloc.deallocate(ptr);
-    }
+fn user_main() -> i32 {
+    // ... syscall scenarios ...
+    0
 }
+sarga_main!(user_main);
 ```
 
-## Integration Tests
-
-Integration tests run inside QEMU and validate full system behavior:
+## QEMU Boot/Integration Tests
 
 ```bash
-cargo test --test integration
+./tests/qemu_boot.sh              # build everything, boot, assert login prompt
+./tests/qemu_integration_test.sh  # + expect-driven shell interaction
 ```
 
-These tests can:
-- Write to serial output for verification
-- Trigger syscalls and check results
-- Verify memory mappings through page table inspection
+These build the kernel and userspace, assemble the initrd/bootimage/ISO, and boot in QEMU (OVMF, 512M, 2 cpus, e1000). PASS = `login:` prompt in the log; FAIL = panic or timeout.
 
-## Kernel Test Framework
+## Kernel Self-Test Feature
 
-The `kernel_test!` macro defines tests that run in kernel context:
-
-```rust
-kernel_test!(test_memory_map, {
-    let map = memory_map();
-    assert!(map.total_pages > 0);
-});
-```
+The kernel `self_test` feature emits TAP output (`ok`/`not ok`) to serial during boot. The CI `integration-qemu` job scans for `not ok` and fails on any. There is no `kernel_test!` macro.
 
 ## Running in CI
 
-Tests are automatically run in CI on every pull request. The CI pipeline includes:
-- `cargo check` for compilation errors
-- `cargo test --lib` for unit tests
-- `cargo test --test integration` for QEMU tests
-- `cargo clippy` for linting
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs `fmt`, `clippy`, `check-all-targets` (debug+release), and `integration-qemu`. No unit-test stage exists.

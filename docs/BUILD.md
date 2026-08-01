@@ -1,14 +1,12 @@
 # Building and Running SkyOS
 
-This document provides instructions for building the Skyious kernel and running it in QEMU and VirtualBox.
+This document provides instructions for building the Vahi kernel and running it in QEMU and VirtualBox.
 
 ## 1. Prerequisites
 
--   Rust (nightly toolchain)
--   `rustup component add rust-src`
--   `cargo install bootimage` (or ensure it's available)
+-   Rust **nightly** toolchain with `rust-src` and `llvm-tools-preview`
 -   QEMU (for running)
--   VirtualBox (for running)
+-   VirtualBox (for running / VDI conversion)
 
 ## 2. Build Process
 
@@ -24,8 +22,9 @@ This script performs the following steps:
 
 1.  **Cleans old images:** Removes any previous `skyos_uefi.img` or `skyos.vdi` files.
 2.  **Builds the kernel:** Compiles the kernel in the `kernel/` directory.
-3.  **Runs the image builder:** Executes the `builder` crate, which uses the `bootloader` library to create a UEFI-bootable disk image (`skyos-uefi.img`) in the `target/` directory.
-4.  **Copies the image:** Moves `skyos-uefi.img` to the project root.
+3.  **Runs the image builder:** Executes the `builder` crate, which uses the `bootloader` library to
+    create a UEFI-bootable disk image (`bootimage-vahi_kernel.bin`) under `kernel/target/x86_64-vahi/debug/`.
+4.  **Copies the image:** Copies the boot image to the project root as `skyos_uefi.img`.
 5.  **Converts to VDI:** Uses `VBoxManage` to convert the raw UEFI image into a VirtualBox Disk Image (`skyos.vdi`).
 
 ## 3. Running SkyOS

@@ -1,50 +1,48 @@
 # Cross-compilation for x86_64
 
-SkyOS is cross-compiled using a custom target specification.
+SkyOS is cross-compiled from any host (Windows/Linux/macOS) using Rust and the `bootloader` crate —
+there is no GCC cross-toolchain.
 
-## Target Specification
+## Kernel Target
 
-The kernel uses `x86_64-skyos-unknown.json` target spec:
+The kernel builds for the built-in `x86_64-unknown-none` target (no target JSON needed). Flags are
+set in `kernel/kernel/.cargo/config.toml`:
 
-```json
-{
-    "llvm-target": "x86_64-unknown-none",
-    "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
-    "arch": "x86_64",
-    "target-endian": "little",
-    "target-pointer-width": "64",
-    "target-c-int-max-width": "64",
-    "os": "none",
-    "executables": true,
-    "linker-flavor": "ld.lld",
-    "linker": "rust-lld",
-    "panic-strategy": "abort",
-    "disable-redzone": true,
-    "features": "-mmx,-sse,+soft-float"
-}
+```toml
+[build]
+target = "x86_64-unknown-none"
+
+[target.x86_64-unknown-none]
+rustflags = [
+    "-C", "target-feature=-mmx,-sse,+soft-float",
+    "-C", "link-arg=-Tlinker.ld",
+    "-C", "relocation-model=static",
+]
 ```
 
 ## Key Settings
 
-- **`disable-redzone: true`**: Required for interrupt handling (the red zone would be corrupted by interrupt stacks)
-- **`panic-strategy: abort`**: No unwinding in kernel space; panics halt the system
-- **`-mmx,-sse,+soft-float`**: Disable SIMD registers (not saved on context switches); use soft floats
+- **`-C target-feature=-mmx,-sse,+soft-float`**: SIMD registers are not saved on context switch, so
+  they are disabled and the ABI uses soft floats
+- **`-Tlinker.ld`**: custom linker script (higher-half at `0xFFFFFFFF80000000`)
+- **`relocation-model=static`**: no PIE for the kernel
+- **`panic-strategy: abort`** (profiles): no unwinding in kernel space
+- `aarch64-unknown-none` has an equivalent stanza for the aarch64 port (`aarch64-linker.ld`,
+  `+soft-float,+strict-align`)
 
-## Cross-compiling from Any Host
+## Requirements
 
-The build works on any host platform (Linux, macOS, Windows) because:
-1. Rust supports cross-compilation natively
-2. The target spec avoids host-specific dependencies
-3. `rust-lld` is used as the linker (bundled with Rust)
-4. The bootloader is built in the same target
+- Nightly Rust with `rust-src` (for `-Zbuild-std`) and `llvm-tools-preview`
+- `rust-lld` ships with Rust — no separate linker install
 
-## Building Userspace Programs
+## Userspace Target
 
-Userspace programs use the same target spec or a separate `x86_64-skyos-unknown` user target:
+Userspace uses a **custom target spec** in the repo root: `x86_64-sarga.json`
+(`llvm-target: x86_64-unknown-none`, `env: sarga`, soft-float, `-T sarga.ld` via pre-link args,
+`panic-strategy: abort`). The entire userspace workspace is built against it:
 
 ```bash
-# Build a userspace program
-x86_64-skyos-gcc -ffreestanding -nostdlib -o hello hello.c libskyos.a
+cargo build --target x86_64-sarga.json --release
 ```
 
-A GCC cross-compiler for the SkyOS target can be built using `crosstool-ng` or obtained from the project's toolchain releases.
+All userspace programs link `libsarga` as their runtime (entry point `_start`, PIE ELF).

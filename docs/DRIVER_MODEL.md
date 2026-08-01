@@ -1,10 +1,10 @@
 # SkyOS Driver Model
 
-This document describes how drivers are structured and integrated into the Skyious kernel.
+This document describes how drivers are structured and integrated into the Vahi kernel.
 
 ## 1. Overview
 
-Drivers in Skyious are modular components that provide hardware-specific implementations for generic kernel interfaces. Most drivers interact with the kernel through the VFS (as device nodes) or specialized stacks (like networking).
+Drivers in Vahi are modular components that provide hardware-specific implementations for generic kernel interfaces. Most drivers interact with the kernel through the VFS (as device nodes) or specialized stacks (like networking).
 
 ## 2. Driver Categories
 
@@ -12,15 +12,16 @@ Drivers in Skyious are modular components that provide hardware-specific impleme
 Character devices (e.g., serial ports, console) are integrated into the VFS. They implement the `VfsNode` trait and are typically mounted in a `/dev` directory (planned).
 
 ### 2.2 Block Devices
-Block devices (e.g., AHCI/SATA, VirtIO-Block) implement the `BlockDevice` trait.
+Block devices (e.g., AHCI/SATA, NVMe, PATA, VirtIO-Block) implement the `BlockDevice` trait (`drivers/block/mod.rs`).
 ```rust
 pub trait BlockDevice: Send + Sync {
-    fn read_sector(&self, sector: u64, buf: &mut [u8]) -> Result<(), ()>;
-    fn write_sector(&self, sector: u64, buf: &[u8]) -> Result<(), ()>;
-    fn sector_count(&self) -> Result<u64, ()>;
+    fn read_sector(&mut self, sector: u64, buf: &mut [u8]) -> Result<(), BlockDeviceError>;
+    fn write_sector(&mut self, sector: u64, buf: &[u8]) -> Result<(), BlockDeviceError>;
+    fn sector_count(&self) -> Result<u64, BlockDeviceError>;
+    fn sync(&mut self) {}  // default no-op
 }
 ```
-These drivers are used by filesystem implementations (Ext2, FAT32).
+These drivers are used by filesystem implementations (Ext2, SkyFS, FAT32).
 
 ### 2.3 Network Devices
 Network drivers (e.g., E1000, VirtIO-Net) implement the `smoltcp::phy::Device` trait. They are managed by the `net` subsystem and used by the `smoltcp` stack for packet I/O.

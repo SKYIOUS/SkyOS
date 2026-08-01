@@ -12,7 +12,7 @@ Use this checklist when preparing a new SkyOS release.
 ## Build Verification
 
 - [ ] **Userspace builds cleanly** — `cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release`
-- [ ] **Kernel builds cleanly** — `cargo build --release -Zbuild-std=core,alloc --target x86_64-unknown-none --features net,smp,ai_rule`
+- [ ] **Kernel builds cleanly** — `cargo build --release -Zbuild-std=core,alloc --target x86_64-unknown-none --features net,smp,ai_rule,ext4,self_test`
 - [ ] **Initrd created successfully** — `python3 build_initrd.py`
 - [ ] **Bootimage created** — builder runs without errors
 - [ ] **ISO created** — `python3 scripts/make_iso.py <version>` produces valid ISO

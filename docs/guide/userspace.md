@@ -1,44 +1,49 @@
 # Building and Running Userspace Programs
 
-Userspace programs in SkyOS are ELF binaries linked against the SkyOS libc.
+SkyOS userspace is written in Rust. Every program links against `libsarga` (the userspace runtime
+in this workspace) and is compiled for the custom `x86_64-sarga.json` target.
 
-## The libc Library
+## The Runtime Library
 
-SkyOS provides a minimal C standard library (`userspace/libc/`) that implements:
-- Standard I/O (`printf`, `scanf`, file operations)
-- Memory management (`malloc`, `free`)
-- String manipulation (`strcpy`, `strlen`, `memcmp`)
-- POSIX syscall wrappers (`read`, `write`, `open`, `mmap`)
+`libsarga` provides everything a program needs on SkyOS:
+
+- POSIX syscall wrappers (`read`, `write`, `open`, `mmap`, `close`, …) in `libsarga/src/posix.rs`
+- Memory management (`mmap`/`brk`-backed allocator, slab for small objects) in `libsarga/src/mem.rs`
+- `net` module (sockets, socketpair IPC), `signal` module, `gui::Window` wrappers, `hash`
+  (PBKDF2), and more
+- The `_start` entry point, ELF PIE loader, and syscall trampolines
 
 ## Writing a Userspace Program
 
-```c
-#include <skyos.h>
+```rust
+#![no_std]
+#![no_main]
+extern crate libsarga;
 
-int main(int argc, char** argv) {
-    printf("Hello from SkyOS userspace!\n");
-    return 0;
+fn main() {
+    libsarga::println!("Hello from SkyOS userspace!");
 }
 ```
 
-Build with the cross-compilation toolchain:
-
-```bash
-x86_64-skyos-gcc -o hello hello.c
-```
+Programs are built with `cargo build --target x86_64-sarga.json` from the workspace root; the
+build is orchestrated by `build_disk.py` (`cargo build --target x86_64-sarga.json --release`).
 
 ## Loading and Execution
 
-The kernel's ELF loader reads the binary, maps segments into the process address space, and jumps to the entry point. The init process (`/sbin/init`) is loaded by the kernel at boot.
+The kernel's ELF loader maps segments into the process address space and jumps to the entry point.
+The init process (`init/`) is loaded by the kernel at boot.
 
 ## Init System
 
-The init system starts essential userspace services:
-1. Device manager (`devmand`)
-2. Display server
-3. Network manager
-4. Login shell
+`init` (a small Rust service supervisor) starts the essential userspace services and respawns them
+if they crash:
+
+1. `login-manager` (desktop/authentication entry)
+2. ADE services (notifications, clipboard, session, power — see `docs/ade/`)
+3. Other system daemons
+
+Each service is defined with a respawn policy (capped at `MAX_RESPAWNS`).
 
 ## Environment Variables
 
-The kernel passes a minimal environment to the init process including `PATH=/bin:/sbin` and `HOME=/root`.
+The kernel passes a minimal environment to the init process including `PATH` and `HOME`.

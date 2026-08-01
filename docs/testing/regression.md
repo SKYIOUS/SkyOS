@@ -1,59 +1,24 @@
 # Regression Test Suite
 
-The regression test suite ensures that fixed bugs stay fixed and working features continue to work.
+There is no dedicated regression test framework or `tests/regression/` directory. Bug-fix verification relies on the existing test infrastructure:
 
-## Regression Test Database
+- **Host-side suites** (`tests/skyos-test`) — add a `Test` to `tests/skyos-test-core/src/suites/` when a bug touches allocator/mouse-decoder logic
+- **On-OS scenarios** (`tests/thread_test`) — add a scenario (e.g. a new `src/*_test.rs`) when a bug touches syscall behavior
+- **Kernel self-tests** (`self_test` feature) — add a `selftest::register(...)` TAP assertion for in-kernel invariants
+- **QEMU boot tests** — the strongest regression gate is "system still boots to `login:` and passes kernel TAP"
 
-Each regression test is linked to a GitHub issue:
+## Suggested Workflow for a Fixed Bug
 
-```rust
-// Issue #42: mmap with MAP_FIXED overwrites existing mappings
-#[test_case]
-fn test_regression_42_mmap_map_fixed() {
-    let addr1 = sys_mmap(0, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-    assert!(addr1 > 0);
-    let addr2 = sys_mmap(addr1 as usize, 4096, PROT_READ,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0);
-    assert_eq!(addr2, addr1);
-    // Verify the old mapping was replaced
-    sys_munmap(addr2 as usize, 4096);
-}
-```
-
-## Regression Test Organization
-
-Tests are organized by subsystem:
-- `tests/regression/memory.rs` - Memory management regressions
-- `tests/regression/fs.rs` - Filesystem regressions
-- `tests/regression/sched.rs` - Scheduler regressions
-- `tests/regression/ipc.rs` - IPC regressions
-- `tests/regression/syscall.rs` - Syscall regressions
-
-## Adding a Regression Test
-
-When a bug is fixed:
-1. Write a test that reproduces the original bug
+1. Write a test that reproduces the original bug (host suite, thread_test scenario, or selftest)
 2. Verify the test fails without the fix
-3. Add the test to the regression suite
-4. Reference the issue number in the test name and comment
+3. Reference the issue in the test name/comment
+4. CI (`integration-qemu`) will gate regressions of that behavior on every boot
 
-## Running Regression Tests
+## Running
 
 ```bash
-# Run all regression tests
-cargo test --test regression
-
-# Run specific regression test
-cargo test regression_42
-
-# Run with verbose output
-cargo test --test regression -- --nocapture
+cargo run --manifest-path tests/skyos-test/Cargo.toml -- run
+./tests/qemu_boot.sh
 ```
 
-## Automated Regression Detection
-
-The CI pipeline:
-- Compares test results against the previous build
-- Flags newly failing tests for immediate attention
-- Generates a regression report with each build
-- Blocks merges if regression tests fail
+There is no `cargo test --test regression`; CI does not compare against previous-build results beyond the normal test pass/fail.

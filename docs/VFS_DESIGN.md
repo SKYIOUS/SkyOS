@@ -19,21 +19,20 @@ The `VfsNode` trait is the core abstraction. All filesystem objects must impleme
 pub trait VfsNode: Send + Sync {
     fn name(&self) -> String;
     fn is_dir(&self) -> bool;
-    fn read(&mut self, max_len: usize) -> Result<Vec<u8>, Error>;
-    fn write(&self, data: &[u8]) -> Result<usize, Error>;
-    fn stat(&self) -> Result<Stat, Error>;
-    fn children(&self) -> Result<Vec<Arc<dyn VfsNode>>, Error>;
-    // ... other methods like create, mkdir, unlink ...
+    fn read(&self, max_len: usize) -> Result<Vec<u8>, ()>;
+    fn write(&self, data: &[u8]) -> Result<(), ()>;
+    // optional methods with defaults: stat, statfs, ioctl, children,
+    // find_child, create, mkdir, unlink, chmod, chown, readlink
 }
 ```
 
-(Actual signature in `vfs/mod.rs`: `read(&mut self, max_len)` and `write(&self, data)`.)
+(The `FileSystem` trait is `fn root(&self) -> Result<Arc<dyn VfsNode>, ()>`.)
 
 ## 3. Path Resolution
 
 Path resolution starts at the root (`/`) and traverses the VFS tree.
 
-1.  The `VfsManager` starts with the root filesystem (ramfs).
+1.  `VFS::init()` mounts the root: a block-device ext4/ext2 filesystem if one is found, otherwise the bootloader-provided initrd as tarfs (`/`).
 2.  It splits the path into components (e.g., `/home/user/file` -> `home`, `user`, `file`).
 3.  For each component, it checks if the current path is a mount point. If so, it switches to the root of the mounted filesystem.
 4.  It calls the `children()` method on the current directory node and finds the node with the matching name.
@@ -41,14 +40,14 @@ Path resolution starts at the root (`/`) and traverses the VFS tree.
 
 ## 4. Supported Filesystems
 
--   **`ramfs.rs`**: In-memory filesystem used for the root (`/`) and `/tmp`.
+-   **`ramfs.rs`**: In-memory filesystem used for `/tmp`.
 -   **`devfs.rs`**: Device filesystem mounted at `/dev`.
 -   **`ctlfs.rs`**: Control filesystem mounted at `/ctl`.
 -   **`pipe.rs`**: In-memory pipe for inter-process communication (IPC), exposed via `sys_pipe`.
--   **`tarfs.rs`**: Read-only tar archive filesystem (boot image payload).
+-   **`tarfs.rs`**: Read-only tar archive filesystem (boot initrd payload, mounted at `/` unless a block device filesystem is found).
 -   **`skyfs.rs`**: SkyOS native filesystem.
 -   **`ext2.rs`**: Read-write Second Extended Filesystem (inode/block writes implemented).
--   **`ext4.rs`**: Ext4 support (boot falls back ext4 → ext2 → SkyFS).
+-   **`ext4.rs`**: Ext4 read-only support (feature-gated; boot tries ext4 → ext2 on block devices).
 -   **`fat.rs`**: Wrapper around the `fatfs` crate for FAT32-formatted devices.
 
 ## 5. File Descriptors

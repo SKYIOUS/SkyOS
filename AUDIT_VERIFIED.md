@@ -20,6 +20,21 @@ This report provides a verified, corrected inventory of issues in the SkyOS user
 
 ---
 
+## Resolution Update (July 31, 2026)
+
+Commit `3216775` ("fix(userspace): audit-verified bug fixes, ADE refactor, and crate modernization") addressed the Phase 2/3 items in this report. Current status:
+
+- **C1 (umount syscall number)** — **RESOLVED.** `libsarga/src/fs.rs:194` now calls `crate::syscall::SYS_UMOUNT2` instead of a hardcoded `166`.
+- **S1 (fixed password salt)** — **RESOLVED.** `passwd/src/main.rs` reads `/dev/urandom` for the salt first; the fixed constant `0x9E3779B97F4A7C15` remains only as a PID-seeded fallback when no entropy source is available.
+- **S2 (login-manager auth weaknesses)** — **RESOLVED.** `login-manager` returns `false` on an unreadable `/etc/shadow` (no more root auto-accept) and delegates to the shared `libsarga::hash::verify_password`, which rejects non-`PBKDF2-` shadow entries.
+- **D1 (unused ADE scaffold modules)** — **RESOLVED.** The `ade/src/sys/{session,session_service,login_session,notification,power}.rs` files and `ade/src/util/clipboard_service.rs` were deleted.
+- **D2 (permission constant table collision)** — **RESOLVED.** The duplicate `PERM_*` table in `ade/src/sec/perms.rs` was removed; the live constants live only in `ade/src/ipc/permission.rs`.
+- **D3 (password verification duplication)** — **RESOLVED.** `verify_password`/`hex_decode` are consolidated in `libsarga/src/hash.rs` and used by both `login` and `login-manager`. `hex_decode` now wraps the `hex` crate.
+- **T1 (zero unit tests)** — **STALE.** `libsarga` now contains host-runnable `#[cfg(test)]` modules (e.g. `errno.rs`, `net.rs`, `semver.rs`) with pure-logic `#[test]` functions.
+- **B2 (x86_64-vahi "legacy" naming)** — **STALE/FALSE.** `x86_64-vahi` is the kernel crate's real build target (`kernel/target/x86_64-vahi` exists); scripts referencing it are not stale. The `velox` references were removed.
+
+---
+
 ## False Claims from SKYOS_DEV_REPORT.md
 
 The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **FALSE** and should not be acted upon:
@@ -42,7 +57,7 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 - **Description:** `umount()` uses hardcoded syscall number `166` instead of `SYS_UMOUNT2` (`167`) defined in `libsarga/src/syscall.rs:86`. This causes the wrong syscall to be invoked.
 - **Reference:** `libsarga/src/io.rs` and `libsarga/src/syscall.rs` correctly use `SYS_UMOUNT2 = 167`.
 - **Severity:** HIGH
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** — see Resolution Update.
 - **Remediation Phase:** Phase 2
 
 #### C2: Error-Handling Inconsistency
@@ -72,7 +87,7 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 - **File:** `passwd/src/main.rs:62-68`
 - **Description:** `generate_salt()` uses a fixed constant salt (`0x9E3779B97F4A7C15u64.to_le_bytes()`) duplicated across both halves of the 16-byte salt array. This makes all passwords vulnerable to rainbow table attacks.
 - **Severity:** HIGH
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** — see Resolution Update.
 - **Remediation Phase:** Phase 2
 
 #### S2: login-manager Authentication Weaknesses
@@ -82,7 +97,7 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
   2. Falls back to plaintext comparison for non-`PBKDF2-` shadow entries (line 71)
 - **Note:** `login/src/main.rs` does NOT have these weaknesses - it correctly returns `false` on file read error (line 87) and rejects non-PBKDF2 entries (line 132).
 - **Severity:** HIGH
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** — see Resolution Update.
 - **Remediation Phase:** Phase 2
 
 #### S3: FILE Use-After-Free / Double-Free Risk
@@ -110,7 +125,7 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 - **Description:** These scaffold modules are declared in `ade/src/sys/mod.rs` but are not used. The live implementations are in `ade/src/service/` (clipboard, notification, power, session) which are wired into `ServiceManager`.
 - **Note:** Keep `ade/src/util/crash_manager.rs` - it is used.
 - **Severity:** LOW
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** (deleted) — see Resolution Update.
 - **Remediation Phase:** Phase 3
 
 #### D2: Permission Constant Table Collision
@@ -120,14 +135,14 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
   - `ade/src/sec/perms.rs` - Unused constants (file only contains PermissionManager store)
   Both define constants against the same `AppPermission` bitflags, creating confusion and potential drift.
 - **Severity:** MEDIUM
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** — see Resolution Update.
 - **Remediation Phase:** Phase 3
 
 #### D3: Password Verification Logic Duplication
 - **Files:** `login/src/main.rs:71-82, 84-136`, `login-manager/src/main.rs:11-22, 24-74`
 - **Description:** `hex_decode()` and `verify_password()` functions are duplicated between `login` and `login-manager` with identical logic. This doubles maintenance burden and risks divergence.
 - **Severity:** MEDIUM
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **RESOLVED** — see Resolution Update.
 - **Remediation Phase:** Phase 2
 
 #### D4: Binary Naming Duplication
@@ -174,7 +189,7 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
   - `bootimage-vahi_kernel.bin` - Referenced throughout scripts
   Current target is `x86_64-sarga.json` but many scripts reference the old names.
 - **Severity:** MEDIUM
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **STALE/FALSE** — see Resolution Update. `x86_64-vahi` is the kernel crate's real target, not a stale alias.
 - **Remediation Phase:** Phase 4
 
 ---
@@ -187,41 +202,44 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 - **Workspace Exclusion:** `tests/skyos-test` and `tests/skyos-test-core` crates exist but are excluded from workspace members in `Cargo.toml`.
 - **CI:** `.github/workflows/ci.yml` runs `fmt`, `clippy`, and build only - no `cargo test` step.
 - **Severity:** HIGH
-- **Verification Status:** CONFIRMED
+- **Verification Status:** **STALE** — see Resolution Update. `libsarga` now ships host-runnable `#[cfg(test)]` modules.
 - **Remediation Phase:** Phase 4
 
 ---
 
 ## Prioritized Remediation Plan
 
+> Status of the plan below as of July 31, 2026: Phase 2 and Phase 3 items marked **DONE** were
+> implemented in commit `3216775`. Phase 4 items remain open. See Resolution Update.
+
 ### Phase 2: Correctness & Security Fixes (Low-Risk, High-Value)
 
-1. **Fix umount syscall number** (C1)
+1. **Fix umount syscall number** (C1) — **DONE**
    - Replace hardcoded `166` with `SYS_UMOUNT2` constant in `libsarga/src/fs.rs:194`
    - Use named constant for consistency with `io.rs`
 
-2. **Fix password salt generation** (S1)
+2. **Fix password salt generation** (S1) — **DONE**
    - Replace fixed constant salt in `passwd/src/main.rs:62-68` with random 16-byte salt
    - Use available entropy source or document dependency
 
-3. **Remove login-manager authentication weaknesses** (S2)
+3. **Remove login-manager authentication weaknesses** (S2) — **DONE**
    - Return `false` when `/etc/shadow` unreadable (line 27)
    - Remove plaintext fallback for non-PBKDF2 entries (line 71)
 
-4. **Deduplicate password verification logic** (D3)
+4. **Deduplicate password verification logic** (D3) — **DONE**
    - Add shared `verify_password` and `hex_decode` to `libsarga` (e.g., `libsarga/src/hash.rs` or new auth module)
    - Update `login/src/main.rs` and `login-manager/src/main.rs` to use shared implementation
    - Ensure behavior matches corrected `login` (no auto-accept root, no plaintext fallback)
 
 ### Phase 3: Dead Code & Architecture Cleanup
 
-1. **Remove unused scaffold modules** (D1)
+1. **Remove unused scaffold modules** (D1) — **DONE**
    - Delete: `ade/src/sys/session.rs`, `session_service.rs`, `login_session.rs`, `notification.rs`, `power.rs`
    - Delete: `ade/src/util/clipboard_service.rs`
    - Keep: `ade/src/util/crash_manager.rs` (used)
    - Update `ade/src/sys/mod.rs` and `ade/src/util/mod.rs`
 
-2. **Unify permission constant tables** (D2)
+2. **Unify permission constant tables** (D2) — **DONE**
    - Choose `ade/src/ipc/permission.rs` as single source of truth (live call sites)
    - Remove unused constants from `ade/src/sec/perms.rs`
    - Keep `PermissionManager` store in `ade/src/sec/perms.rs`
@@ -229,22 +247,22 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 
 ### Phase 4: Build Tooling & Testing
 
-1. **Remove hardcoded paths** (B1)
+1. **Remove hardcoded paths** (B1) — **OPEN**
    - Replace absolute paths with script-relative or environment-variable-based paths
    - Fix references to nonexistent `kernel/`, `builder/`, `userspace/` directories
    - Use `$PSScriptRoot` or equivalent for script locations
 
-2. **Resolve legacy naming** (B2)
+2. **Resolve legacy naming** (B2) — **OBSOLETE** (see Resolution Update: `x86_64-vahi` is the kernel's real target; only `velox`/`bootimage-velox` references were stale and have been removed)
    - Align all references to `x86_64-sarga`
    - Remove `x86_64-vahi` and `velox` references
    - Update bootimage naming to be consistent
 
-3. **Resolve binary naming duplication** (D4)
+3. **Resolve binary naming duplication** (D4) — **OPEN**
    - Adopt `sash` as canonical shell name
    - Adopt `spkg` as canonical package manager name
    - Update references to `sargash` and `skypkg` in CI, scripts, app registries
 
-4. **Wire unit-test path or document gap** (T1)
+4. **Wire unit-test path or document gap** (T1) — **OPEN** (partial: `libsarga` now has host-runnable `#[cfg(test)]` modules)
    - Add `tests/skyos-test-core` to workspace members OR document why excluded
    - Add `cargo test` step to CI if host-side testing is feasible
    - If not feasible, document that kernel self-tests are the only test path and unit testing is blocked by bare-metal target
@@ -253,12 +271,14 @@ The following claims in SKYOS_DEV_REPORT.md Section 4 and 6 were verified as **F
 
 ## Summary
 
-This audit corrects 4 false claims from the previous report and documents 14 verified issues across 6 categories. The most critical issues are:
+This audit corrects 4 false claims from the previous report and documents 14 verified issues across 6 categories. The most critical issues were:
 
-1. **Security:** Fixed salt in password generation (S1) and login-manager authentication weaknesses (S2)
-2. **Correctness:** Syscall number mismatch (C1) and error-handling inconsistency (C2)
-3. **Build Reproducibility:** Hardcoded developer paths (B1)
-4. **Testing:** Complete absence of unit tests (T1)
+1. **Security:** Fixed salt in password generation (S1) and login-manager authentication weaknesses (S2) — **both resolved** (commit `3216775`)
+2. **Correctness:** Syscall number mismatch (C1) and error-handling inconsistency (C2) — **C1 resolved**; C2 open
+3. **Build Reproducibility:** Hardcoded developer paths (B1) — open
+4. **Testing:** Complete absence of unit tests (T1) — stale; `libsarga` now has host-runnable `#[cfg(test)]` modules
+
+Of the 14 verified issues, 6 are resolved, 2 are stale/false, and 6 remain open (C2, C3, S3, A1, B1, D4).
 
 The remediation plan prioritizes low-risk, high-value fixes in Phase 2 (correctness and security), followed by cleanup in Phase 3, and build tooling/testing in Phase 4.
 

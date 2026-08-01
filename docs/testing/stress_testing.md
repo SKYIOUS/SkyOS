@@ -1,67 +1,26 @@
 # Stress and Stability Testing
 
-Stress tests push the kernel to its limits to find race conditions, memory leaks, and resource exhaustion bugs.
+There is no dedicated stress-test binary or CI stress schedule. Stability is exercised through:
+
+## On-OS Scenarios (`tests/thread_test`)
+
+`thread_test` is a `#![no_std]` userspace crate that logs in and runs syscall-heavy scenarios on real hardware:
+
+- **futex_test.rs**: futex wait/wake, fork, sched_setattr, yield
+- **dac_test.rs** / **perm_test.rs**: permission checks against real credentials
+- **pipe_signal_test.rs**: pipe + signal interplay
+- **sigalrm/sigchld/sigint_test.rs**: signal delivery to real processes
+
+Run it by booting to the login prompt and executing the `thread_test` binary.
 
 ## Memory Stress
 
-```rust
-kernel_test!(memory_stress, {
-    let mut allocations = Vec::new();
-    for i in 0..10000 {
-        let ptr = allocate_random_size();
-        allocations.push(ptr);
-        if i % 100 == 0 {
-            // Free some allocations to create fragmentation
-            for _ in 0..50 {
-                let idx = rand::random::<usize>() % allocations.len();
-                deallocate(allocations.swap_remove(idx));
-            }
-        }
-    }
-    // Verify all remaining allocations are still valid
-    for ptr in &allocations {
-        assert!(is_valid_ptr(*ptr));
-    }
-});
-```
+The buddy allocator is stressed host-side in `tests/skyos-test-core/src/suites/kernel_alloc.rs` (allocation, free, buddy merging, fragmentation, exhaustion, merge chains) — a reimplementation of the kernel algorithm, not the live allocator.
 
-## Scheduler Stress
+## Boot Loop Stability
 
-Create 1000+ tasks that perform various operations:
-- CPU-bound computation
-- I/O operations (disk, network)
-- IPC communication
-- Memory allocation
-
-Run for extended periods (hours) and verify:
-- All tasks eventually complete
-- No task starves indefinitely
-- CPU utilization is balanced across cores
-- No memory leaks
+`tests/qemu_boot.sh` and `tests/qemu_integration_test.sh` can be run repeatedly to shake out boot-time races. Kernel `self_test` TAP assertions (allocator/FS/net invariants) run on every boot.
 
 ## File System Stress
 
-Simultaneous operations:
-- Multiple processes creating/deleting/renaming files
-- Concurrent reads and writes to the same file
-- Directory tree traversal during modification
-- Filesystem space exhaustion
-- Inode number exhaustion
-
-## Long-Running Tests
-
-Tests run for 24+ hours in CI on a weekly schedule:
-- Continuous syscall fuzzing
-- Random process creation and termination
-- Network traffic with random patterns
-- Memory allocator interleaved with process lifecycle
-
-## Running Stress Tests
-
-```bash
-# Run memory stress test (10 minutes)
-STRESS_DURATION=600 cargo test --test stress memory
-
-# Run full stress suite
-cargo test --test stress
-```
+No dedicated FS stress suite exists. FS behavior is exercised through the boot/initrd load (`tarfs`) and the QEMU boot-to-login path.

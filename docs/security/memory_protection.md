@@ -4,52 +4,27 @@ SkyOS uses hardware and software mechanisms to protect memory.
 
 ## Hardware Paging
 
-The x86_64 paging architecture provides page-level access control:
-
-```rust
-pub enum PageFlags {
-    READABLE = 1 << 0,
-    WRITABLE = 1 << 1,
-    USER_ACCESSIBLE = 1 << 2,
-    WRITE_THROUGH = 1 << 3,
-    CACHE_DISABLE = 1 << 4,
-    ACCESSED = 1 << 5,
-    DIRTY = 1 << 6,
-    HUGE_PAGE = 1 << 7,
-    GLOBAL = 1 << 8,
-    NO_EXECUTE = 1 << 63,
-}
-```
+The kernel uses 4-level x86_64 paging via the `x86_64` crate's `PageTable` types, with page-table entries controlling `PRESENT`, `WRITABLE`, `USER_ACCESSIBLE`, `NO_EXECUTE`, etc.
 
 ## NX Bit (No-Execute)
 
-The NX bit (bit 63 in page table entries) marks memory pages as non-executable. The kernel ensures:
-- Data pages (stack, heap, BSS) are never executable
-- Code pages are writable only during loading, then set to read-only + executable
+`PageTableFlags::NO_EXECUTE` (bit 63) marks memory pages non-executable:
+- Data pages (stack, heap, BSS) are mapped non-executable
+- ELF `PT_LOAD` segments set `NO_EXECUTE` when the segment is not executable (see `Process::load_elf_static`)
 - Guard pages have no permissions (prevent overflow)
 
 ## SMEP (Supervisor Mode Execution Prevention)
 
-SMEP prevents the kernel from executing code in userspace pages. If the kernel tries to execute a page marked as user-accessible, a page fault is generated. This prevents ROP attacks that redirect kernel code to userspace shellcode.
+SMEP prevents the kernel from executing code in userspace pages. It is enabled conditionally at boot in `arch/arch_x86_64.rs` when CPUID reports support (CR4 bit 20 / `0x100000`).
 
 ## SMAP (Supervisor Mode Access Prevention)
 
-SMAP prevents the kernel from reading or writing userspace memory directly. The kernel must explicitly disable SMAP (via the `AC` flag in RFLAGS) to access userspace data. This prevents accidental dereferencing of userspace pointers.
-
-## Kernel Page Table Isolation (KPTI)
-
-KPTI separates kernel and userspace page tables. When running in userspace, only the minimal set of kernel mappings is present (interrupt handlers, syscall entry). This prevents Meltdown-style side-channel attacks.
+SMAP prevents the kernel from reading or writing userspace memory directly. It is enabled conditionally when CPUID reports support (CR4 bit 11 / `0x800`). Userspace accesses go through the explicit copy helpers in `syscalls/user_access.rs` (`copy_from_user`/`copy_to_user`/`read_user_string`).
 
 ## Guard Pages
 
-Guard pages are unmapped memory regions placed at:
-- Bottom of the stack (detect stack overflow)
-- Between heap regions (detect heap overflow)
-- Around kernel stacks (detect kernel stack overflow)
+Guard pages (unmapped) are placed at:
+- The bottom of every thread stack (`memory/stack.rs` — `stack_bottom - 4096`)
+- Kernel stacks have guard pages per thread
 
-## Memory Sanitizers
-
-Debug builds include:
-- **KASAN**: Tracks use-after-free and out-of-bounds access
-- **Stack probing**: Detects stack overflow at runtime
-- **Memory poisoning**: Marks freed memory with a pattern to detect use-after-free
+There is no KPTI (kernel page tables are shared, higher-half mapped), no KASAN, and no heap-region guard pages.

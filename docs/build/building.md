@@ -1,62 +1,49 @@
-# How to Build the Kernel
+# How to Build SkyOS
 
-This guide covers the various build configurations for SkyOS.
+The build is orchestrated by `build_disk.py` or the `Makefile`. It has two halves: the Rust
+**userspace workspace** (this repository) and the **kernel** (an external dependency, symlinked/junctioned at
+`kernel/`).
 
-## Standard Build
+## Prerequisites
+
+- **Nightly Rust** with the `rust-src` and `llvm-tools-preview` components (`rustup component add
+  rust-src llvm-tools-preview`)
+- A custom linker for the kernel: `kernel/linker.ld` (or `aarch64-linker.ld`)
+- For VDI output: `VBoxManage` (from VirtualBox)
+- For ISO output: `xorriso`/`mkisofs` (via `scripts/make_iso.py`)
+
+## Full Build
 
 ```bash
-# Debug build (faster compilation, more runtime checks)
-cargo build
-
-# Release build (optimized, smaller binary)
-cargo build --release
+python build_disk.py                          # userspace → kernel → UEFI image → VDI
+python build_disk.py --kernel-only            # kernel + UEFI image only (faster)
+python build_disk.py --iso --version 0.6.0    # full build + ISO in release/
 ```
 
-## Building for QEMU
+## Makefile Targets
 
 ```bash
-# Build and run in QEMU
-cargo run --release
-
-# With specific QEMU configuration
-RUST_LOG=debug QEMU_MEM=1G QEMU_SMP=4 cargo run --release
+make build                # cargo build --target x86_64-sarga.json
+make build-release        # cargo build --target x86_64-sarga.json --release
+make kernel               # kernel: cargo build --release -Zbuild-std=core,alloc --features net,smp,ai_rule,ext4
+make initrd               # build_initrd.py → initrd.tar → kernel/SkyOS/
+make bootimage            # kernel/builder → bootimage-vahi_kernel.bin
+make iso                  # scripts/make_iso.py → release/skyos-<version>.iso
+make run / run-nographic  # boot the ISO in QEMU (OVMF, 512M, 2 cpus)
+make qemu-test            # boot and assert a login prompt appears
 ```
 
 ## Build Artifacts
 
-After a successful build, the files are located in:
-- Kernel binary: `target/x86_64-skyos/release/skyos`
-- Bootable image: `target/x86_64-skyos/release/bootimage-skyos.bin`
-- Object files: `target/x86_64-skyos/release/deps/`
+- Userspace binaries: `target/x86_64-sarga/{debug,release}/` (per-crate)
+- Kernel ELF: `kernel/kernel/target/x86_64-unknown-none/{debug,release}/vahi_kernel`
+- UEFI boot image: `kernel/target/x86_64-vahi/{debug,release}/bootimage-vahi_kernel.bin`
+- Initrd: `initrd.tar` (copied to `kernel/SkyOS/`)
+- ISO: `release/skyos-<version>.iso`
 
-## Building Individual Components
-
-```bash
-# Build only the kernel library
-cargo build -p skyos-kernel
-
-# Build the bootloader
-cargo build -p skyos-bootloader
-
-# Build userspace programs
-cargo build -p skyos-userspace
-```
-
-## Build Verbosity
-
-To see detailed compiler output:
+## Running in QEMU
 
 ```bash
-cargo build --verbose
-CARGO_LOG=trace cargo build
-```
-
-## Cleaning
-
-```bash
-# Clean all build artifacts
-cargo clean
-
-# Clean only the kernel
-cargo clean -p skyos-kernel
+qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
+qemu-system-x86_64 -bios OVMF.fd -cdrom release/skyos-<version>.iso -m 512M -smp 2 -nographic
 ```

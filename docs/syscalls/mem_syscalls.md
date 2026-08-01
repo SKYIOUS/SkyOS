@@ -28,7 +28,8 @@ Unmaps previously mapped memory. The address must be page-aligned.
 int mprotect(void *addr, size_t len, int prot);
 ```
 
-Changes access protections for a memory region. Protection flags: `PROT_NONE`, `PROT_READ`, `PROT_WRITE`, `PROT_EXEC`.
+Changes access protections for a memory region. Protection flags: `PROT_NONE`, `PROT_READ`,
+`PROT_WRITE`, `PROT_EXEC`.
 
 ## brk (syscall 12)
 
@@ -39,36 +40,21 @@ void *sbrk(intptr_t increment);
 
 Changes the program break (end of the data segment). Used by `malloc()` for heap management.
 
-## mremap (syscall 25)
+## memfd_create (syscall 319)
 
 ```c
-void *mremap(void *old_addr, size_t old_size, size_t new_size, int flags, ...);
+int memfd_create(const char *name, unsigned int flags);
 ```
 
-Expands or shrinks an existing memory mapping, potentially moving it to a new address.
-
-## msync (syscall 26)
-
-```c
-int msync(void *addr, size_t length, int flags);
-```
-
-Synchronizes a mapped file with the backing storage. Flags: `MS_ASYNC`, `MS_SYNC`, `MS_INVALIDATE`.
-
-## madvise (syscall 28)
-
-```c
-int madvise(void *addr, size_t length, int advice);
-```
-
-Gives advice about expected memory usage patterns. Advice values: `MADV_NORMAL`, `MADV_RANDOM`, `MADV_SEQUENTIAL`, `MADV_WILLNEED`, `MADV_DONTNEED`.
+Creates an anonymous file backed by RAM, returning a file descriptor.
 
 ## Shared Memory
 
 ```c
-int shmget(key_t key, size_t size, int shmflg);
-void *shmat(int shmid, const void *shmaddr, int shmflg);
-int shmdt(const void *shmaddr);
+int shmget(key_t key, size_t size, int shmflg);   // syscall 29
+void *shmat(int shmid, const void *shmaddr, int shmflg);   // syscall 30
+int shmctl(int shmid, int cmd, struct shmid_ds *buf);   // syscall 31
+int shmdt(const void *shmaddr);   // syscall 67
 ```
 
 System V shared memory interface. `shmget` allocates, `shmat` attaches, `shmdt` detaches.

@@ -20,19 +20,22 @@ All syscalls follow the standard calling convention:
 | 4 | stat | Get file status |
 | 5 | fstat | Get file descriptor status |
 | 9 | mmap | Map memory |
-| 10 | munmap | Unmap memory |
+| 11 | munmap | Unmap memory |
 | 12 | brk | Change data segment size |
 | 57 | fork | Create a child process |
 | 59 | execve | Execute a program |
 | 60 | exit | Terminate the calling process |
 | 61 | wait4 | Wait for process termination |
 | 62 | kill | Send a signal |
-| 78 | getdents | List directory entries |
+| 217 | getdents64 | List directory entries |
 | 231 | exit_group | Exit all threads in a process |
-| 300 | skyos_create_window | Create a GUI window |
-| 301 | skyos_get_buffer | Get window framebuffer |
-| 302 | skyos_flush | Flush window updates |
-| 303 | skyos_map_buffer | Map GPU buffer |
+| 100 | gui_create_window | Create a GUI window |
+| 101 | gui_get_buffer | Get window content size |
+| 102 | gui_flush | Flush window updates |
+| 103 | gui_map_buffer | Map window framebuffer |
+
+Full tables with every implemented syscall live in `docs/syscalls/index.md`. GUI syscalls are
+documented in `docs/api/gui_syscalls.md`.
 
 ## Return Values
 

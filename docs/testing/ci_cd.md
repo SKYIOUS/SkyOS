@@ -1,68 +1,43 @@
 # CI/CD Pipeline
 
-SkyOS uses continuous integration and deployment for quality assurance.
+SkyOS uses GitHub Actions for CI. The pipeline runs on every push and pull request to `main`.
 
-## CI Provider
+## CI Workflow (`.github/workflows/ci.yml`)
 
-The project uses GitHub Actions for CI/CD. The pipeline runs on every push to any branch and on every pull request.
+1. **fmt** — `cargo fmt --check` (nightly)
+2. **clippy** — `cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings`
+3. **check-all-targets** — debug + release build of the userspace workspace
+   (`cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json [--release]`)
+4. **integration-qemu** — full end-to-end boot test:
+   - Checks out the kernel repo (`SKYIOUS/SKYIOUS-KERNEL`) beside this repo
+   - Builds the kernel with `--features net,smp,ai_rule,self_test`
+   - Builds userspace release, runs `build_initrd.py`, builds the UEFI bootimage
+     (`kernel/builder`), and creates an ISO with `scripts/make_iso.py`
+   - Boots the ISO in QEMU (OVMF, 512M, 2 cpus, e1000 NIC) with a 120s timeout
+   - Asserts the log contains a `login:` prompt; fails on any `not ok` (TAP) selftest
+     output; reports the kernel selftest TAP summary when present
 
-## Pipeline Stages
-
-```
-1. Lint (cargo check + clippy)
-2. Build (debug + release)
-3. Unit tests (cargo test --lib)
-4. Integration tests (QEMU)
-5. Regression tests
-6. Coverage report
-7. Documentation generation
-8. Artifact publishing
-```
-
-## CI Configuration
-
-```yaml
-# .github/workflows/ci.yml
-name: SkyOS CI
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          target: x86_64-unknown-none
-      - run: cargo check
-      - run: cargo test --lib
-      - run: cargo test --test integration
-```
+The kernel's `self_test` feature emits TAP-format results (`TAP version 13`, `ok`/`not ok`) that
+the CI log check validates.
 
 ## Build Artifacts
 
 Successful builds produce:
-- Kernel binary (`skyos`)
-- Bootable image (`bootimage-skyos.bin`)
-- Documentation (HTML)
-- Coverage report (HTML)
-- Debug symbols
-
-Artifacts are stored for 30 days and linked from the build log.
+- Userspace binaries under `target/x86_64-sarga/release/`
+- Kernel ELF `kernel/kernel/target/x86_64-unknown-none/release/vahi_kernel`
+- UEFI boot image `kernel/target/x86_64-vahi/release/bootimage-vahi_kernel.bin`
+- Initrd `initrd.tar`
+- ISO `release/skyos-<version>.iso`
 
 ## Release Process
 
 1. Version bump following semver
-2. Changelog update
+2. Changelog update (`docs/CHANGELOG.md`)
 3. Tagged release on GitHub
-4. Automated binary publication
-5. Documentation deployment to project website
+4. Boot-image/ISO publication via GitHub Releases
 
-## Testing Matrix
+## Local Verification
 
-| Configuration | Toolchain | Build | Tests |
-|--------------|-----------|-------|-------|
-| Debug | nightly | cargo build | Unit + integration |
-| Release | nightly | cargo build --release | Unit + integration |
-| KASAN | nightly | cargo build --features kasan | Integration |
-| SMP=4 | nightly | cargo build --release | SMP integration |
+```bash
+make qemu-test    # build ISO, boot in QEMU, assert login prompt
+```

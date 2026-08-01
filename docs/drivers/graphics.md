@@ -1,54 +1,30 @@
 # Framebuffer Graphics Driver
 
-The framebuffer driver provides display output through linear framebuffers.
+The graphics subsystem provides display output through the BGA (Bochs) virtual VGA and a software console.
 
-## UEFI GOP Framebuffer
+## BGA (Bochs Graphics Adapter) — `drivers/graphics/bga.rs`
 
-On UEFI systems, the bootloader sets up a linear framebuffer via the UEFI Graphics Output Protocol (GOP). The kernel receives the framebuffer address, size, stride, and pixel format from the bootloader.
+The `Bga` struct drives the Bochs VBE interface through two I/O ports (0x01CE index, 0x01CF data):
 
-```rust
-pub struct Framebuffer {
-    pub address: VirtAddr,
-    pub width: usize,
-    pub height: usize,
-    pub stride: usize,       // Bytes per row
-    pub bpp: usize,          // Bits per pixel (typically 32)
-    pub pixel_format: PixelFormat,
-}
-```
+- VBE_DISPI_INDEX_ID / XRES / YRES / BPP / ENABLE / BANK / VIRT_WIDTH / VIRT_HEIGHT / X_OFFSET / Y_OFFSET
+- `VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED` enables the linear framebuffer
 
-## Pixel Formats
+## Console — `drivers/graphics/console.rs`
 
-Supported pixel formats:
-- **BGRA32** (0): 32 bits per pixel, 8 bits per channel in BGRA order
-- **RGB32** (1): 32 bits per pixel, 8 bits per channel in RGB order
-- **RGB565** (2): 16 bits per pixel, 5-6-5 bit RGB channels
-
-## Drawing Operations
-
-The driver provides software-based drawing primitives:
+`ConsoleWriter` implements `core::fmt::Write` and renders text to the framebuffer with ANSI escape handling:
 
 ```rust
-impl Framebuffer {
-    pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32);
-    pub fn blit(&mut self, src: &[u32], x: usize, y: usize, w: usize, h: usize);
-    pub fn put_pixel(&mut self, x: usize, y: usize, color: u32);
-    pub fn draw_char(&mut self, x: usize, y: usize, c: char, fg: u32, bg: u32);
-}
+pub struct ConsoleWriter;                    // fmt::Write + escape processing
+pub fn _print(args: fmt::Arguments);         // kernel print entry (println!/print!)
+pub fn set_console_color(fg: u32, bg: u32);
 ```
 
-## Double Buffering
+It supports clear screen (`clear_screen`), scrollback, and escape sequences (e.g. `\x1b[2J`). The font is rendered from a PSF font (`drivers/graphics/psf.rs`).
 
-The driver implements double buffering to avoid tearing:
-1. The compositor draws to a back buffer
-2. A vertical sync (VSync) signal is detected (or estimated)
-3. The back buffer is copied to the front buffer (scanout buffer)
-4. The swap is synchronized to the display's refresh rate
+## Frame Buffer
+
+The kernel receives the framebuffer from the bootloader (UEFI GOP framebuffer address/size/stride). There is no `Framebuffer` struct with drawing primitives as described in older docs; drawing happens through the BGA/console layer and the compositor (`kernel/kernel/src/compositor/`).
 
 ## Future GPU Support
 
-Future versions will support:
-- Hardware-accelerated blitting via GPU
-- Mode setting (resolution and refresh rate changes)
-- Multiple monitors
-- Hardware cursor overlay
+The `drivers/gpu/` module contains a VirtIO GPU driver (`virtio_gpu.rs`) with a ring-based command interface (`ring.rs`). See `docs/design/gui_architecture.md` for the compositor architecture.

@@ -30,8 +30,6 @@ This glossary defines common terms used in SkyOS development.
 
 ## E
 
-**ELC** - Event Loop Core. The heart of the async executor that polls tasks.
-
 **EOI** - End of Interrupt. Signal sent to the APIC indicating interrupt handling is complete.
 
 ## F
@@ -56,9 +54,9 @@ This glossary defines common terms used in SkyOS development.
 
 ## K
 
-**KASAN** - Kernel Address Sanitizer. Runtime tool for detecting memory errors in kernel code.
+**KASAN** - Kernel Address Sanitizer. Runtime tool for detecting memory errors in kernel code. **Not implemented in SkyOS.**
 
-**KPTI** - Kernel Page Table Isolation. Meltdown mitigation technique separating user/kernel page tables.
+**KPTI** - Kernel Page Table Isolation. Meltdown mitigation technique separating user/kernel page tables. **Not used in SkyOS** — kernel and user page tables share the higher-half mapping.
 
 ## L
 

@@ -1,45 +1,32 @@
 # PS/2 Controller Driver
 
-The PS/2 controller driver manages the legacy PS/2 interface for keyboard and mouse input.
+The PS/2 controller driver (`kernel/kernel/src/drivers/ps2.rs`) manages the legacy 8042 interface for keyboard and mouse input.
 
-## Controller Initialization
+## Initialization
 
-The PS/2 controller is initialized during boot:
+`ps2::init()` is called during boot and performs the full 8042 sequence:
 
-1. Disable both PS/2 ports
-2. Flush the output buffer
-3. Perform controller self-test (0xAA)
-4. Set configuration byte (enable interrupts, set clock rates)
-5. Enable ports and configure devices
+1. Lock the controller (`PS2_LOCK` spinlock)
+2. Disable both ports (command 0xAD = disable keyboard, 0xA7 = disable mouse)
+3. Flush the output buffer
+4. Read the config byte (0x20), set bits 0–1 (enable keyboard + mouse IRQs), write it back (0x60)
+5. Controller self-test (0xAA, expect 0x55), then re-write the config byte (some 8042s reset it during self-test)
+6. Enable both devices (0xAE keyboard, 0xA8 mouse)
+7. Reset + set defaults + enable scanning on the keyboard (0xFF/0xF6/0xF4)
+8. Reset + set defaults on the mouse, run the IntelliMouse scroll-wheel detection sequence (sample rates 200/100/80), read the device ID — 3 or 4 means a wheel is present, which arms `mouse::enable_wheel()`
+9. Enable streaming (0xF4), flush stale bytes
+10. Unmask keyboard IRQ1 and mouse IRQ12 on the legacy PICs (via I/O ports 0x21/0xA1 — IOAPIC delivery is currently bypassed)
 
-```rust
-pub fn init_ps2_controller() -> Result<Ps2Controller, DriverError> {
-    // Disable devices
-    write_command(0xAD); // Disable port 1
-    write_command(0xA7); // Disable port 2
-    
-    // Self test
-    write_command(0xAA);
-    let result = read_data();
-    if result != 0x55 {
-        return Err(DriverError::InitFailed);
-    }
-    
-    // Enable and configure
-    write_command(0x60); // Write configuration byte
-    write_data(0x47);    // Enable IRQs, set clock
-    Ok(Ps2Controller::new())
-}
-```
+The public surface is just `pub fn init()`; the rest is module-private. There is no `Ps2Controller` struct or `DriverError`.
 
 ## Port Access
 
-The controller uses I/O ports 0x60 (data) and 0x64 (command/status). The status register indicates when data is available or the controller is ready to accept commands.
+The controller uses I/O ports 0x60 (data) and 0x64 (command/status), with `wait_write`/`wait_read` polling loops on the status register.
 
 ## Interrupts
 
-Port 1 (keyboard) uses IRQ 1, Port 2 (mouse) uses IRQ 12. Both are edge-triggered. The interrupt handlers read the scancode or mouse data from port 0x60 and queue it for processing.
+Port 1 (keyboard) uses IRQ 1, port 2 (mouse) uses IRQ 12. Interrupts are delivered through the legacy PIC; the mouse handler is in `drivers/mouse.rs` (`handle_interrupt`).
 
-## Dual-Channel Support
+## Device Access
 
-The controller supports two channels. Channel 1 is always present; channel 2 is optional. Detection is done by attempting to enable channel 2 and checking the configuration byte.
+`device_write_to_keyboard(data)` writes data then reads the ACK. `device_write_to_mouse(data)` first issues the 0xD4 "write to aux device" command to the controller.
