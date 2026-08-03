@@ -32,12 +32,13 @@ PASS_TOKEN = "starting service"
 FAIL_TOKENS = ("not ok", "Bail out!", "KERNEL PANIC", "Panicked")
 
 
-def build_qemu_cmd(image: Path, logfile: Path, root: Path, ovmf: Path) -> list[str]:
+def build_qemu_cmd(image: Path, logfile: Path, root: Path, ovmf: Path,
+                   smp: int = 1, cpu: str = "max") -> list[str]:
     return [
         "qemu-system-x86_64",
         "-bios", str(ovmf),
-        "-cpu", "max",
-        "-smp", "1",
+        "-cpu", cpu,
+        "-smp", str(smp),
         "-m", "512M",
         "-nographic",
         "-drive", f"format=raw,file={image}",
@@ -69,6 +70,10 @@ def main() -> int:
     ap.add_argument("--tries", type=int, default=40)
     ap.add_argument("--image", type=Path, default=DEFAULT_IMAGE)
     ap.add_argument("--timeout", type=float, default=35.0)
+    ap.add_argument("--smp", type=int, default=1,
+                    help="QEMU -smp CPU count (2+ needs --cpu qemu64,-smep on "
+                         "QEMU builds whose TCG stalls on AP CR4.SMEP writes)")
+    ap.add_argument("--cpu", type=str, default="max", help="QEMU -cpu model")
     ap.add_argument("--keep-logs", type=Path, default=None,
                     help="directory to save per-try serial logs into")
     args = ap.parse_args()
@@ -93,7 +98,8 @@ def main() -> int:
     for try_no in range(1, args.tries + 1):
         logfile = tmp / f"boot_{try_no}.log"
         proc = subprocess.Popen(
-            build_qemu_cmd(args.image, logfile, REPO_ROOT, ovmf),
+            build_qemu_cmd(args.image, logfile, REPO_ROOT, ovmf,
+                           args.smp, args.cpu),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
