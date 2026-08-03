@@ -16,6 +16,14 @@ qemu-system-x86_64 -bios OVMF.fd -cdrom release\skyos-<version>.iso -m 512M -smp
 - Heap at `0xFFFF_C000_0000_0000`, phys mem offset at `0xFFFF_8000_0000_0000`
 - `panic = "abort"` in both dev and release profiles
 - **No test harness** — `#![no_std]` + `#![no_main]`, no `#[test]`s found. Verification is manual/boot-time.
+- Selftest suite (`--features self_test`): registers ~91 tests, runs **once** in `kernel_main` (after `scheduler::init()`, before userland spawns). Gate: `py tests/boot_stress.py --tries 40` — fails on any `not ok`, panic, or stall.
+
+## QEMU Debugging Pitfalls (learned the hard way)
+
+- **Rebuild order matters**: `cargo build` must run in `kernel/kernel` (root CWD silently builds the wrong target → **stale bootimage probes**). After any kernel change: build → regen bootimage (`build_disk.build_bootimage` from repo root) → only then probe. `probe.py`/`probe2.py`/`timeline.py` live in `C:\Windows\TEMP\opencode\` (gdbstub attach; use `-smp 1`).
+- **"Hang at the slab poison loop" (`slab.rs` dealloc, 0xDE fill) is usually NOT a hang**: TCG on this host is slow and the 32MB ramdisk frees used to hold the allocator lock for seconds (now capped at 1MiB). Verify progress with two gdb snapshots ~20s apart (compare `rax`/offset) before assuming a deadlock. The allocator lock is held across the poison loop — never add allocations to IRQ paths (`tick`/`try_schedule`); `scheduler::init()` pre-reserves queue capacity so they don't allocate.
+- **Suite runs twice symptom**: if TAP numbers exceed 91 or test names repeat (+91 offset), `register_all()`/`run_all()` is duplicated in `main.rs` — `TESTS` is a global Vec that accumulates.
+- **`IrqSafeMutex` is non-reentrant** — nested `.lock()` self-deadlocks; compute `stat()`/lookups before taking the fs lock, not inside.
 
 ## Project Structure
 
