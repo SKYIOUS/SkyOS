@@ -1,31 +1,34 @@
 //! Desktop coordinator — event dispatch, window management, layout logic.
 
-use crate::util::app_registry::AppId;
 use crate::core::constants::*;
-use libsarga::io;
 use crate::core::damage::DamageTracker;
 use crate::core::desktop_icons::DesktopIcons;
 use crate::core::event::Event;
 use crate::core::geometry::{Point, Rect};
-use crate::util::profiler::Profiler;
-use crate::util::log::Logger;
-use crate::util::crash_diagnostics::CrashDiagnostics;
 use crate::core::start_menu::StartMenuState;
 use crate::core::tray::SystemTray;
 use crate::core::window::{VisualFlags, WindowId, WindowState};
+use crate::util::app_registry::AppId;
+use crate::util::crash_diagnostics::CrashDiagnostics;
+use crate::util::log::Logger;
+use crate::util::profiler::Profiler;
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
+use libsarga::io;
 use libsarga::process;
 
 pub(crate) enum Cursor {
     Default,
+    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
     Arrow,
     ResizeH,
     ResizeV,
     ResizeDiagonal,
     Move,
+    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
     Busy,
+    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
     Text,
     Hand,
 }
@@ -68,14 +71,16 @@ pub(crate) enum TilingMode {
     Tile,
     Monocle,
 }
-use crate::render::snapshot::RenderSnapshot;
 use crate::core::shortcut::{ShortcutAction, ShortcutManager};
+use crate::render::snapshot::RenderSnapshot;
 
 pub struct Desktop {
     pub(crate) screen_w: u32,
     pub(crate) screen_h: u32,
     pub(crate) wm: WindowManager,
     pub(crate) start_menu: StartMenuState,
+    // menu items are (label, action) pairs; ad-hoc tuple kept for brevity
+    #[allow(clippy::type_complexity)]
     pub(crate) context_menu: Option<(i32, i32, &'static [(&'static str, &'static str)])>,
     pub(crate) clock_ticks: u64,
     pub(crate) mouse_x: i32,
@@ -108,8 +113,11 @@ pub struct Desktop {
     pub(crate) services: crate::service::service_manager::ServiceManager,
     pub(crate) tray: SystemTray,
     pub(crate) settings: crate::core::settings::SettingsState,
+    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
     pub(crate) config_store: crate::apps::config_store::ConfigStore,
+    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
     pub(crate) terminal_state: crate::apps::terminal::TerminalState,
+    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
     pub(crate) file_manager: crate::apps::files::FileManagerState,
     pub(crate) task_manager: crate::apps::task_manager::TaskManagerState,
     pub(crate) about_state: crate::apps::about::AboutState,
@@ -132,7 +140,9 @@ pub struct Desktop {
     pub(crate) ipc_server: crate::ipc::IpcServer,
     pub(crate) ipc_transport: crate::ipc::transport::IpcTransport,
     pub(crate) service_registry: crate::ipc::ServiceRegistry,
+    #[allow(dead_code)] // crash reporting integration point
     pub(crate) crash_manager: crate::util::crash_manager::CrashManager,
+    #[allow(dead_code)] // parsed .desktop entries, populated by service layer
     pub(crate) desktop_entries: alloc::vec::Vec<crate::util::desktop_entry::DesktopEntry>,
     pub(crate) permissions: crate::sec::perms::PermissionManager,
     pub(crate) profiler: Profiler,
@@ -237,8 +247,13 @@ impl Desktop {
                                 ExitClass::Error(code) => alloc::format!("exit {}", code),
                                 ExitClass::Clean => unreachable!(),
                             };
-                            self.services
-                                .notify("Application Crashed", &reason, 2, 8000, self.clock_ticks);
+                            self.services.notify(
+                                "Application Crashed",
+                                &reason,
+                                2,
+                                8000,
+                                self.clock_ticks,
+                            );
                         }
                     }
                     self.lifecycle.remove(pid);
@@ -282,7 +297,7 @@ impl Desktop {
             if w.flags.opacity < 255 {
                 w.flags.opacity = w.flags.opacity.saturating_add(25);
             }
-            if w.flags.opacity >= 255 {
+            if w.flags.opacity == 255 {
                 w.anim_opacity = 255;
             }
             if w.tick_animation() {
@@ -302,7 +317,7 @@ impl Desktop {
         self.tooltips.tick();
         self.tick_tooltip_hover();
         self.profiler.frame_timer.stop(self.clock_ticks);
-        if self.clock_ticks % 1000 == 0 {
+        if self.clock_ticks.is_multiple_of(1000) {
             self.logger.info(self.clock_ticks, "tick");
         }
     }
@@ -359,7 +374,12 @@ impl Desktop {
         let taskbar_id = self.a11y_tree.add_node(
             crate::sec::a11y::A11yRole::Taskbar,
             "Taskbar",
-            (0, ty as i32, self.screen_w, crate::core::constants::TASKBAR_H),
+            (
+                0,
+                ty as i32,
+                self.screen_w,
+                crate::core::constants::TASKBAR_H,
+            ),
             true,
         );
         self.a11y_tree.add_child(desktop_id, taskbar_id);
@@ -380,7 +400,12 @@ impl Desktop {
             let btn_id = self.a11y_tree.add_node(
                 crate::sec::a11y::A11yRole::Button,
                 &aw.title,
-                (bx as i32, ty as i32 + 4, 120, crate::core::constants::TASKBAR_H - 8),
+                (
+                    bx as i32,
+                    ty as i32 + 4,
+                    120,
+                    crate::core::constants::TASKBAR_H - 8,
+                ),
                 true,
             );
             self.a11y_tree.add_child(taskbar_id, btn_id);
@@ -400,7 +425,7 @@ impl Desktop {
         }
 
         // Windows
-        for (i, aw) in self.wm.iter().iter().enumerate() {
+        for aw in self.wm.iter().iter() {
             let win_id = self.a11y_tree.add_node(
                 crate::sec::a11y::A11yRole::Window,
                 &aw.title,
@@ -607,7 +632,13 @@ impl Desktop {
             Event::AppFocused(_id) => {}
             Event::AppCrashed(_id) => {
                 self.crash_diag.record_event("app_crashed");
-                self.services.notify("App Crashed", "An application has crashed", 2, 120, self.clock_ticks);
+                self.services.notify(
+                    "App Crashed",
+                    "An application has crashed",
+                    2,
+                    120,
+                    self.clock_ticks,
+                );
             }
             Event::SettingsChanged => {}
             Event::FocusChanged(_id) => {}
@@ -701,6 +732,7 @@ impl Desktop {
         }
     }
 
+    #[allow(dead_code)] // keyboard a11y nav entry point, invoked from event dispatch in future
     fn handle_keyboard_nav(&mut self, key: u8) {
         match key {
             0x09 | 0x1B => self.handle_key_focus(key),
@@ -837,6 +869,7 @@ impl Desktop {
         }
     }
 
+    #[allow(dead_code)] // public close API, kept for hotkey/shortcut wiring
     pub fn close_focused_window(&mut self) {
         if let Some(active) = self.wm.active() {
             self.wm.close(active);
@@ -930,7 +963,7 @@ impl Desktop {
                     self.start_menu.rebuild_filter(&self.app_reg);
                     self.damage.mark_full();
                 }
-                ch if (ch >= 0x20 && ch <= 0x7E) => {
+                ch if (0x20..=0x7E).contains(&ch) => {
                     // printable ASCII → search
                     self.start_menu.search.push(ch);
                     self.start_menu.rebuild_filter(&self.app_reg);
@@ -986,7 +1019,13 @@ impl Desktop {
                     }
                 }
                 ShortcutAction::DemoNotification => {
-                    self.services.notify("Demo", "This is a test notification", 1, 120, self.clock_ticks);
+                    self.services.notify(
+                        "Demo",
+                        "This is a test notification",
+                        1,
+                        120,
+                        self.clock_ticks,
+                    );
                     self.damage.mark_full();
                 }
                 ShortcutAction::DismissNotification => {
@@ -1003,7 +1042,8 @@ impl Desktop {
                 ShortcutAction::OpenSettings => {
                     self.settings_app.open = !self.settings_app.open;
                     if self.settings_app.open {
-                        self.settings_app.current_page = crate::apps::settings::SettingsPage::Appearance;
+                        self.settings_app.current_page =
+                            crate::apps::settings::SettingsPage::Appearance;
                     }
                     self.damage.mark_full();
                 }
@@ -1045,7 +1085,7 @@ impl Desktop {
             if last.focused && last.x > -100 {
                 let ch = key as char;
                 if ch.is_ascii_graphic() || ch == ' ' {
-                    if last.content.last().map_or(true, |l| l.len() > 80) {
+                    if last.content.last().is_none_or(|l| l.len() > 80) {
                         last.content.push(alloc::string::String::new());
                     }
                     if let Some(line) = last.content.last_mut() {
@@ -1073,6 +1113,8 @@ impl Desktop {
     }
 
     #[allow(dead_code)]
+    // path is a fixed literal; guard kept for readability
+    #[allow(clippy::const_is_empty)]
     pub(crate) fn spawn_explorer(&mut self) {
         let id = self.explorers.len() as u32;
         let mut explorer = crate::util::explorer::ExplorerState::new(id, "/home");
@@ -1130,7 +1172,8 @@ impl Desktop {
             w.flags.opacity = 0;
             w.animate_to(w.x, w.y, w.w, w.h);
         }
-        self.services.notify("App Launched", "File Explorer", 1, 120, self.clock_ticks);
+        self.services
+            .notify("App Launched", "File Explorer", 1, 120, self.clock_ticks);
         self.damage.mark_full();
     }
 
@@ -1167,6 +1210,8 @@ impl Desktop {
         (just_pressed, just_released, self.drag_active)
     }
 
+    // drop ends the &self borrow from snapshot() before self is mutated
+    #[allow(clippy::drop_non_drop)]
     pub(crate) fn handle_click(&mut self, mx: i32, my: i32) {
         self.damage.mark_full();
         if self.settings.open {
@@ -1321,7 +1366,7 @@ impl Desktop {
             return;
         }
         if my >= taskbar_y {
-            if mx >= 5 && mx < 65 {
+            if (5..65).contains(&mx) {
                 self.start_menu.open_with(&self.app_reg);
                 return;
             }
@@ -1439,7 +1484,7 @@ impl Desktop {
 
             // Explorer content click
             if wr.hit_test(pt) {
-                let is_explorer = { self.wm.iter()[i].explorer_id.is_some() };
+                let _is_explorer = { self.wm.iter()[i].explorer_id.is_some() };
                 if let Some(exp_id) = self.wm.iter()[i].explorer_id {
                     if let Some(exp_state) = self.explorers.iter_mut().find(|e| e.id == exp_id) {
                         let aw_ref = &self.wm.iter()[i];
@@ -1636,7 +1681,8 @@ impl Desktop {
             }
         } else {
             self.wm.update_drag(mx, my);
-            self.wm.show_snap_preview(mx, my, self.screen_w, self.screen_h, self.taskbar_y());
+            self.wm
+                .show_snap_preview(mx, my, self.screen_w, self.screen_h, self.taskbar_y());
         }
     }
 
@@ -1739,7 +1785,11 @@ impl Desktop {
     }
 
     pub fn render_snap_preview(&self) -> Option<(i32, i32, u32, u32)> {
-        self.wm.snap_preview.as_ref().filter(|sp| sp.active).map(|sp| (sp.x, sp.y, sp.w, sp.h))
+        self.wm
+            .snap_preview
+            .as_ref()
+            .filter(|sp| sp.active)
+            .map(|sp| (sp.x, sp.y, sp.w, sp.h))
     }
 
     pub(crate) fn prepare_clock(&mut self) -> alloc::string::String {
@@ -1749,7 +1799,11 @@ impl Desktop {
         ))
     }
 
-    pub fn permission_check(&self, app: crate::ipc::ApplicationId, perm: crate::ipc::permission::AppPermission) -> bool {
+    pub fn permission_check(
+        &self,
+        app: crate::ipc::ApplicationId,
+        perm: crate::ipc::permission::AppPermission,
+    ) -> bool {
         self.permissions.check(app.0, perm)
     }
 
@@ -1773,7 +1827,7 @@ impl Desktop {
                 .service_registry
                 .find(req.service)
                 .map(|info| {
-                    granted.map_or(false, |g| {
+                    granted.is_some_and(|g| {
                         g.contains(AppPermission::from_bits_truncate(info.required_permissions))
                     })
                 })
@@ -1800,7 +1854,11 @@ impl Desktop {
             .any(|w| w.state == WindowState::Fullscreen);
 
         let focused_bounds = self.focus.focused().and_then(|id| {
-            self.a11y_tree.nodes.iter().find(|n| n.id == id).map(|n| n.bounds)
+            self.a11y_tree
+                .nodes
+                .iter()
+                .find(|n| n.id == id)
+                .map(|n| n.bounds)
         });
 
         let (tooltip_text, tooltip_x, tooltip_y) = match self.tooltips.active {

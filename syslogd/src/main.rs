@@ -3,15 +3,16 @@
 
 extern crate alloc;
 
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use libsarga::io::{self, open, read, write};
-use libsarga::process::{exit, fork, wait};
+use alloc::string::String;
+use libsarga::io::{open, read, write};
+use libsarga::process::fork;
 use libsarga::sarga_main;
 
 const LOG_FIFO: &str = "/var/run/syslog.fifo";
 const LOG_FILE: &str = "/var/log/syslog";
 
+// allow: mknod-based FIFO setup not yet wired up; currently poll-opens the FIFO path
+#[allow(dead_code)]
 fn ensure_fifo() -> Result<i64, ()> {
     match open(LOG_FIFO, 0) {
         Ok(fd) => Ok(fd),

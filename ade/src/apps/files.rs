@@ -1,11 +1,13 @@
 //! File manager — directory listing, navigation history, selection.
 
+use crate::core::window::AppWindow;
+use crate::render::compositor::Canvas;
 use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::theme::Theme;
-use crate::render::compositor::Canvas;
-use crate::core::window::AppWindow;
 
+// keep: file manager app scaffold, activation pending in desktop.rs
+#[allow(dead_code)]
 pub(crate) struct FileManagerState {
     pub path: String,
     pub entries: Vec<String>,
@@ -14,6 +16,8 @@ pub(crate) struct FileManagerState {
     pub history_pos: usize,
 }
 
+// keep: navigation/draw methods reserved for file manager activation
+#[allow(dead_code)]
 impl FileManagerState {
     pub fn new() -> Self {
         FileManagerState {
@@ -92,14 +96,18 @@ impl FileManagerState {
             let sel = idx == self.selected;
             let bg = if sel {
                 0xFF3D5AFE
-            } else if idx % 2 == 0 {
+            } else if idx.is_multiple_of(2) {
                 0xFF1E1E2E
             } else {
                 0xFF22223A
             };
             canvas.draw_rect(aw.x as u32, iy, aw.w, item_h, bg);
             let label = &self.entries[idx];
-            let display = if label.len() > 50 { &label[..50] } else { label };
+            let display = if label.len() > 50 {
+                &label[..50]
+            } else {
+                label
+            };
             canvas.draw_string(
                 aw.x as u32 + 4,
                 iy + 4,

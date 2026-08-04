@@ -178,7 +178,7 @@ fn user_main() -> i32 {
                 }
             }
         }
-    } else if status_code >= 200 && status_code < 300 {
+    } else if (200..300).contains(&status_code) {
         io::write_all(1, &response).ok();
     }
     0

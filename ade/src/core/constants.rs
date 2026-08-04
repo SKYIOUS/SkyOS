@@ -19,5 +19,6 @@ pub const SNAP_MARGIN: i32 = 15;
 pub const MIN_WIN_W: u32 = 100;
 pub const MIN_WIN_H: u32 = 80;
 
+#[allow(dead_code)] // snap preview alpha, paired with SNAP_PREVIEW_COLOR (used by render)
 pub const SNAP_PREVIEW_ALPHA: u32 = 0x40;
 pub const SNAP_PREVIEW_COLOR: u32 = 0x403D5AFE;

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use crate::ipc::message::{ApplicationId, ChannelId};
+use alloc::vec::Vec;
 
 pub(crate) struct IpcClient {
     pub app_id: ApplicationId,

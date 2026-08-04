@@ -28,6 +28,8 @@ static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 enum JobStatus {
     Running,
     Stopped,
+    // allow: kept for future job completion reporting (matched in jobs listing)
+    #[allow(dead_code)]
     Done,
 }
 
@@ -57,10 +59,8 @@ pub fn get_env(name: &str) -> Option<String> {
     let env_slot = SHELL_ENV.0.lock();
     if let Some(ref env) = *env_slot {
         for entry in env.iter() {
-            if let Some(val) = entry.strip_prefix(name) {
-                if val.starts_with('=') {
-                    return Some(String::from(&val[1..]));
-                }
+            if let Some(val) = entry.strip_prefix(name).and_then(|e| e.strip_prefix('=')) {
+                return Some(String::from(val));
             }
         }
     }
@@ -71,12 +71,9 @@ pub fn set_env(name: &str, val: &str) {
     let entry = alloc::format!("{}={}", name, val);
     let mut env_slot = SHELL_ENV.0.lock();
     if let Some(ref mut env) = *env_slot {
-        for i in 0..env.len() {
-            if env[i].starts_with(name)
-                && env[i].len() > name.len()
-                && env[i].as_bytes()[name.len()] == b'='
-            {
-                env[i] = entry;
+        for e in env.iter_mut() {
+            if e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'=' {
+                *e = entry;
                 return;
             }
         }
@@ -264,7 +261,7 @@ pub fn fg_job(id: usize) -> i64 {
         if r as u64 == job.pid {
             if WIFSTOPPED(st) {
                 // Stopped again — add back to job table
-    let tbl = JOB_TABLE.0.lock();
+                let mut tbl = JOB_TABLE.0.lock();
                 tbl.push(JobEntry {
                     pid: job.pid,
                     cmd: job.cmd.clone(),
@@ -286,7 +283,7 @@ pub fn fg_job(id: usize) -> i64 {
 }
 
 pub fn bg_job(id: usize) -> i64 {
-    let mut tbl = JOB_TABLE.0.lock();
+    let tbl = JOB_TABLE.0.lock();
     if id == 0 || id > tbl.len() {
         println!("bg: job not found");
         return 1;
@@ -353,6 +350,8 @@ pub fn save_history_on_exit() {
     }
 }
 
+// clippy: fd is the only error payload needed by callers; keep it simple
+#[allow(clippy::result_unit_err)]
 pub fn open_file(path: &str, flags: u64) -> Result<i64, ()> {
     let c_str = CString::new(path.as_bytes()).map_err(|_| ())?;
     let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, flags) };
@@ -493,7 +492,7 @@ fn user_main() -> i32 {
         // Alias expansion
         let expanded =
             if let Some(alias) = get_alias(trimmed.split_whitespace().next().unwrap_or("")) {
-                let rest = trimmed.splitn(2, ' ').nth(1).unwrap_or("");
+                let rest = trimmed.split_once(' ').map(|(_, r)| r).unwrap_or("");
                 if rest.is_empty() {
                     alias
                 } else {

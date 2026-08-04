@@ -32,10 +32,19 @@ impl PthreadAttr {
     }
 }
 
+impl Default for PthreadAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── Thread creation ────────────────────────────────────────────
 
 pub type PthreadStartFn = extern "C" fn(*mut core::ffi::c_void) -> *mut core::ffi::c_void;
 
+/// # Safety
+/// Caller must ensure `start`/`arg` stay valid for the lifetime of the new
+/// thread, and `thread` points to writable memory for the duration of the call.
 pub unsafe fn pthread_create(
     thread: &mut usize,
     _attr: Option<&PthreadAttr>,
@@ -74,6 +83,8 @@ pub struct PthreadMutex {
     lock_count: AtomicU32,
 }
 
+// ponytail: static-initializer compat const; atomics are safe to share from consts
+#[allow(clippy::declare_interior_mutable_const)] // required by the C pthread ABI
 pub const PTHREAD_MUTEX_INITIALIZER: PthreadMutex = PthreadMutex {
     state: AtomicU32::new(0),
     kind: 0,
@@ -159,6 +170,8 @@ pub struct PthreadCond {
     state: AtomicU32,
 }
 
+// ponytail: static-initializer compat const; atomics are safe to share from consts
+#[allow(clippy::declare_interior_mutable_const)] // required by the C pthread ABI
 pub const PTHREAD_COND_INITIALIZER: PthreadCond = PthreadCond {
     state: AtomicU32::new(0),
 };
@@ -218,6 +231,8 @@ pub fn pthread_cond_destroy(_c: &PthreadCond) -> i32 {
 
 // ── Once ───────────────────────────────────────────────────────
 
+// ponytail: static-initializer compat const; atomics are safe to share from consts
+#[allow(clippy::declare_interior_mutable_const)] // required by the C pthread ABI
 pub const PTHREAD_ONCE_INIT: PthreadOnce = AtomicU32::new(0);
 
 pub fn pthread_once(once: &PthreadOnce, init: extern "C" fn()) {

@@ -48,7 +48,7 @@ impl CrashManager {
         self.entries
             .iter()
             .find(|e| e.app_id == app_id)
-            .map_or(false, |e| e.crash_count < 3 && !e.restart_requested)
+            .is_some_and(|e| e.crash_count < 3 && !e.restart_requested)
     }
 
     pub fn tick(&mut self) {}

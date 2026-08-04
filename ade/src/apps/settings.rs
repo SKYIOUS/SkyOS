@@ -1,8 +1,8 @@
 //! Settings application — full settings panel with sidebar and pages.
 
-use alloc::string::String;
 use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
+use alloc::string::String;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SettingsPage {
@@ -36,6 +36,8 @@ pub(crate) struct SettingsAppState {
     pub current_page: SettingsPage,
     pub app: bool,
     pub hover_idx: i32,
+    // keep: scroll offset for long settings pages
+    #[allow(dead_code)]
     pub scroll: u32,
 }
 
@@ -74,7 +76,11 @@ impl SettingsAppState {
                 break;
             }
             let is_cur = page == self.current_page;
-            let bg = if is_cur { snap.theme.accent } else { 0xFF252535 };
+            let bg = if is_cur {
+                snap.theme.accent
+            } else {
+                0xFF252535
+            };
             let fg = if is_cur { 0xFFFFFFFF } else { 0xFFB0B0B0 };
             canvas.draw_rounded_rect(sidebar_x + 4, iy, sidebar_w - 8, 24, 4, bg);
             canvas.draw_string(sidebar_x + 10, iy + 5, name, fg, 0);
@@ -111,7 +117,13 @@ impl SettingsAppState {
         canvas.draw_rounded_rect(cx + 8, toggle_y, cw - 16, 28, 4, bg);
         canvas.draw_string(cx + 16, toggle_y + 6, "Dark Theme", 0xFFD0D0D0, 0);
         let toggle_fg = if self.app { 0xFF4CAF50 } else { 0xFF555555 };
-        canvas.draw_char(cx + cw - 36, toggle_y + 6, if self.app { 'Y' } else { 'N' }, toggle_fg, 0);
+        canvas.draw_char(
+            cx + cw - 36,
+            toggle_y + 6,
+            if self.app { 'Y' } else { 'N' },
+            toggle_fg,
+            0,
+        );
 
         // Window Opacity (placeholder)
         let opacity_y = toggle_y + 32;
@@ -143,6 +155,8 @@ impl SettingsAppState {
         }
     }
 
+    // keep: theme toggle not yet wired to settings click handler
+    #[allow(dead_code)]
     pub fn toggle_theme(&mut self, desktop: &mut crate::core::desktop::Desktop) {
         self.app = !self.app;
         if self.app {

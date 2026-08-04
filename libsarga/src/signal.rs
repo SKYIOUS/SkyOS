@@ -116,10 +116,10 @@ pub fn rt_sigaction(
 ) -> Result<(), Error> {
     let act_ptr = act
         .map(|a| a as *const SigAction as *const u64)
-        .unwrap_or(core::ptr::null());
+        .unwrap_or_default();
     let old_ptr = oldact
         .map(|a| a as *mut SigAction as *mut u64)
-        .unwrap_or(core::ptr::null_mut());
+        .unwrap_or_default();
     let r = unsafe {
         syscall4(
             SYS_RT_SIGACTION,
@@ -175,45 +175,54 @@ pub fn signal(sig: u32, handler: u64) -> Result<u64, Error> {
 // ── Wait status inspection macros ─────────────────────────────────
 
 /// True if child exited normally (via exit/_exit).
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WIFEXITED(status: i32) -> bool {
     (status & 0x7f) == 0
 }
 
 /// Extract the exit code when WIFEXITED is true.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WEXITSTATUS(status: i32) -> i32 {
     (status >> 8) & 0xff
 }
 
 /// True if child was terminated by a signal.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WIFSIGNALED(status: i32) -> bool {
     ((status & 0x7f) != 0) && ((status & 0x7f) != 0x7f)
 }
 
 /// Extract the terminating signal number when WIFSIGNALED is true.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WTERMSIG(status: i32) -> u32 {
     status as u32 & 0x7f
 }
 
 /// True if child is currently stopped (via SIGSTOP/SIGTSTP).
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WIFSTOPPED(status: i32) -> bool {
     (status & 0xff) == 0x7f
 }
 
 /// Extract the stop signal when WIFSTOPPED is true.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WSTOPSIG(status: i32) -> u32 {
     (status as u32 >> 8) & 0xff
 }
 
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn WCOREDUMP(status: i32) -> bool {
     (status & 0x80) != 0
 }
 
 /// Generate a status value for a normal exit.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn W_EXITCODE(code: i32, sig: i32) -> i32 {
     (code << 8) | sig
 }
 
 /// Generate a status value for a stop signal.
+#[allow(non_snake_case)] // libc-compat wait-status macro name
 pub fn W_STOPCODE(sig: i32) -> i32 {
     (sig << 8) | 0x7f
 }
@@ -238,27 +247,58 @@ pub fn sigaltstack(ss: Option<&StackT>, old_ss: Option<&mut StackT>) -> Result<(
     let ss_ptr = ss.map_or(0, |s| s as *const StackT as u64);
     let old_ptr = old_ss.map_or(0, |s| s as *mut StackT as u64);
     let r = unsafe { syscall2(SYS_SIGALTSTACK, ss_ptr, old_ptr) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 // ── signalfd ──────────────────────────────────────────────────────
 
 /// Create a file descriptor for accepting signals.
-pub fn signalfd(fd: i64, mask: SigSet, flags: i32) -> Result<i64, Error> {
-    let r = unsafe { syscall3(SYS_SIGNALFD, fd as u64, &mask as *const u64 as u64, core::mem::size_of::<SigSet>() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+pub fn signalfd(fd: i64, mask: SigSet, _flags: i32) -> Result<i64, Error> {
+    let r = unsafe {
+        syscall3(
+            SYS_SIGNALFD,
+            fd as u64,
+            &mask as *const u64 as u64,
+            core::mem::size_of::<SigSet>() as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
+    }
 }
 
 pub fn signalfd4(fd: i64, mask: SigSet, flags: i32) -> Result<i64, Error> {
-    let r = unsafe { syscall4(SYS_SIGNALFD4, fd as u64, &mask as *const u64 as u64, core::mem::size_of::<SigSet>() as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+    let r = unsafe {
+        syscall4(
+            SYS_SIGNALFD4,
+            fd as u64,
+            &mask as *const u64 as u64,
+            core::mem::size_of::<SigSet>() as u64,
+            flags as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
+    }
 }
 
 // ── Pause ─────────────────────────────────────────────────────────
 
 pub fn pause() -> Result<(), Error> {
     let r = unsafe { syscall0(SYS_PAUSE) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 // ── Itimers ───────────────────────────────────────────────────────
@@ -283,11 +323,26 @@ pub const ITIMER_PROF: i32 = 2;
 
 pub fn getitimer(which: i32, val: &mut Itimerval) -> Result<(), Error> {
     let r = unsafe { syscall2(SYS_GETITIMER, which as u64, val as *mut Itimerval as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn setitimer(which: i32, new: &Itimerval, old: Option<&mut Itimerval>) -> Result<(), Error> {
     let old_ptr = old.map_or(0, |o| o as *mut Itimerval as u64);
-    let r = unsafe { syscall3(SYS_SETITIMER, which as u64, new as *const Itimerval as u64, old_ptr) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        syscall3(
+            SYS_SETITIMER,
+            which as u64,
+            new as *const Itimerval as u64,
+            old_ptr,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }

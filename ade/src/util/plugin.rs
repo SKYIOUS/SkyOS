@@ -19,7 +19,11 @@ pub struct Version {
 
 impl Version {
     pub fn new(major: u16, minor: u16, patch: u16) -> Self {
-        Version { major, minor, patch }
+        Version {
+            major,
+            minor,
+            patch,
+        }
     }
 
     pub fn is_compatible_with(&self, requirement: Version) -> bool {
@@ -206,7 +210,8 @@ impl PluginManager {
         if let Some(pos) = self.plugins.iter().position(|p| p.metadata.id == plugin_id) {
             let plugin = self.plugins.remove(pos);
             self.sandboxes.retain(|s| s.id != plugin.sandbox_id);
-            self.events.push(PluginEvent::Deactivated(plugin.sandbox_id));
+            self.events
+                .push(PluginEvent::Deactivated(plugin.sandbox_id));
             true
         } else {
             false
@@ -215,7 +220,9 @@ impl PluginManager {
 
     /// Check if plugin is loaded
     pub fn is_plugin_loaded(&self, plugin_id: &str) -> bool {
-        self.plugins.iter().any(|p| p.metadata.id == plugin_id && p.state != PluginState::Failed)
+        self.plugins
+            .iter()
+            .any(|p| p.metadata.id == plugin_id && p.state != PluginState::Failed)
     }
 
     /// Get plugin by ID
@@ -319,7 +326,10 @@ impl PluginManager {
     /// Request new capability
     pub fn request_capability(&mut self, plugin_id: &str, capability: PluginCapability) -> bool {
         if let Some(plugin) = self.get_plugin(plugin_id) {
-            self.events.push(PluginEvent::CapabilityRequested(plugin.sandbox_id, capability.bits()));
+            self.events.push(PluginEvent::CapabilityRequested(
+                plugin.sandbox_id,
+                capability.bits(),
+            ));
             true
         } else {
             false

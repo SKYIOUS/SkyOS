@@ -39,7 +39,11 @@ fn user_main() -> i32 {
     };
     if (0..libsarga::args::argc()).any(|i| libsarga::args::get(i as usize) == Some("--selftest")) {
         let ok = util::testing::run_all(&mut desktop);
-        io::print_str(if ok { "[ade] selftest PASS\n" } else { "[ade] selftest FAIL\n" });
+        io::print_str(if ok {
+            "[ade] selftest PASS\n"
+        } else {
+            "[ade] selftest FAIL\n"
+        });
     }
     // Session lifecycle: desktop environment session established
     let _ = io::write_all(1, b"[ade] session established\n");
@@ -60,7 +64,9 @@ fn user_main() -> i32 {
             }
             desktop.handle_event(core::event::Event::Key(key));
         }
-        if !running { break; }
+        if !running {
+            break;
+        }
 
         let ms = desktop_win.get_mouse();
         let (pressed, released, dragging) =

@@ -3,6 +3,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+// keep: terminal app scaffold, input fields reserved for shell
+#[allow(dead_code)]
 pub(crate) struct TerminalState {
     pub history: Vec<String>,
     pub history_pos: isize,
@@ -11,6 +13,8 @@ pub(crate) struct TerminalState {
     pub scroll_offset: u32,
 }
 
+// keep: input methods reserved until terminal app is wired
+#[allow(dead_code)]
 impl TerminalState {
     pub fn new() -> Self {
         TerminalState {
@@ -25,7 +29,7 @@ impl TerminalState {
     pub fn update(&mut self, content: &mut Vec<String>, key: u8) {
         match key {
             0x0A | 0x0D => {
-                let line = content.last().map(|l| l.clone()).unwrap_or_default();
+                let line = content.last().cloned().unwrap_or_default();
                 if !line.is_empty() {
                     self.history.push(line);
                     if self.history.len() > 50 {
@@ -42,7 +46,7 @@ impl TerminalState {
                     line.pop();
                 }
             }
-            ch if (ch >= 0x20 && ch <= 0x7E) => {
+            ch if (0x20..=0x7E).contains(&ch) => {
                 if let Some(line) = content.last_mut() {
                     line.push(ch as char);
                     self.cursor_pos = line.len() as u16;

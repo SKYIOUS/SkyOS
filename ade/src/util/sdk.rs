@@ -37,30 +37,36 @@ impl DesktopApi {
 // Window API
 pub struct WindowApi;
 impl WindowApi {
-    pub fn create(title: &str, width: u32, height: u32) -> u32 { 0 }
-    pub fn close(window_id: u32) {}
-    pub fn set_title(window_id: u32, title: &str) {}
+    pub fn create(_title: &str, _width: u32, _height: u32) -> u32 {
+        0
+    }
+    pub fn close(_window_id: u32) {}
+    pub fn set_title(_window_id: u32, _title: &str) {}
 }
 
 // Notification API
 pub struct NotificationApi;
 impl NotificationApi {
-    pub fn show(title: &str, message: &str, duration_ms: u32) {}
-    pub fn show_with_actions(title: &str, message: &str, actions: &[&str]) {}
+    pub fn show(_title: &str, _message: &str, _duration_ms: u32) {}
+    pub fn show_with_actions(_title: &str, _message: &str, _actions: &[&str]) {}
 }
 
 // Clipboard API
 pub struct ClipboardApi;
 impl ClipboardApi {
-    pub fn get_text() -> Option<String> { None }
-    pub fn set_text(text: &str) {}
+    pub fn get_text() -> Option<String> {
+        None
+    }
+    pub fn set_text(_text: &str) {}
 }
 
 // Settings API
 pub struct SettingsApi;
 impl SettingsApi {
-    pub fn get(key: &str) -> Option<String> { None }
-    pub fn set(key: &str, value: &str) {}
+    pub fn get(_key: &str) -> Option<String> {
+        None
+    }
+    pub fn set(_key: &str, _value: &str) {}
 }
 
 // ============================================================================
@@ -160,7 +166,7 @@ impl AccessibilityManager {
     }
 
     pub fn set_text_scale(&mut self, scale: f32) {
-        self.config.text_scale_factor = scale.max(0.5).min(2.0);
+        self.config.text_scale_factor = scale.clamp(0.5, 2.0);
     }
 
     pub fn config(&self) -> &AccessibilityConfig {

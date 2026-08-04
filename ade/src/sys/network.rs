@@ -5,11 +5,12 @@
 //! Manages network devices, connections, and internet services.
 //! Provides abstraction for future hardware driver integration.
 
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Network device type
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)] // VPN: widely-used acronym, keep name
 pub enum NetworkDeviceType {
     Ethernet,
     WiFi,
@@ -56,8 +57,8 @@ pub struct IpInfo {
 pub struct WiFiNetwork {
     pub ssid: String,
     pub bssid: String,
-    pub strength: u8,     // 0-100
-    pub frequency: u16,   // MHz
+    pub strength: u8,   // 0-100
+    pub frequency: u16, // MHz
     pub is_secured: bool,
 }
 
@@ -280,7 +281,10 @@ impl NetworkManager {
         if let Some(device) = self.get_device_mut(device_id) {
             device.state = ConnectionState::Disconnected;
             self.connections.retain(|c| c.device_id != device_id);
-            self.events.push(NetworkEvent::StateChanged(device_id, ConnectionState::Disconnected));
+            self.events.push(NetworkEvent::StateChanged(
+                device_id,
+                ConnectionState::Disconnected,
+            ));
             true
         } else {
             false
@@ -310,7 +314,8 @@ impl NetworkManager {
     pub fn set_signal_strength(&mut self, device_id: u32, strength: u8) {
         if let Some(device) = self.get_device_mut(device_id) {
             if device.device_type == NetworkDeviceType::WiFi {
-                self.events.push(NetworkEvent::SignalChanged(device_id, strength));
+                self.events
+                    .push(NetworkEvent::SignalChanged(device_id, strength));
             }
         }
     }

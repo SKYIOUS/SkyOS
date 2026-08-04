@@ -31,7 +31,7 @@ fn user_main() -> i32 {
             if printed >= count {
                 break;
             }
-            io::write_all(1, leftover[..=pos].as_bytes()).ok();
+            io::write_all(1, &leftover.as_bytes()[..=pos]).ok();
             printed += 1;
             leftover = String::from(&leftover[pos + 1..]);
         }

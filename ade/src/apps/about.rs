@@ -46,6 +46,8 @@ impl AboutState {
         }
     }
 
+    // keep: click handling for About dialog, not yet wired in desktop.rs
+    #[allow(dead_code)]
     pub fn hit_test(&self, mx: i32, my: i32, snap: &RenderSnapshot) -> bool {
         if !self.open {
             return false;
@@ -54,9 +56,6 @@ impl AboutState {
         let ph = 240u32;
         let px = (snap.screen_w - pw) / 2;
         let py = (snap.screen_h - ph) / 3;
-        mx >= px as i32
-            && mx <= (px + pw) as i32
-            && my >= py as i32
-            && my <= (py + ph) as i32
+        mx >= px as i32 && mx <= (px + pw) as i32 && my >= py as i32 && my <= (py + ph) as i32
     }
 }

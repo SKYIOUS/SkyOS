@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use crate::util::benchmark::BenchmarkResult;
 use crate::core::desktop::Desktop;
+use crate::util::benchmark::BenchmarkResult;
 use libsarga::io;
 
 // ponytail: stub — add real scheduler measurement when kernel exposes sched stats

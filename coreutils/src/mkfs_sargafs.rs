@@ -25,10 +25,10 @@ fn user_main() -> i32 {
 
     let total_blocks: u64 = 65536;
     let journal_blocks: u64 = 64;
-    let bitmap_blocks: u64 = (total_blocks + BLOCK_SIZE as u64 * 8 - 1) / (BLOCK_SIZE as u64 * 8);
+    let bitmap_blocks: u64 = total_blocks.div_ceil(BLOCK_SIZE as u64 * 8);
     let inode_count: u64 = total_blocks / 4;
     let inodes_per_block: u64 = BLOCK_SIZE as u64 / 256;
-    let inode_blocks: u64 = (inode_count + inodes_per_block - 1) / inodes_per_block;
+    let inode_blocks: u64 = inode_count.div_ceil(inodes_per_block);
 
     let journal_start: u64 = 1;
     let bitmap_start: u64 = journal_start + journal_blocks;

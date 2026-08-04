@@ -7,7 +7,7 @@ use crate::service::notification::Notification;
 pub(crate) fn draw_notifications(
     canvas: &mut Canvas,
     notifications: &[Notification],
-    mouse: Point,
+    _mouse: Point,
     theme: &libsarga::theme::Theme,
 ) {
     let mut ny = 10i32;

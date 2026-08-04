@@ -18,6 +18,7 @@ impl DamageTracker {
     }
 
     /// Add a damaged region, merging with any overlapping or touching rects.
+    #[allow(dead_code)] // ponytail: rect-tracking API, only mark_full used today
     pub fn add(&mut self, r: Rect) {
         if self.full {
             return;
@@ -36,6 +37,7 @@ impl DamageTracker {
     }
 
     /// Return all accumulated damage rects and clear the tracker.
+    #[allow(dead_code)] // ponytail: rect-tracking API, only mark_full used today
     pub fn drain(&mut self) -> Vec<Rect> {
         let result = mem::take(&mut self.rects);
         self.full = false;
@@ -57,6 +59,7 @@ impl DamageTracker {
     }
 }
 
+#[allow(dead_code)] // helper for DamageTracker::add
 fn rects_touch(a: &Rect, b: &Rect) -> bool {
     let ar = a.x + a.w as i32;
     let ab = a.y + a.h as i32;
@@ -65,6 +68,7 @@ fn rects_touch(a: &Rect, b: &Rect) -> bool {
     a.x <= br && ar >= b.x && a.y <= bb && ab >= b.y
 }
 
+#[allow(dead_code)] // helper for DamageTracker::add
 fn rect_union(a: &Rect, b: &Rect) -> Rect {
     let x = a.x.min(b.x);
     let y = a.y.min(b.y);

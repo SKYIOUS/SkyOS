@@ -15,7 +15,7 @@ impl core::fmt::Write for StdoutWriter {
 fn user_main() -> i32 {
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
-        io::open(&path, 0).unwrap_or(0)
+        io::open(path, 0).unwrap_or(0)
     } else {
         0
     };
@@ -29,9 +29,9 @@ fn user_main() -> i32 {
         };
         let mut w = StdoutWriter;
         write!(w, "{:08x} ", offset).ok();
-        for i in 0..16 {
+        for (i, b) in buf.iter().enumerate() {
             if i < n {
-                write!(w, "{:02x} ", buf[i]).ok();
+                write!(w, "{:02x} ", b).ok();
             } else {
                 write!(w, "   ").ok();
             }
@@ -40,15 +40,14 @@ fn user_main() -> i32 {
             }
         }
         write!(w, " |").ok();
-        for i in 0..n {
-            let c = buf[i];
-            if c >= 0x20 && c <= 0x7e {
+        for &c in buf[..n].iter() {
+            if (0x20..=0x7e).contains(&c) {
                 write!(w, "{}", c as char).ok();
             } else {
                 write!(w, ".").ok();
             }
         }
-        write!(w, "|\n").ok();
+        writeln!(w, "|").ok();
         offset += n;
     }
     if fd != 0 {

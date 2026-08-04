@@ -12,7 +12,7 @@ fn user_main() -> i32 {
     let mut start = 1;
     if let Some(s) = args::get(1) {
         if s.starts_with('-') {
-            sig = s[1..].parse().unwrap_or(15);
+            sig = s.strip_prefix('-').unwrap_or(s).parse().unwrap_or(15);
             start = 2;
         }
     }

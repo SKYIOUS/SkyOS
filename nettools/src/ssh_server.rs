@@ -42,9 +42,8 @@ fn user_main() -> i32 {
     let mut addr_buf = [0u8; 16];
     let mut addr_len = 16u32;
     loop {
-        match accept(fd, &mut addr_buf, &mut addr_len) {
-            Ok(client_fd) => handle_client(client_fd),
-            Err(_) => {}
+        if let Ok(client_fd) = accept(fd, &mut addr_buf, &mut addr_len) {
+            handle_client(client_fd);
         }
     }
 }

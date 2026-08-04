@@ -1,12 +1,14 @@
 //! Task manager — process list overlay with focus/close actions.
 
+use crate::core::window::AppWindow;
 use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
-use crate::core::window::AppWindow;
 
 pub(crate) struct TaskManagerState {
     pub open: bool,
     pub selected: usize,
+    // keep: scroll offset for process list
+    #[allow(dead_code)]
     pub scroll: u32,
 }
 
@@ -19,7 +21,12 @@ impl TaskManagerState {
         }
     }
 
-    pub fn draw(&self, canvas: &mut Canvas, windows: &[AppWindow], _theme: &libsarga::theme::Theme) {
+    pub fn draw(
+        &self,
+        canvas: &mut Canvas,
+        windows: &[AppWindow],
+        _theme: &libsarga::theme::Theme,
+    ) {
         if !self.open {
             return;
         }
@@ -44,7 +51,7 @@ impl TaskManagerState {
         let list_y = header_y + 22;
         let max_visible = (ph.saturating_sub(list_y - py + 4) / item_h) as usize;
         let count = max_visible.min(windows.len());
-        for i in 0..count {
+        for (i, w) in windows.iter().enumerate().take(count) {
             let iy = list_y + i as u32 * item_h;
             let sel = i == self.selected;
             let bg = if sel {
@@ -55,7 +62,6 @@ impl TaskManagerState {
                 0xFF1E1E2E
             };
             canvas.draw_rect(px + 4, iy, pw - 8, item_h, bg);
-            let w = &windows[i];
             let pid_str = match w.pid {
                 Some(p) => alloc::format!("{}", p),
                 None => alloc::string::String::new(),
@@ -80,7 +86,12 @@ impl TaskManagerState {
         }
     }
 
-    pub fn hit_test(&self, mx: i32, my: i32, snap: &RenderSnapshot) -> Option<(usize, &'static str)> {
+    pub fn hit_test(
+        &self,
+        mx: i32,
+        my: i32,
+        snap: &RenderSnapshot,
+    ) -> Option<(usize, &'static str)> {
         if !self.open {
             return None;
         }

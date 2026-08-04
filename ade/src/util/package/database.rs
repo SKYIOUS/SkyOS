@@ -57,20 +57,24 @@ impl PackageDatabase {
     pub fn search(&self, query: &str) -> Vec<&PackageMetadata> {
         self.available
             .iter()
-            .filter(|p| {
-                p.name.contains(query) || p.description.contains(query)
-            })
+            .filter(|p| p.name.contains(query) || p.description.contains(query))
             .collect()
     }
 
     pub fn by_category(&self, category: &str) -> Vec<&PackageMetadata> {
-        self.available.iter().filter(|p| p.category == category).collect()
+        self.available
+            .iter()
+            .filter(|p| p.category == category)
+            .collect()
     }
 
     pub fn check_dependencies(&self, metadata: &PackageMetadata) -> bool {
         for dep in &metadata.dependencies {
             if !dep.optional
-                && !self.installed.iter().any(|p| p.metadata.name == dep.name && p.enabled)
+                && !self
+                    .installed
+                    .iter()
+                    .any(|p| p.metadata.name == dep.name && p.enabled)
             {
                 return false;
             }

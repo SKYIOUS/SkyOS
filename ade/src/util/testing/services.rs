@@ -6,7 +6,10 @@ use libsarga::io;
 pub(crate) fn test_notifications(desktop: &mut Desktop) -> bool {
     let visible_before = desktop.services.notifications.visible_notifications().len();
 
-    let id = desktop.services.notifications.notify("Test Title", "Test Body", 0, 120);
+    let id = desktop
+        .services
+        .notifications
+        .notify("Test Title", "Test Body", 0, 120);
     if id == 0 {
         io::print_str("[test] FAIL test_notifications: notify returned id 0\n");
         return false;
@@ -30,8 +33,14 @@ pub(crate) fn test_notifications(desktop: &mut Desktop) -> bool {
         return false;
     }
 
-    let id2 = desktop.services.notifications.notify("Old", "Old Body", 0, 120);
-    desktop.services.notifications.update(id2, "New", "New Body");
+    let id2 = desktop
+        .services
+        .notifications
+        .notify("Old", "Old Body", 0, 120);
+    desktop
+        .services
+        .notifications
+        .update(id2, "New", "New Body");
     let visible2 = desktop.services.notifications.visible_notifications();
     let updated = visible2.iter().find(|n| n.id == id2).unwrap();
     if updated.title != "New" || updated.body != "New Body" {

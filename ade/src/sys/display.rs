@@ -10,10 +10,10 @@ use alloc::vec::Vec;
 /// Display orientation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOrientation {
-    Normal,      // 0°
-    Rotated90,   // 90°
-    Rotated180,  // 180°
-    Rotated270,  // 270°
+    Normal,     // 0°
+    Rotated90,  // 90°
+    Rotated180, // 180°
+    Rotated270, // 270°
 }
 
 /// Display scaling mode
@@ -209,7 +209,7 @@ impl DisplayManager {
     pub fn set_scaling(&mut self, id: u32, mode: ScalingMode, factor: f32) -> bool {
         if let Some(display) = self.get_display_mut(id) {
             display.scaling = mode;
-            display.scale_factor = factor.max(0.5).min(4.0);
+            display.scale_factor = factor.clamp(0.5, 4.0);
             true
         } else {
             false
@@ -338,11 +338,7 @@ impl DisplayManager {
     /// Extend displays (side-by-side)
     pub fn extend_display(&mut self, target_id: u32, next_to_id: u32, to_right: bool) -> bool {
         let (target_width, target_x, target_y) = if let Some(target) = self.get_display(target_id) {
-            (
-                target.mode.resolution.width as i32,
-                target.x,
-                target.y,
-            )
+            (target.mode.resolution.width as i32, target.x, target.y)
         } else {
             return false;
         };

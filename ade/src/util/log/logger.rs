@@ -20,6 +20,7 @@ impl Logger {
         }
     }
 
+    #[allow(dead_code)] // logger convenience shorthand
     pub fn trace(&mut self, tick: u64, msg: &'static str) {
         self.log(tick, LogLevel::Trace, msg);
     }
@@ -28,10 +29,12 @@ impl Logger {
         self.log(tick, LogLevel::Info, msg);
     }
 
+    #[allow(dead_code)] // logger convenience shorthand
     pub fn warn(&mut self, tick: u64, msg: &'static str) {
         self.log(tick, LogLevel::Warn, msg);
     }
 
+    #[allow(dead_code)] // logger convenience shorthand
     pub fn error(&mut self, tick: u64, msg: &'static str) {
         self.log(tick, LogLevel::Error, msg);
     }

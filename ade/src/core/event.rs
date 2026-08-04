@@ -1,5 +1,7 @@
 //! Input event types — keyboard, mouse, scroll.
 
+// Most variants are dispatch-only: constructed by producers or matched as no-op placeholders.
+#[allow(dead_code)] // full event surface; several variants await producer wiring
 pub enum Event {
     Key(u8),
     MouseClick(i32, i32),

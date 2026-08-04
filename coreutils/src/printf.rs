@@ -2,7 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::{String, ToString};
-use libsarga::{args, io, println, sarga_main};
+use libsarga::{args, io, sarga_main};
 
 fn user_main() -> i32 {
     if args::argc() < 2 {

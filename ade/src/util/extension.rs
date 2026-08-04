@@ -29,7 +29,7 @@ pub enum ExtensionType {
 /// Widget position
 #[derive(Clone, Copy, Debug)]
 pub enum WidgetPosition {
-    Floating(i32, i32),     // x, y
+    Floating(i32, i32), // x, y
     CornerTopLeft,
     CornerTopRight,
     CornerBottomLeft,
@@ -203,7 +203,14 @@ impl ExtensionManager {
     }
 
     /// Create widget from extension
-    pub fn create_widget(&mut self, ext_id: &str, widget_id: &str, position: WidgetPosition, width: u16, height: u16) -> bool {
+    pub fn create_widget(
+        &mut self,
+        ext_id: &str,
+        widget_id: &str,
+        position: WidgetPosition,
+        width: u16,
+        height: u16,
+    ) -> bool {
         if self.get_extension(ext_id).is_none() {
             return false;
         }
@@ -239,7 +246,13 @@ impl ExtensionManager {
     }
 
     /// Create panel
-    pub fn create_panel(&mut self, ext_id: &str, panel_id: &str, position: WidgetPosition, height: u16) -> bool {
+    pub fn create_panel(
+        &mut self,
+        ext_id: &str,
+        panel_id: &str,
+        position: WidgetPosition,
+        height: u16,
+    ) -> bool {
         if self.get_extension(ext_id).is_none() {
             return false;
         }
@@ -295,7 +308,9 @@ impl ExtensionManager {
 
     /// Get current theme
     pub fn current_theme(&self) -> Option<&Theme> {
-        self.current_theme.as_ref().and_then(|id| self.get_theme(id))
+        self.current_theme
+            .as_ref()
+            .and_then(|id| self.get_theme(id))
     }
 
     /// Set wallpaper
@@ -308,7 +323,7 @@ impl ExtensionManager {
 
     /// Get current wallpaper
     pub fn current_wallpaper(&self) -> Option<&str> {
-        self.current_wallpaper.as_ref().map(|s| s.as_str())
+        self.current_wallpaper.as_deref()
     }
 
     /// Register status indicator
@@ -338,7 +353,11 @@ impl ExtensionManager {
 
     /// Remove notification handler
     pub fn remove_notification_handler(&mut self, handler_id: &str) -> bool {
-        if let Some(pos) = self.notification_handlers.iter().position(|h| h.id == handler_id) {
+        if let Some(pos) = self
+            .notification_handlers
+            .iter()
+            .position(|h| h.id == handler_id)
+        {
             self.notification_handlers.remove(pos);
             true
         } else {

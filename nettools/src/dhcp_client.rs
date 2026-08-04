@@ -34,7 +34,15 @@ fn user_main() -> i32 {
     let bcast = SockAddrIn::new([255, 255, 255, 255], 67);
     // ponytail: raw syscall for sendto since libsarga doesn't wrap it
     unsafe {
-        libsarga::syscall::syscall6(44, fd as u64, msg.as_ptr() as u64, msg.len() as u64, 0, bcast.as_bytes().as_ptr() as u64, bcast.as_bytes().len() as u64);
+        libsarga::syscall::syscall6(
+            44,
+            fd as u64,
+            msg.as_ptr() as u64,
+            msg.len() as u64,
+            0,
+            bcast.as_bytes().as_ptr() as u64,
+            bcast.as_bytes().len() as u64,
+        );
     }
     io::print_str("[dhcp] discover sent\n");
 
@@ -43,7 +51,13 @@ fn user_main() -> i32 {
     if n > 240 && buf[0] == 0x02 {
         io::print_str("[dhcp] offer received\n");
         let ip = [buf[16], buf[17], buf[18], buf[19]];
-        io::print_str(&alloc::format!("[dhcp] offered: {}.{}.{}.{}\n", ip[0], ip[1], ip[2], ip[3]));
+        io::print_str(&alloc::format!(
+            "[dhcp] offered: {}.{}.{}.{}\n",
+            ip[0],
+            ip[1],
+            ip[2],
+            ip[3]
+        ));
     } else {
         io::print_str("[dhcp] no response\n");
     }

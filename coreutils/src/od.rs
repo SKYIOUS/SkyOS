@@ -15,7 +15,7 @@ impl core::fmt::Write for StdoutWriter {
 fn user_main() -> i32 {
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
-        io::open(&path, 0).unwrap_or(0)
+        io::open(path, 0).unwrap_or(0)
     } else {
         0
     };
@@ -29,13 +29,13 @@ fn user_main() -> i32 {
         };
         let mut w = StdoutWriter;
         write!(w, "{:07o} ", offset).ok();
-        for i in 0..n {
-            write!(w, "{:03o}", buf[i]).ok();
+        for (i, b) in buf[..n].iter().enumerate() {
+            write!(w, "{:03o}", b).ok();
             if i % 2 == 1 {
                 write!(w, " ").ok();
             }
         }
-        write!(w, "\n").ok();
+        writeln!(w).ok();
         offset += n;
     }
     if fd != 0 {

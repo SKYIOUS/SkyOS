@@ -40,7 +40,7 @@ pub fn getcwd() -> Option<String> {
     let ret = io::getcwd(&mut buf);
     match ret {
         Ok(n) if n > 0 => {
-            let len = buf.iter().position(|&c| c == 0).unwrap_or(n as usize);
+            let len = buf.iter().position(|&c| c == 0).unwrap_or(n);
             Some(String::from_utf8_lossy(&buf[..len]).into_owned())
         }
         _ => None,

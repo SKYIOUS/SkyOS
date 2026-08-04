@@ -16,57 +16,58 @@ pub(crate) struct FileAssociationEngine {
 
 impl FileAssociationEngine {
     pub fn new() -> Self {
-        let mut assocs = Vec::new();
-        assocs.push(FileAssoc {
-            ext: "txt",
-            mime: "text/plain",
-            app_exec: "/bin/skyedit",
-        });
-        assocs.push(FileAssoc {
-            ext: "md",
-            mime: "text/markdown",
-            app_exec: "/bin/skyedit",
-        });
-        assocs.push(FileAssoc {
-            ext: "rs",
-            mime: "text/rust",
-            app_exec: "/bin/skyedit",
-        });
-        assocs.push(FileAssoc {
-            ext: "c",
-            mime: "text/x-c",
-            app_exec: "/bin/skyedit",
-        });
-        assocs.push(FileAssoc {
-            ext: "h",
-            mime: "text/x-c-header",
-            app_exec: "/bin/skyedit",
-        });
-        assocs.push(FileAssoc {
-            ext: "png",
-            mime: "image/png",
-            app_exec: "/bin/paint",
-        });
-        assocs.push(FileAssoc {
-            ext: "jpg",
-            mime: "image/jpeg",
-            app_exec: "/bin/paint",
-        });
-        assocs.push(FileAssoc {
-            ext: "bmp",
-            mime: "image/bmp",
-            app_exec: "/bin/paint",
-        });
-        assocs.push(FileAssoc {
-            ext: "sh",
-            mime: "text/x-shell",
-            app_exec: "/bin/sash",
-        });
-        assocs.push(FileAssoc {
-            ext: "calc",
-            mime: "application/x-calc",
-            app_exec: "/bin/calculator",
-        });
+        let assocs = alloc::vec![
+            FileAssoc {
+                ext: "txt",
+                mime: "text/plain",
+                app_exec: "/bin/skyedit",
+            },
+            FileAssoc {
+                ext: "md",
+                mime: "text/markdown",
+                app_exec: "/bin/skyedit",
+            },
+            FileAssoc {
+                ext: "rs",
+                mime: "text/rust",
+                app_exec: "/bin/skyedit",
+            },
+            FileAssoc {
+                ext: "c",
+                mime: "text/x-c",
+                app_exec: "/bin/skyedit",
+            },
+            FileAssoc {
+                ext: "h",
+                mime: "text/x-c-header",
+                app_exec: "/bin/skyedit",
+            },
+            FileAssoc {
+                ext: "png",
+                mime: "image/png",
+                app_exec: "/bin/paint",
+            },
+            FileAssoc {
+                ext: "jpg",
+                mime: "image/jpeg",
+                app_exec: "/bin/paint",
+            },
+            FileAssoc {
+                ext: "bmp",
+                mime: "image/bmp",
+                app_exec: "/bin/paint",
+            },
+            FileAssoc {
+                ext: "sh",
+                mime: "text/x-shell",
+                app_exec: "/bin/sash",
+            },
+            FileAssoc {
+                ext: "calc",
+                mime: "application/x-calc",
+                app_exec: "/bin/calculator",
+            },
+        ];
         FileAssociationEngine { assocs }
     }
 

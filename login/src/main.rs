@@ -142,7 +142,7 @@ fn user_main() -> i32 {
         .collect();
 
     let _ = execve(shell_name, &[], &env_refs);
-    return 1;
+    1
 }
 
 sarga_main!(user_main);

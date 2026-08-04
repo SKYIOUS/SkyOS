@@ -1,10 +1,10 @@
-use alloc::vec::Vec;
 use crate::ipc::message::{ApplicationId, RequestId};
 use crate::ipc::registry::ServiceId;
 use crate::ipc::request::ServiceRequest;
 use crate::ipc::response::ServiceResponse;
+use alloc::vec::Vec;
+use libsarga::ipc::{read_frame, write_frame, MAX_IPC_MSG};
 use libsarga::net::{PollFd, POLLIN};
-use libsarga::ipc::{MAX_IPC_MSG, read_frame, write_frame};
 
 struct IpcConnection {
     pid: u64,
@@ -55,7 +55,11 @@ impl IpcTransport {
         let mut pollfds: Vec<PollFd> = self
             .peers
             .iter()
-            .map(|c| PollFd { fd: c.fd, events: POLLIN, revents: 0 })
+            .map(|c| PollFd {
+                fd: c.fd,
+                events: POLLIN,
+                revents: 0,
+            })
             .collect();
         let ready = match libsarga::net::poll(&mut pollfds, 0) {
             Ok(n) => n,
@@ -75,23 +79,24 @@ impl IpcTransport {
             let mut buf = [0u8; MAX_IPC_MSG];
             match read_frame(self.peers[i].fd, &mut buf) {
                 Ok(0) => dead.push(self.peers[i].pid),
-                Ok(n) => {
-                    match libsarga::ipc::decode_request(&buf[..n]) {
-                        Some((req_id, service, method, args)) => {
-                            match (ServiceId::from_wire(service), alloc::string::String::from_utf8(method)) {
-                                (Some(svc), Ok(m)) => out.push(ServiceRequest {
-                                    request_id: RequestId(req_id),
-                                    service: svc,
-                                    method: m,
-                                    args,
-                                    sender: ApplicationId(self.peers[i].pid),
-                                }),
-                                _ => dead.push(self.peers[i].pid),
-                            }
+                Ok(n) => match libsarga::ipc::decode_request(&buf[..n]) {
+                    Some((req_id, service, method, args)) => {
+                        match (
+                            ServiceId::from_wire(service),
+                            alloc::string::String::from_utf8(method),
+                        ) {
+                            (Some(svc), Ok(m)) => out.push(ServiceRequest {
+                                request_id: RequestId(req_id),
+                                service: svc,
+                                method: m,
+                                args,
+                                sender: ApplicationId(self.peers[i].pid),
+                            }),
+                            _ => dead.push(self.peers[i].pid),
                         }
-                        None => dead.push(self.peers[i].pid),
                     }
-                }
+                    None => dead.push(self.peers[i].pid),
+                },
                 Err(_) => dead.push(self.peers[i].pid),
             }
         }
@@ -108,11 +113,8 @@ impl IpcTransport {
         for resp in responses {
             let pid = resp.recipient.0;
             if let Some(fd) = self.fd_for(pid) {
-                let frame = libsarga::ipc::encode_response(
-                    resp.request_id.0,
-                    resp.success,
-                    &resp.data,
-                );
+                let frame =
+                    libsarga::ipc::encode_response(resp.request_id.0, resp.success, &resp.data);
                 if write_frame(fd, &frame).is_err() {
                     dead.push(pid);
                 }

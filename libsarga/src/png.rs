@@ -49,7 +49,7 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
     if data.len() < 8 {
         return None;
     }
-    if &data[..8] != PNG_SIG {
+    if data[..8] != PNG_SIG {
         return None;
     }
 
@@ -94,7 +94,7 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
                 has_ihdr = true;
             }
             "PLTE" => {
-                if chunk_len % 3 != 0 {
+                if !chunk_len.is_multiple_of(3) {
                     return None;
                 }
                 for i in 0..chunk_len / 3 {
@@ -203,8 +203,8 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
                 }
             }
             ColorType::Indexed => {
-                for x in 0..width as usize {
-                    let idx = unfiltered[x] as usize;
+                for &v in unfiltered.iter().take(width as usize) {
+                    let idx = v as usize;
                     if idx < palette.len() {
                         let rgba = palette[idx];
                         pixels.push(
@@ -219,8 +219,7 @@ pub fn decode_png(data: &[u8]) -> Option<PngImage> {
                 }
             }
             ColorType::Grayscale => {
-                for x in 0..width as usize {
-                    let g = unfiltered[x];
+                for &g in unfiltered.iter().take(width as usize) {
                     pixels.push(0xFF000000 | (g as u32) << 16 | (g as u32) << 8 | g as u32);
                 }
             }

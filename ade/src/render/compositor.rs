@@ -92,6 +92,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    #[allow(dead_code)] // canvas drawing API surface
     pub fn fill_rect_alpha(&mut self, x: u32, y: u32, rw: u32, rh: u32, color: u32) {
         self.draw_rect_alpha(x, y, rw, rh, color);
     }
@@ -99,6 +100,7 @@ impl<'a> Canvas<'a> {
     /// Copy a rectangular region from a source buffer into this canvas at the
     /// same position `(dst_x, dst_y)`.  Both buffers are row-major `u32` pixel
     /// arrays; `src_w` is the source buffer's width in pixels.
+    #[allow(dead_code)] // canvas drawing API surface
     pub fn copy_rect(&mut self, src: &[u32], src_w: u32, dst_x: u32, dst_y: u32, rw: u32, rh: u32) {
         let x0 = dst_x.min(self.w);
         let y0 = dst_y.min(self.h);
@@ -214,6 +216,7 @@ impl<'a> Canvas<'a> {
         self.fill_rect(x, y, rw, rh, color);
     }
 
+    #[allow(clippy::too_many_arguments)] // public canvas API, matches sibling draw fns
     pub fn draw_gradient_rect(
         &mut self,
         x: u32,
@@ -525,7 +528,7 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn draw_shadow(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
-        let color_alpha = ((color >> 24) & 0xFF) as u32;
+        let color_alpha = (color >> 24) & 0xFF;
         if color_alpha == 0 || radius == 0 || w == 0 || h == 0 {
             return;
         }
@@ -543,6 +546,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    #[allow(dead_code)] // canvas drawing API surface
     pub fn draw_rect_alpha_blend(&mut self, x: u32, y: u32, rw: u32, rh: u32, color: u32) {
         let a = ((color >> 24) & 0xFF) as u8;
         if a == 0 {
@@ -566,6 +570,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    #[allow(dead_code)] // canvas drawing API surface
     pub fn box_blur(&self, buffer: &[u32], src_w: u32, src_h: u32, radius: u32) -> Vec<u32> {
         let w = src_w as usize;
         let h = src_h as usize;
@@ -577,7 +582,7 @@ impl<'a> Canvas<'a> {
         let mut out = vec![0u32; w * h];
         for y in 0..h {
             for x in 0..w {
-                let x0 = if x >= r { x - r } else { 0 };
+                let x0 = x.saturating_sub(r);
                 let x1 = (x + r + 1).min(w);
                 let mut r_sum = 0u64;
                 let mut g_sum = 0u64;
@@ -597,7 +602,7 @@ impl<'a> Canvas<'a> {
         }
         for y in 0..h {
             for x in 0..w {
-                let y0 = if y >= r { y - r } else { 0 };
+                let y0 = y.saturating_sub(r);
                 let y1 = (y + r + 1).min(h);
                 let mut r_sum = 0u64;
                 let mut g_sum = 0u64;
@@ -617,7 +622,7 @@ impl<'a> Canvas<'a> {
         }
         for y in 0..h {
             for x in 0..w {
-                let x0 = if x >= r { x - r } else { 0 };
+                let x0 = x.saturating_sub(r);
                 let x1 = (x + r + 1).min(w);
                 let mut r_sum = 0u64;
                 let mut g_sum = 0u64;
@@ -669,6 +674,7 @@ pub(crate) struct Compositor {
     layers: [LayerBuffer; LAYER_COUNT],
     w: u32,
     h: u32,
+    #[allow(dead_code)] // damage tracking, consumed by future incremental compose
     pub damage: DamageTracker,
     first_frame: bool,
 }
@@ -700,6 +706,7 @@ impl Compositor {
     }
 
     /// Clear only the given rectangular regions in every layer buffer.
+    #[allow(dead_code)] // layer compositor API surface
     pub fn clear_region(&mut self, rects: &[Rect]) {
         let sw = self.w as usize;
         for r in rects {
@@ -736,6 +743,7 @@ impl Compositor {
         }
     }
 
+    #[allow(dead_code)] // layer compositor API surface
     pub fn blur_region(&mut self, layer: Layer, rect: Rect, radius: u32) {
         let rw = rect.w;
         let rh = rect.h;
@@ -753,7 +761,7 @@ impl Compositor {
         if cw == 0 || ch == 0 {
             return;
         }
-        let mut cv = self.layer_canvas(layer);
+        let cv = self.layer_canvas(layer);
         let mut region = vec![0u32; (cw * ch) as usize];
         for dy in 0..ch {
             let src_off = ((y0 + dy) * cv.w + x0) as usize;
@@ -784,7 +792,7 @@ impl Compositor {
     pub fn compose(&mut self, win: &mut libsarga::gui::Window, damage_rects: Option<&[Rect]>) {
         let dst = win.buffer_mut();
         let total = (self.w * self.h) as usize;
-        let full = self.first_frame || damage_rects.map_or(true, |r| r.is_empty());
+        let full = self.first_frame || damage_rects.is_none_or(|r| r.is_empty());
         self.first_frame = false;
 
         if full {

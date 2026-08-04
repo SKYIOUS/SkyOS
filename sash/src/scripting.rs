@@ -87,7 +87,7 @@ fn execute_lines(input: &str, ctx: &mut ScriptContext) -> i64 {
         } else if trimmed.starts_with("return ") {
             break;
         } else {
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -153,7 +153,7 @@ fn execute_if(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize {
                 i = ni;
                 continue;
             }
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -185,7 +185,7 @@ fn execute_if(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize {
                     i = ni;
                     continue;
                 }
-                execute_line_trimmed(&trimmed, ctx);
+                execute_line_trimmed(trimmed, ctx);
                 i += 1;
             }
         }
@@ -252,7 +252,7 @@ fn execute_if_elif(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usi
                 i = ni;
                 continue;
             }
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -283,7 +283,7 @@ fn execute_if_elif(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usi
                     i = ni;
                     continue;
                 }
-                execute_line_trimmed(&trimmed, ctx);
+                execute_line_trimmed(trimmed, ctx);
                 i += 1;
             }
         }
@@ -467,7 +467,7 @@ fn execute_case(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize 
                     break;
                 }
                 if matched {
-                    execute_line_trimmed(&l, ctx);
+                    execute_line_trimmed(l, ctx);
                 }
                 i += 1;
             }
@@ -534,7 +534,7 @@ fn expand_vars(input: &str, ctx: &ScriptContext) -> String {
                         pos += 1;
                     }
                 }
-                c if c.is_digit(10) => {
+                c if c.is_ascii_digit() => {
                     let idx = (c as u8 - b'0') as usize;
                     let val = if idx == 0 {
                         ctx.pos_args.first().cloned().unwrap_or_default()

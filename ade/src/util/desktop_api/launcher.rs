@@ -9,6 +9,7 @@ pub(crate) fn launch(desktop: &mut Desktop, _app: ApplicationId, path: &str, tit
 }
 
 /// Desktop API v1.0
+#[allow(clippy::too_many_arguments)] // API surface: launch with placement params
 pub(crate) fn launch_at(
     desktop: &mut Desktop,
     _app: ApplicationId,

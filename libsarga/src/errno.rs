@@ -15,7 +15,7 @@ pub extern "C" fn __errno_location() -> *mut i32 {
     if r == 0 && base != 0 {
         return unsafe { &mut *(base as *mut i32) };
     }
-    __ERRNO.as_ptr() as *mut i32
+    __ERRNO.as_ptr()
 }
 
 /// Sets the current thread's error number.

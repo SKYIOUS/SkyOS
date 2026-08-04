@@ -8,8 +8,8 @@ pub(crate) mod overlay;
 pub(crate) mod snapshot;
 
 use alloc::format;
-use layer::Layer;
 use compositor::Compositor;
+use layer::Layer;
 
 pub(crate) fn render(
     win: &mut libsarga::gui::Window,
@@ -50,7 +50,13 @@ pub(crate) fn render(
                 if aw.flags.shadow {
                     cv.draw_shadow(aw.x as u32, aw.y as u32, aw.w, aw.h, 8, 0x60000000);
                 }
-                crate::core::window::draw(&mut cv, snap.theme, aw, snap.cursor_visible, snap.explorers);
+                crate::core::window::draw(
+                    &mut cv,
+                    snap.theme,
+                    aw,
+                    snap.cursor_visible,
+                    snap.explorers,
+                );
             }
         }
         for aw in snap.windows {
@@ -58,7 +64,13 @@ pub(crate) fn render(
                 if aw.flags.shadow {
                     cv.draw_shadow(aw.x as u32, aw.y as u32, aw.w, aw.h, 8, 0x60000000);
                 }
-                crate::core::window::draw(&mut cv, snap.theme, aw, snap.cursor_visible, snap.explorers);
+                crate::core::window::draw(
+                    &mut cv,
+                    snap.theme,
+                    aw,
+                    snap.cursor_visible,
+                    snap.explorers,
+                );
             }
         }
     }
@@ -77,7 +89,12 @@ pub(crate) fn render(
         let mut cv = comp.layer_canvas(Layer::Overlay);
         overlay::draw_context_menu(&mut cv, snap);
         overlay::draw_clipboard(&mut cv, snap);
-        notification_overlay::draw_notifications(&mut cv, snap.notifications, snap.mouse, snap.theme);
+        notification_overlay::draw_notifications(
+            &mut cv,
+            snap.notifications,
+            snap.mouse,
+            snap.theme,
+        );
         if let Some(s) = snap.settings {
             s.draw(&mut cv, snap);
         }
@@ -142,7 +159,13 @@ pub(crate) fn render(
         }
         // Snap preview (translucent rect showing where window will land)
         if let Some((sx, sy, sw, sh)) = snap.snap_preview {
-            cv.draw_rect_alpha(sx as u32, sy as u32, sw, sh, crate::core::constants::SNAP_PREVIEW_COLOR);
+            cv.draw_rect_alpha(
+                sx as u32,
+                sy as u32,
+                sw,
+                sh,
+                crate::core::constants::SNAP_PREVIEW_COLOR,
+            );
         }
         // Debug overlay (F12)
         if snap.debug_overlay {
@@ -152,19 +175,61 @@ pub(crate) fn render(
             let fps = 62 / snap.debug_metrics.frame_time_avg.max(1);
             cv.draw_string(x, ly, &format!("FPS: {}", fps), 0xFFFFFF00, 0);
             ly += 16;
-            cv.draw_string(x, ly, &format!("Frame: {} ticks", snap.debug_metrics.frame_time_avg), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Frame: {} ticks", snap.debug_metrics.frame_time_avg),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("Mem: {}B", snap.debug_metrics.heap_usage), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Mem: {}B", snap.debug_metrics.heap_usage),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("Windows: {}", snap.window_count), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Windows: {}", snap.window_count),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("Notifs: {}", snap.notification_count), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Notifs: {}", snap.notification_count),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("Mouse: {},{}", snap.mouse.x, snap.mouse.y), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Mouse: {},{}", snap.mouse.x, snap.mouse.y),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("IPC msgs: {}", snap.debug_metrics.event_dispatch_count), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("IPC msgs: {}", snap.debug_metrics.event_dispatch_count),
+                0xFFFFFF00,
+                0,
+            );
             ly += 16;
-            cv.draw_string(x, ly, &format!("Dirty: {}", snap.debug_metrics.dirty_regions), 0xFFFFFF00, 0);
+            cv.draw_string(
+                x,
+                ly,
+                &format!("Dirty: {}", snap.debug_metrics.dirty_regions),
+                0xFFFFFF00,
+                0,
+            );
         }
     }
 

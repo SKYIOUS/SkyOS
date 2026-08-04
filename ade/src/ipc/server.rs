@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use crate::ipc::channel::{Channel, ChannelType};
 use crate::ipc::message::{ApplicationId, ChannelId, Message};
 use crate::ipc::request::ServiceRequest;
 use crate::ipc::response::ServiceResponse;
+use alloc::vec::Vec;
 
 /// IPC API v1.0 — STABLE
 pub(crate) struct IpcServer {

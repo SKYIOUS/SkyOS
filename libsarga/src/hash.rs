@@ -47,11 +47,11 @@ pub fn hex_decode(s: &[u8]) -> Option<alloc::vec::Vec<u8>> {
 }
 
 /// Verify a password against a shadow file entry.
-/// 
+///
 /// `shadow_data` is the raw bytes of /etc/shadow.
 /// `username` is the username to look up.
 /// `password` is the password to verify.
-/// 
+///
 /// Returns true if password matches, false otherwise.
 /// Only accepts PBKDF2-HMAC-SHA256 entries for security.
 /// Returns false if shadow file is unreadable or user not found.

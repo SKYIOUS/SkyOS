@@ -57,7 +57,7 @@ impl RecoverySystem {
         if n > 0 {
             let s = core::str::from_utf8(&buf[..n as usize]).unwrap_or("");
             s.split(':')
-                .last()
+                .next_back()
                 .and_then(|c| c.trim().parse().ok())
                 .unwrap_or(0)
         } else {

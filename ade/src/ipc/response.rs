@@ -1,5 +1,5 @@
-use alloc::vec::Vec;
 use crate::ipc::message::{ApplicationId, RequestId};
+use alloc::vec::Vec;
 
 pub(crate) struct ServiceResponse {
     pub request_id: RequestId,

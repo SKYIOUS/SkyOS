@@ -5,7 +5,7 @@ use crate::ipc::permission::PERM_SETTINGS;
 use crate::ipc::ApplicationId;
 
 /// Desktop API v1.0
-pub(crate) fn current<'a>(desktop: &'a Desktop, _app: ApplicationId) -> &'a libsarga::theme::Theme {
+pub(crate) fn current(desktop: &Desktop, _app: ApplicationId) -> &libsarga::theme::Theme {
     desktop.theme_svc.current()
 }
 

@@ -2,8 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::string::String;
-use alloc::vec::Vec;
-use libsarga::{fs, gui::Window, io, process, sarga_main, theme::Theme};
+use libsarga::{gui::Window, io, process, sarga_main, theme::Theme};
 
 fn user_main() -> i32 {
     let mut win = Window::create("SARGA OS Installer", 640, 480).expect("Window::create failed");
@@ -11,7 +10,7 @@ fn user_main() -> i32 {
     let mut step = 0;
     let mut username = String::new();
     let mut password = String::new();
-    let mut target_disk = String::from("/dev/sda");
+    let target_disk = String::from("/dev/sda");
 
     loop {
         let mouse = win.get_mouse();
@@ -21,13 +20,13 @@ fn user_main() -> i32 {
             if step == 2 {
                 if key == 0x08 || key == 0x7F {
                     username.pop();
-                } else if key >= 0x20 && key < 0x7F {
+                } else if (0x20..0x7F).contains(&key) {
                     username.push(key as char);
                 }
             } else if step == 3 {
                 if key == 0x08 || key == 0x7F {
                     password.pop();
-                } else if key >= 0x20 && key < 0x7F {
+                } else if (0x20..0x7F).contains(&key) {
                     password.push(key as char);
                 }
             }
@@ -85,7 +84,7 @@ fn user_main() -> i32 {
             3 => {
                 win.draw_string(50, 100, "Create Password:", theme.text, 0);
                 win.draw_rounded_rect(50, 130, 540, 40, 6, theme.bg_surface);
-                let stars: String = core::iter::repeat('*').take(password.len()).collect();
+                let stars: String = "*".repeat(password.len());
                 win.draw_string(70, 142, &stars, theme.text, 0);
                 if draw_button(&mut win, &theme, 260, 300, 120, 40, "Install", mouse) && m_pressed {
                     step = 4;
@@ -111,6 +110,8 @@ fn user_main() -> i32 {
     }
 }
 
+// 8 positional args is acceptable for a GUI draw helper.
+#[allow(clippy::too_many_arguments)]
 fn draw_button(
     win: &mut Window,
     theme: &Theme,

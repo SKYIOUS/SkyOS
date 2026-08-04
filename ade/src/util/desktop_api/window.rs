@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use crate::core::desktop::Desktop;
+use crate::core::window::WindowId;
 use crate::ipc::permission::PERM_WINDOW_CONTROL;
 use crate::ipc::ApplicationId;
-use crate::core::window::WindowId;
 
 /// Desktop API v1.0
 pub(crate) fn create(

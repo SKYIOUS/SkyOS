@@ -1,3 +1,4 @@
+#[allow(dead_code)] // reserved severity levels, only Trace/Info constructed in-tree
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LogLevel {
     Trace = 0,

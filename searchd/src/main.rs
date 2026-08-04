@@ -9,12 +9,20 @@ use libsarga::io::{self, close, getdents64, open, stat, Stat};
 use libsarga::sarga_main;
 
 const SKIP_PREFIXES: &[&str] = &[
-    "/dev/", "/proc/", "/sys/", "/tmp/", "/var/cache/",
-    "/var/spool/", "/var/log/", "/mnt/",
+    "/dev/",
+    "/proc/",
+    "/sys/",
+    "/tmp/",
+    "/var/cache/",
+    "/var/spool/",
+    "/var/log/",
+    "/mnt/",
 ];
 
 fn is_skipped(path: &str) -> bool {
-    SKIP_PREFIXES.iter().any(|p| path.starts_with(p) || path == p.trim_end_matches('/'))
+    SKIP_PREFIXES
+        .iter()
+        .any(|p| path.starts_with(p) || path == p.trim_end_matches('/'))
 }
 
 fn walk_dir(path: &str, entries: &mut Vec<(String, String, u64, bool)>, depth: usize) {
@@ -71,7 +79,7 @@ fn walk_dir(path: &str, entries: &mut Vec<(String, String, u64, bool)>, depth: u
         }
 
         let is_dir = d_type == 4;
-        let size = stat(&full).map(|s: Stat| s.size as u64).unwrap_or(0);
+        let size = stat(&full).map(|s: Stat| s.size).unwrap_or(0);
         entries.push((name.to_string(), full.clone(), size, is_dir));
 
         if is_dir && depth < 6 {
@@ -91,7 +99,10 @@ fn write_index(entries: &[(String, String, u64, bool)]) {
     let mut out = String::new();
     for (name, path, size, is_dir) in entries {
         let escaped_path = path.replace('|', "_");
-        out.push_str(&format!("{}|{}|{}|{}\n", name, escaped_path, size, *is_dir as u8));
+        out.push_str(&format!(
+            "{}|{}|{}|{}\n",
+            name, escaped_path, size, *is_dir as u8
+        ));
     }
     // Atomic write: write to temp then rename
     let _ = fs::write_file("/tmp/search.idx.tmp", &out);
@@ -103,7 +114,7 @@ fn user_main() -> i32 {
     let mut cycle = 0u64;
 
     loop {
-        if cycle == 0 || cycle % 12 == 0 {
+        if cycle == 0 || cycle.is_multiple_of(12) {
             io::print_str(&format!("[searchd] indexing (cycle {})\n", cycle));
         }
         let entries = build_index();

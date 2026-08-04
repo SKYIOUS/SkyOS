@@ -6,8 +6,14 @@ use libsarga::{args, io, println, sarga_main, syscall};
 fn user_main() -> i32 {
     if args::argc() > 1 {
         let name = args::get(1).unwrap_or("");
-        let fd = unsafe { syscall::syscall2(2, "/ctl/kernel/hostname\0".as_ptr() as u64, 0x42) };
-        if (fd as i64) >= 0 {
+        let fd = unsafe {
+            syscall::syscall2(
+                2,
+                c"/ctl/kernel/hostname".as_ptr().cast::<u8>() as u64,
+                0x42,
+            )
+        };
+        if fd >= 0 {
             unsafe {
                 syscall::syscall3(1, fd as u64, name.as_ptr() as u64, name.len() as u64);
             }

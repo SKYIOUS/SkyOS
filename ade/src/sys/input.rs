@@ -5,8 +5,8 @@
 //! Manages input devices, keyboard layouts, and input accessibility settings.
 //! Provides abstraction for future device drivers and advanced input capabilities.
 
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Input device type
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +41,7 @@ pub struct MouseButtons {
 }
 
 /// Accessibility settings
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct AccessibilitySettings {
     pub sticky_keys_enabled: bool,
     pub slow_keys_enabled: bool,
@@ -51,21 +51,6 @@ pub struct AccessibilitySettings {
     pub large_text: bool,
     pub screen_magnifier: bool,
     pub screen_reader: bool,
-}
-
-impl Default for AccessibilitySettings {
-    fn default() -> Self {
-        AccessibilitySettings {
-            sticky_keys_enabled: false,
-            slow_keys_enabled: false,
-            bounce_keys_enabled: false,
-            mouse_keys_enabled: false,
-            high_contrast: false,
-            large_text: false,
-            screen_magnifier: false,
-            screen_reader: false,
-        }
-    }
 }
 
 /// Input device configuration
@@ -101,8 +86,8 @@ impl Default for KeyboardSettings {
 #[derive(Clone, Copy, Debug)]
 pub struct MouseSettings {
     pub accel_enabled: bool,
-    pub accel_profile: u8,     // 0=flat, 1=adaptive, 2=custom
-    pub sensitivity: u8,        // 1-100
+    pub accel_profile: u8, // 0=flat, 1=adaptive, 2=custom
+    pub sensitivity: u8,   // 1-100
     pub double_click_time_ms: u16,
     pub button_map: MouseButtons,
     pub natural_scroll: bool,
@@ -265,7 +250,7 @@ impl InputManager {
 
     /// Set mouse sensitivity
     pub fn set_mouse_sensitivity(&mut self, sensitivity: u8) {
-        self.mouse_settings.sensitivity = sensitivity.min(100).max(1);
+        self.mouse_settings.sensitivity = sensitivity.clamp(1, 100);
     }
 
     /// Set mouse acceleration

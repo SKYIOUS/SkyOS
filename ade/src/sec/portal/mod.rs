@@ -7,7 +7,11 @@ pub(crate) mod window;
 use crate::core::desktop::Desktop;
 use crate::ipc::{ApplicationId, ServiceRequest, ServiceResponse};
 
-pub(crate) fn dispatch(desktop: &mut Desktop, app: ApplicationId, req: &ServiceRequest) -> ServiceResponse {
+pub(crate) fn dispatch(
+    desktop: &mut Desktop,
+    app: ApplicationId,
+    req: &ServiceRequest,
+) -> ServiceResponse {
     match req.service {
         crate::ipc::ServiceId::Clipboard => clipboard::handle_request(desktop, app, req),
         crate::ipc::ServiceId::Notification => notification::handle_request(desktop, app, req),

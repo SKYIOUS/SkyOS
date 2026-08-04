@@ -55,7 +55,6 @@ impl ScrollBar {
 
     pub fn scroll_offset(&self) -> u32 {
         let max_scroll = self.content_size.saturating_sub(self.view_size);
-        if max_scroll == 0 {}
         (self.thumb_pos as f32 / (self.length as f32 - self.thumb_size as f32) * max_scroll as f32)
             as u32
     }
@@ -102,28 +101,34 @@ impl Widget for ScrollBar {
 
     fn handle_click(&mut self, x: i32, y: i32, pressed: bool) -> bool {
         if self.vertical {
-            if x >= self.x && x < self.x + 6 && y >= self.y && y < self.y + self.length as i32 {
-                if pressed {
-                    self.dragging = true;
-                    self.drag_offset = y - self.y as i32 - self.thumb_pos as i32;
-                    return true;
-                }
+            if x >= self.x
+                && x < self.x + 6
+                && y >= self.y
+                && y < self.y + self.length as i32
+                && pressed
+            {
+                self.dragging = true;
+                self.drag_offset = y - self.y - self.thumb_pos as i32;
+                return true;
             }
             if self.dragging && pressed {
-                let new_pos = (y - self.y as i32 - self.drag_offset).max(0) as u32;
+                let new_pos = (y - self.y - self.drag_offset).max(0) as u32;
                 self.thumb_pos = new_pos.min(self.length.saturating_sub(self.thumb_size));
                 return true;
             }
         } else {
-            if x >= self.x && x < self.x + self.length as i32 && y >= self.y && y < self.y + 6 {
-                if pressed {
-                    self.dragging = true;
-                    self.drag_offset = x - self.x as i32 - self.thumb_pos as i32;
-                    return true;
-                }
+            if x >= self.x
+                && x < self.x + self.length as i32
+                && y >= self.y
+                && y < self.y + 6
+                && pressed
+            {
+                self.dragging = true;
+                self.drag_offset = x - self.x - self.thumb_pos as i32;
+                return true;
             }
             if self.dragging && pressed {
-                let new_pos = (x - self.x as i32 - self.drag_offset).max(0) as u32;
+                let new_pos = (x - self.x - self.drag_offset).max(0) as u32;
                 self.thumb_pos = new_pos.min(self.length.saturating_sub(self.thumb_size));
                 return true;
             }

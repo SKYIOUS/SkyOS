@@ -236,7 +236,13 @@ pub(crate) fn draw(
         false,
     );
 
-    canvas.draw_string(aw.x as u32 + 12, aw.y as u32 + 7, &aw.title, apply_alpha(0xFFFFFFFF, aw.flags.opacity), 0);
+    canvas.draw_string(
+        aw.x as u32 + 12,
+        aw.y as u32 + 7,
+        &aw.title,
+        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+        0,
+    );
 
     if aw.always_on_top {
         canvas.draw_string(
@@ -252,16 +258,46 @@ pub(crate) fn draw(
     let close_x = aw.x as u32 + aw.w - 28;
     let close_y = aw.y as u32 + 6;
 
-    canvas.draw_rounded_rect(close_x, close_y, 22, 18, 4, apply_alpha(theme.error, aw.flags.opacity));
-    canvas.draw_string(close_x + 7, close_y + 2, "x", apply_alpha(0xFFFFFFFF, aw.flags.opacity), 0);
+    canvas.draw_rounded_rect(
+        close_x,
+        close_y,
+        22,
+        18,
+        4,
+        apply_alpha(theme.error, aw.flags.opacity),
+    );
+    canvas.draw_string(
+        close_x + 7,
+        close_y + 2,
+        "x",
+        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+        0,
+    );
 
     // Minimize button
     let min_x = aw.x as u32 + aw.w - 54;
-    canvas.draw_rounded_rect(min_x, close_y, 22, 18, 4, apply_alpha(theme.bg_elevated, aw.flags.opacity));
-    canvas.draw_line_h(min_x + 6, close_y + 14, 10, apply_alpha(0xFFFFFFFF, aw.flags.opacity));
+    canvas.draw_rounded_rect(
+        min_x,
+        close_y,
+        22,
+        18,
+        4,
+        apply_alpha(theme.bg_elevated, aw.flags.opacity),
+    );
+    canvas.draw_line_h(
+        min_x + 6,
+        close_y + 14,
+        10,
+        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+    );
 
     // Separation line
-    canvas.draw_line_h(aw.x as u32 + 1, aw.y as u32 + 29, aw.w - 2, apply_alpha(theme.separator, aw.flags.opacity));
+    canvas.draw_line_h(
+        aw.x as u32 + 1,
+        aw.y as u32 + 29,
+        aw.w - 2,
+        apply_alpha(theme.separator, aw.flags.opacity),
+    );
 
     // Explorer content
     if let Some(exp_id) = aw.explorer_id {
@@ -288,7 +324,13 @@ pub(crate) fn draw(
 
         let display = if line.len() > 55 { &line[..55] } else { line };
 
-        canvas.draw_string(aw.x as u32 + 8, ly, display, apply_alpha(theme.text_secondary, aw.flags.opacity), 0);
+        canvas.draw_string(
+            aw.x as u32 + 8,
+            ly,
+            display,
+            apply_alpha(theme.text_secondary, aw.flags.opacity),
+            0,
+        );
     }
 
     if cursor_visible && aw.focused && !aw.content.is_empty() {

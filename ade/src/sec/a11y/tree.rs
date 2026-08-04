@@ -1,6 +1,6 @@
-use alloc::vec::Vec;
-use crate::sec::a11y::node::{A11yNode, A11yRole, A11yState};
 use crate::sec::a11y::focus::FocusDirection;
+use crate::sec::a11y::node::{A11yNode, A11yRole, A11yState};
+use alloc::vec::Vec;
 
 pub(crate) struct A11yTree {
     pub nodes: Vec<A11yNode>,
@@ -71,27 +71,30 @@ impl A11yTree {
         }
     }
 
-    pub fn move_focus(&mut self, dir: FocusDirection) -> bool {
+    // keep: stub; FocusManager::move_focus is the live navigation path
+    #[allow(dead_code)]
+    pub fn move_focus(&mut self, _dir: FocusDirection) -> bool {
         false
     }
 
+    // keep: getter reserved for a11y clients
+    #[allow(dead_code)]
     pub fn focused_node(&self) -> Option<&A11yNode> {
-        self.focused_id.and_then(|id| self.nodes.iter().find(|n| n.id == id))
+        self.focused_id
+            .and_then(|id| self.nodes.iter().find(|n| n.id == id))
     }
 
     pub fn node_at(&self, x: i32, y: i32) -> Option<&A11yNode> {
-        for n in self.nodes.iter().rev() {
-            if x >= n.bounds.0
+        self.nodes.iter().rev().find(|&n| {
+            x >= n.bounds.0
                 && x < n.bounds.0 + n.bounds.2 as i32
                 && y >= n.bounds.1
                 && y < n.bounds.1 + n.bounds.3 as i32
-            {
-                return Some(n);
-            }
-        }
-        None
+        })
     }
 
+    // keep: lookup reserved for a11y clients
+    #[allow(dead_code)]
     pub fn find_by_role(&self, role: A11yRole) -> Option<&A11yNode> {
         self.nodes.iter().find(|n| n.role == role)
     }

@@ -14,7 +14,7 @@ pub(crate) mod file_assoc;
 pub(crate) mod log;
 pub(crate) mod package;
 pub(crate) mod plugin;
+pub(crate) mod profiler;
 pub(crate) mod recovery;
 pub(crate) mod sdk;
 pub(crate) mod testing;
-pub(crate) mod profiler;

@@ -6,7 +6,11 @@ use alloc::string::String;
 pub(crate) struct PackageInstaller;
 
 impl PackageInstaller {
-    pub fn install(db: &mut PackageDatabase, metadata: PackageMetadata, install_path: &str) -> bool {
+    pub fn install(
+        db: &mut PackageDatabase,
+        metadata: PackageMetadata,
+        install_path: &str,
+    ) -> bool {
         if db.is_installed(&metadata.id) {
             return false;
         }

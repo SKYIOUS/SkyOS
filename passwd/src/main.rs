@@ -48,7 +48,7 @@ fn hex_encode(bytes: &[u8]) -> Vec<u8> {
 
 fn generate_salt() -> [u8; 16] {
     let mut salt = [0u8; 16];
-    
+
     // Try to read from /dev/urandom if available (best entropy source)
     if let Ok(fd) = libsarga::io::open("/dev/urandom", 0) {
         let mut buf = [0u8; 16];
@@ -58,21 +58,22 @@ fn generate_salt() -> [u8; 16] {
         }
         let _ = libsarga::io::close(fd);
     }
-    
+
     // Fallback: use clock-based entropy (better than fixed constant)
     // NOTE: This is not cryptographically secure. A proper getrandom syscall should be added.
     let pid = libsarga::process::getpid();
     let time = libsarga::io::clock_gettime(0).unwrap_or((0, 0));
-    
-    let mut seed = pid.wrapping_mul(0x9E3779B97F4A7C15)
+
+    let mut seed = pid
+        .wrapping_mul(0x9E3779B97F4A7C15)
         .wrapping_add(time.0 as u64)
         .wrapping_add(time.1 as u64);
-    
-    for i in 0..16 {
+
+    for s in &mut salt {
         seed = seed.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
-        salt[i] = (seed >> 8) as u8;
+        *s = (seed >> 8) as u8;
     }
-    
+
     salt
 }
 

@@ -29,6 +29,7 @@ impl RawMutex {
 
     /// Attempt to acquire the lock with a timeout in milliseconds.
     /// Returns Ok(()) if lock acquired, Err(()) if timeout elapsed.
+    #[allow(clippy::result_unit_err)] // internal timeout convention; Err carries no payload
     pub fn try_lock_timeout(&self, timeout_ms: Option<u64>) -> Result<(), ()> {
         let start = if timeout_ms.is_some() {
             Some(clock_gettime_ns())
@@ -63,6 +64,12 @@ impl RawMutex {
         // SAFETY: FUTEX_WAKE syscall is safe here - state.as_ptr() is a valid pointer to AtomicU32,
         // and waking waiters is safe even if none are waiting.
         unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 1, 1) };
+    }
+}
+
+impl Default for RawMutex {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -134,14 +141,14 @@ impl RwLock {
         loop {
             let state = self.state.load(Ordering::Acquire);
             // Check if writer is not holding lock and reader count won't overflow
-            if (state & RWLOCK_WRITER) == 0 && (state & RWLOCK_READER_MASK) < RWLOCK_READER_MASK {
-                if self
+            if (state & RWLOCK_WRITER) == 0
+                && (state & RWLOCK_READER_MASK) < RWLOCK_READER_MASK
+                && self
                     .state
                     .compare_exchange(state, state + 1, Ordering::Acquire, Ordering::Relaxed)
                     .is_ok()
-                {
-                    return;
-                }
+            {
+                return;
             }
             // SAFETY: FUTEX_WAIT syscall is safe here - state.as_ptr() is a valid pointer to AtomicU32
             unsafe { syscall3(202, self.state.as_ptr() as u64, 0, 1) };
@@ -163,14 +170,13 @@ impl RwLock {
         loop {
             let state = self.state.load(Ordering::Acquire);
             // Try to acquire writer lock if no readers or writer
-            if state == 0 {
-                if self
+            if state == 0
+                && self
                     .state
                     .compare_exchange(0, RWLOCK_WRITER, Ordering::Acquire, Ordering::Relaxed)
                     .is_ok()
-                {
-                    return;
-                }
+            {
+                return;
             }
             // SAFETY: FUTEX_WAIT syscall is safe here - state.as_ptr() is a valid pointer to AtomicU32
             unsafe { syscall3(202, self.state.as_ptr() as u64, 0, 1) };
@@ -195,6 +201,12 @@ impl RwLock {
         self.state.store(0, Ordering::Release);
         // Wake all waiting readers and writers
         unsafe { syscall3(202, self.state.as_ptr() as u64, 1, i32::MAX as u64) };
+    }
+}
+
+impl Default for RwLock {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -285,6 +297,12 @@ impl Condvar {
     pub fn broadcast(&self) {
         self.state.store(0, Ordering::Release);
         unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 1, i32::MAX as u64) };
+    }
+}
+
+impl Default for Condvar {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

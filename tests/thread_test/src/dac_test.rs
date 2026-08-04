@@ -76,7 +76,7 @@ fn main_test() -> i32 {
 
     // Test 2: chmod to 0600
     println!("Test 2: chmod to 0600");
-    let r = raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o600);
+    let r = raw::chmod(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), 0o600);
     if r < 0 {
         println!("  FAIL: chmod returned {}", r);
         failed += 1;
@@ -93,11 +93,11 @@ fn main_test() -> i32 {
 
     // Test 3: open for write after chmod 0444 (read-only) should fail
     println!("Test 3: open(O_WRONLY) on read-only file");
-    if raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o444) < 0 {
+    if raw::chmod(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), 0o444) < 0 {
         println!("  FAIL: chmod");
         failed += 1;
     } else {
-        let wfd = raw::open("/tmp_dac_test1.txt\0".as_ptr(), O_WRONLY, 0);
+        let wfd = raw::open(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), O_WRONLY, 0);
         if wfd < 0 {
             println!("  PASS: open write denied (EACCES)");
         } else {
@@ -109,7 +109,7 @@ fn main_test() -> i32 {
 
     // Test 4: but root (uid 0) can always read
     println!("Test 4: root can open 0444 for read");
-    let rfd = raw::open("/tmp_dac_test1.txt\0".as_ptr(), O_RDONLY, 0);
+    let rfd = raw::open(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), O_RDONLY, 0);
     if rfd >= 0 {
         println!("  PASS: root can read");
         raw::close(rfd);
@@ -138,13 +138,13 @@ fn main_test() -> i32 {
             println!("  FAIL: expected 0600, got {:o}", perms2);
             failed += 1;
         }
-        raw::unlink("/tmp_dac_test2.txt\0".as_ptr());
+        raw::unlink(c"/tmp_dac_test2.txt".as_ptr().cast::<u8>());
     }
     raw::umask(old as u32);
 
     // Test 6: chown (root only test — we're uid 0 by default)
     println!("Test 6: chown to uid=1,gid=1");
-    let r = raw::chown("/tmp_dac_test1.txt\0".as_ptr(), 1, 1);
+    let r = raw::chown(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), 1, 1);
     if r < 0 {
         println!("  FAIL: chown {}", r);
         failed += 1;
@@ -154,12 +154,12 @@ fn main_test() -> i32 {
 
     // Test 7: access() syscall
     println!("Test 7: access() on 0444 file");
-    if raw::chmod("/tmp_dac_test1.txt\0".as_ptr(), 0o444) < 0 {
+    if raw::chmod(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), 0o444) < 0 {
         println!("  FAIL: chmod");
         failed += 1;
     } else {
-        let r_ok = raw::access("/tmp_dac_test1.txt\0".as_ptr(), R_OK);
-        let w_ok = raw::access("/tmp_dac_test1.txt\0".as_ptr(), W_OK);
+        let r_ok = raw::access(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), R_OK);
+        let w_ok = raw::access(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>(), W_OK);
         println!("  access R_OK = {} (0=ok), W_OK = {} (0=ok)", r_ok, w_ok);
         if r_ok == 0 && w_ok < 0 {
             println!("  PASS: read allowed, write denied");
@@ -170,7 +170,7 @@ fn main_test() -> i32 {
     }
 
     // Cleanup
-    raw::unlink("/tmp_dac_test1.txt\0".as_ptr());
+    raw::unlink(c"/tmp_dac_test1.txt".as_ptr().cast::<u8>());
 
     if failed == 0 {
         println!("PASS: all DAC tests passed");

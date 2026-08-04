@@ -14,10 +14,13 @@ pub(crate) struct BenchmarkResult {
     pub memory_delta: usize,
 }
 
-pub(crate) fn run_benchmarks(desktop: &mut crate::core::desktop::Desktop) -> alloc::vec::Vec<BenchmarkResult> {
-    let mut results = alloc::vec::Vec::new();
-    results.push(window::bench_create_destroy(desktop));
-    results.push(renderer::bench_compositor());
-    results.push(ipc::bench_message_roundtrip(desktop));
+pub(crate) fn run_benchmarks(
+    desktop: &mut crate::core::desktop::Desktop,
+) -> alloc::vec::Vec<BenchmarkResult> {
+    let results = alloc::vec![
+        window::bench_create_destroy(desktop),
+        renderer::bench_compositor(),
+        ipc::bench_message_roundtrip(desktop),
+    ];
     results
 }

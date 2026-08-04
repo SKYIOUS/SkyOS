@@ -4,7 +4,7 @@ extern crate alloc;
 use alloc::string::String;
 use libsarga::theme::Theme;
 use libsarga::{gui::Window, sarga_main};
-use libsarga::{io, process, hash};
+use libsarga::{io, process};
 
 const SHADOW_PATH: &str = "/etc/shadow";
 
@@ -72,7 +72,7 @@ fn user_main() -> i32 {
                     }
                     error_msg.clear();
                 }
-                c if c >= 0x20 && c < 0x7F => {
+                c if (0x20..0x7F).contains(&c) => {
                     if active_field == 0 {
                         if username_buf.len() < 32 {
                             username_buf.push(c);
@@ -152,7 +152,7 @@ fn user_main() -> i32 {
         let pw_text: String = if show_password {
             core::str::from_utf8(&password_buf).unwrap_or("").into()
         } else {
-            core::iter::repeat('*').take(password_buf.len()).collect()
+            "*".repeat(password_buf.len())
         };
         win.draw_string(field_x + 10, pwy + 10, &pw_text, theme.text, 0);
 

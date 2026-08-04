@@ -126,7 +126,7 @@ impl WindowManager {
     }
 
     /// WindowManager API v1.0
-    pub fn minimize(&mut self, id: WindowId, screen_w: u32, taskbar_h: u32) {
+    pub fn minimize(&mut self, id: WindowId, _screen_w: u32, taskbar_h: u32) {
         if let Some(i) = self.find_index(id) {
             let w = &mut self.windows[i];
             w.prev_state = w.state;
@@ -213,7 +213,13 @@ impl WindowManager {
                 SnapRegion::BottomLeft => (0, half_h as i32, half_w, half_h),
                 SnapRegion::BottomRight => (half_w as i32, half_h as i32, half_w, half_h),
             };
-            self.snap_preview = Some(SnapPreview { x: tx, y: ty, w: tw, h: th, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: tx,
+                y: ty,
+                w: tw,
+                h: th,
+                active: true,
+            });
             w.prev_x = w.x;
             w.prev_y = w.y;
             w.prev_w = w.w;
@@ -231,21 +237,69 @@ impl WindowManager {
         let half_w = sw / 2;
         let half_h = tb_h / 2;
         if mx < SNAP_MARGIN && my < SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: 0, y: 0, w: half_w, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: 0,
+                y: 0,
+                w: half_w,
+                h: half_h,
+                active: true,
+            });
         } else if mx > swi - SNAP_MARGIN && my < SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: half_w as i32, y: 0, w: half_w, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: half_w as i32,
+                y: 0,
+                w: half_w,
+                h: half_h,
+                active: true,
+            });
         } else if mx < SNAP_MARGIN && my > tb_hi - SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: 0, y: half_h as i32, w: half_w, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: 0,
+                y: half_h as i32,
+                w: half_w,
+                h: half_h,
+                active: true,
+            });
         } else if mx > swi - SNAP_MARGIN && my > tb_hi - SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: half_w as i32, y: half_h as i32, w: half_w, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: half_w as i32,
+                y: half_h as i32,
+                w: half_w,
+                h: half_h,
+                active: true,
+            });
         } else if mx < SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: 0, y: 0, w: half_w, h: tb_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: 0,
+                y: 0,
+                w: half_w,
+                h: tb_h,
+                active: true,
+            });
         } else if mx > swi - SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: half_w as i32, y: 0, w: half_w, h: tb_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: half_w as i32,
+                y: 0,
+                w: half_w,
+                h: tb_h,
+                active: true,
+            });
         } else if my < SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: 0, y: 0, w: sw, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: 0,
+                y: 0,
+                w: sw,
+                h: half_h,
+                active: true,
+            });
         } else if my > tb_hi - SNAP_MARGIN {
-            self.snap_preview = Some(SnapPreview { x: 0, y: half_h as i32, w: sw, h: half_h, active: true });
+            self.snap_preview = Some(SnapPreview {
+                x: 0,
+                y: half_h as i32,
+                w: sw,
+                h: half_h,
+                active: true,
+            });
         } else {
             self.snap_preview = None;
         }
@@ -357,7 +411,10 @@ impl WindowManager {
         for w in &mut self.windows {
             w.focused = false;
         }
-        let idx = self.focused.and_then(|id| self.find_index(WindowId(id))).unwrap_or(0);
+        let idx = self
+            .focused
+            .and_then(|id| self.find_index(WindowId(id)))
+            .unwrap_or(0);
         let n = (idx + 1) % self.windows.len();
         self.windows[n].focused = true;
         self.focused = Some(self.windows[n].id);
@@ -371,8 +428,15 @@ impl WindowManager {
         for w in &mut self.windows {
             w.focused = false;
         }
-        let idx = self.focused.and_then(|id| self.find_index(WindowId(id))).unwrap_or(0);
-        let p = if idx == 0 { self.windows.len() - 1 } else { idx - 1 };
+        let idx = self
+            .focused
+            .and_then(|id| self.find_index(WindowId(id)))
+            .unwrap_or(0);
+        let p = if idx == 0 {
+            self.windows.len() - 1
+        } else {
+            idx - 1
+        };
         self.windows[p].focused = true;
         self.focused = Some(self.windows[p].id);
         true

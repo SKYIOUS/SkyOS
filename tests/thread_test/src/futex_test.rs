@@ -26,24 +26,9 @@ mod raw {
     pub fn getpid() -> i64 {
         unsafe { libsarga::syscall::syscall0(39) }
     }
-    pub fn sched_setattr(pid: u64, attr: u64, flags: u64) -> i64 {
-        unsafe { libsarga::syscall::syscall3(144, pid, attr, flags) }
-    }
-    pub fn open(path: &str) -> i64 {
-        let b = path.as_bytes();
-        let l = core::cmp::min(b.len(), 255);
-        let mut buf = [0u8; 256];
-        buf[..l].copy_from_slice(&b[..l]);
-        buf[l] = 0;
-        unsafe { libsarga::syscall::syscall2(2, buf.as_ptr() as u64, 0) }
-    }
-    pub fn write(fd: i64, buf: &[u8]) -> i64 {
-        unsafe { libsarga::syscall::syscall3(1, fd as u64, buf.as_ptr() as u64, buf.len() as u64) }
-    }
 }
 
 static FUTEX_VAL: AtomicU32 = AtomicU32::new(0);
-const FUTEX_WAIT: u32 = 0;
 const FUTEX_WAKE: u32 = 1;
 
 fn child_test() -> i32 {

@@ -2,7 +2,7 @@
 #![no_main]
 extern crate alloc;
 use alloc::vec::Vec;
-use libsarga::{args, io, print, println, sarga_main};
+use libsarga::{args, io, println, sarga_main};
 use miniz_oxide::{deflate::compress_to_vec, inflate::decompress_to_vec};
 
 fn crc32(data: &[u8]) -> u32 {
@@ -10,7 +10,11 @@ fn crc32(data: &[u8]) -> u32 {
     for &b in data {
         crc ^= b as u32;
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
         }
     }
     !crc

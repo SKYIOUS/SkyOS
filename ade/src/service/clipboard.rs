@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 pub(crate) struct ClipboardEntry {
     pub text: String,
+    #[allow(dead_code)] // history timestamps, no history UI yet
     pub timestamp: u64,
 }
 

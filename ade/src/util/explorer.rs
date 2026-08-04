@@ -45,8 +45,7 @@ pub(crate) struct ExplorerState {
 impl ExplorerState {
     pub fn new(id: u32, start_path: &str) -> Self {
         let path = String::from(start_path);
-        let mut history = Vec::new();
-        history.push(path.clone());
+        let history = alloc::vec![path.clone()];
         let tab = ExplorerTab {
             path: path.clone(),
             entries: Vec::new(),
@@ -268,7 +267,7 @@ impl ExplorerState {
             self.ops.push(FileOpLog {
                 op_type: 1,
                 path: new_path,
-                old_path: old_path,
+                old_path,
             });
         }
         self.refresh();
@@ -668,7 +667,7 @@ fn recursive_search_depth(dir: &str, query: &str, results: &mut Vec<VfsEntry>, d
         let mut buf = [0u8; 4096];
         loop {
             let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
-            if n <= 0 {
+            if n == 0 {
                 break;
             }
             let mut off = 0usize;
@@ -715,11 +714,10 @@ fn copy_file(src: &str, dest: &str) -> Result<(), ()> {
     let mut buf = [0u8; 4096];
     let dest_fd = libsarga::io::open(dest, 0x42).map_err(|_| {
         let _ = libsarga::io::close(src_fd);
-        ()
     })?;
     loop {
         let n = libsarga::io::read(src_fd, &mut buf).unwrap_or(0);
-        if n <= 0 {
+        if n == 0 {
             break;
         }
         let mut written = 0;
@@ -845,7 +843,7 @@ pub(crate) fn draw_explorer_content(
     let tab = state.active_ref();
 
     let mut y = aw.y as u32 + 29;
-    let bottom = aw.y as u32 + aw.h as u32 - 4;
+    let bottom = aw.y as u32 + aw.h - 4;
     let area_x = aw.x as u32 + 2;
     let area_w = aw.w - 4;
 
@@ -1174,6 +1172,7 @@ pub(crate) fn handle_explorer_click(
     false
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_list(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1240,6 +1239,7 @@ fn draw_list(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_grid(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1279,6 +1279,7 @@ fn draw_grid(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_icon(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1345,6 +1346,7 @@ fn draw_icon(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_details(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,

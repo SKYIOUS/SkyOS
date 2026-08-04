@@ -9,6 +9,7 @@ pub(crate) struct AppId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StartupMode {
     Normal,
+    #[allow(dead_code)] // reserved startup mode, matched in desktop::launch_app
     Background,
     Singleton,
 }
@@ -20,7 +21,9 @@ pub(crate) struct AppInfo {
     pub icon: char,
     pub category: AppCategory,
     pub executable: &'static str,
+    #[allow(dead_code)] // app metadata surface
     pub description: &'static str,
+    #[allow(dead_code)] // app metadata surface
     pub version: &'static str,
     pub startup_mode: StartupMode,
 }
@@ -71,23 +74,31 @@ impl AppRegistry {
     }
 
     pub fn find_by_exec(&self, exec: &str) -> Option<AppId> {
-        self.apps.iter().find(|a| a.executable == exec).map(|a| a.id)
+        self.apps
+            .iter()
+            .find(|a| a.executable == exec)
+            .map(|a| a.id)
     }
 
+    #[allow(dead_code)] // registry query API surface
     pub fn find_by_name(&self, name: &str) -> Option<AppId> {
         self.apps.iter().find(|a| a.name == name).map(|a| a.id)
     }
 
+    #[allow(dead_code)] // registry query API surface
     pub fn find_by_permission(&self, _perm: u32) -> alloc::vec::Vec<AppId> {
         alloc::vec::Vec::new()
     }
 
+    #[allow(dead_code)] // registry query API surface
     pub fn find_by_category(&self, _category: &str) -> alloc::vec::Vec<AppId> {
         alloc::vec::Vec::new()
     }
 
+    #[allow(dead_code)] // registry query API surface
     pub fn apps_by_category(&self, cat: AppCategory) -> Vec<AppId> {
-        self.apps.iter()
+        self.apps
+            .iter()
             .filter(|a| a.category == cat)
             .map(|a| a.id)
             .collect()
@@ -97,6 +108,7 @@ impl AppRegistry {
         self.apps.get(id.0)
     }
 
+    #[allow(dead_code)] // registry query API surface
     pub fn all_apps(&self) -> &[AppInfo] {
         &self.apps
     }
@@ -114,11 +126,8 @@ impl AppRegistry {
                 continue;
             }
             if !query_lower.is_empty() {
-                let name_lower: Vec<u8> = app
-                    .name
-                    .bytes()
-                    .map(|b| b.to_ascii_lowercase())
-                    .collect();
+                let name_lower: Vec<u8> =
+                    app.name.bytes().map(|b| b.to_ascii_lowercase()).collect();
                 if !name_lower
                     .windows(query_lower.len())
                     .any(|w| w == &query_lower[..])

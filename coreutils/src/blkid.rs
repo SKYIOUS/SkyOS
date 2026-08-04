@@ -3,7 +3,7 @@
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::{args, fs, io, print, println, sarga_main};
+use libsarga::{fs, io, println, sarga_main};
 
 fn user_main() -> i32 {
     let fd = match io::open("/dev", 0) {

@@ -1,8 +1,8 @@
 //! Application launcher — fork + execve + window creation.
 
-use crate::util::app_registry::AppInfo;
 use crate::core::desktop::Desktop;
 use crate::core::window::{AppWindow, VisualFlags, WindowState};
+use crate::util::app_registry::AppInfo;
 
 pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
     if path == "/bin/skyfiles" {
@@ -41,10 +41,7 @@ pub(crate) fn spawn_app_from_registry(desktop: &mut Desktop, app: &AppInfo) {
         360,
     );
     desktop.app_reg.record_launch(app.id);
-    desktop
-        .services
-        .session
-        .record_app_launch(app.id.0 as u64);
+    desktop.services.session.record_app_launch(app.id.0 as u64);
 }
 
 pub(crate) fn spawn_app_at(
@@ -121,7 +118,9 @@ pub(crate) fn spawn_app_at(
                     .map(|id| id.0)
                     .unwrap_or(0);
                 desktop.lifecycle.register(pid, app_idx);
-                desktop.permissions.register(pid, crate::sec::perms::default_grant());
+                desktop
+                    .permissions
+                    .register(pid, crate::sec::perms::default_grant());
                 desktop.lifecycle.mark_running(pid);
                 if let Some((server_fd, client_fd)) = ipc_pair {
                     let _ = libsarga::io::close(client_fd);
@@ -145,6 +144,8 @@ pub(crate) fn spawn_app_at(
         w.flags.opacity = 0;
         w.animate_to(w.x, w.y, w.w, w.h);
     }
-    desktop.services.notify("App Launched", title, 1, 120, desktop.clock_ticks);
+    desktop
+        .services
+        .notify("App Launched", title, 1, 120, desktop.clock_ticks);
     desktop.damage.mark_full();
 }

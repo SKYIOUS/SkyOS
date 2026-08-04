@@ -1,15 +1,17 @@
-use libsarga::theme::Theme;
 use crate::apps::config_store::ConfigStore;
+use libsarga::theme::Theme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ThemeKind {
     Dark,
     Light,
+    #[allow(dead_code)] // high-contrast theme, no toggle in settings UI yet
     HighContrast,
 }
 
 pub(crate) struct ThemeService {
     theme: Theme,
+    #[allow(dead_code)] // kind kept for future settings persistence/API
     kind: ThemeKind,
     accent: u32,
 }
@@ -71,10 +73,12 @@ impl ThemeService {
         self.accent = accent;
     }
 
+    #[allow(dead_code)] // theme query API, callers use current()/set() today
     pub fn kind(&self) -> ThemeKind {
         self.kind
     }
 
+    #[allow(dead_code)] // theme mutation API, callers use set() today
     pub fn set_kind(&mut self, kind: ThemeKind) {
         self.kind = kind;
         self.theme = match kind {
@@ -85,19 +89,23 @@ impl ThemeService {
         self.accent = self.theme.accent;
     }
 
+    #[allow(dead_code)] // theme mutation API, callers use set() today
     pub fn set_accent(&mut self, color: u32) {
         self.accent = color;
         self.theme.accent = color;
     }
 
+    #[allow(dead_code)] // theme mutation API, callers use set() today
     pub fn set_dark(&mut self) {
         self.set_kind(ThemeKind::Dark);
     }
 
+    #[allow(dead_code)] // theme mutation API, callers use set() today
     pub fn set_light(&mut self) {
         self.set_kind(ThemeKind::Light);
     }
 
+    #[allow(dead_code)] // accent query API, callers use current() today
     pub fn accent(&self) -> u32 {
         self.accent
     }

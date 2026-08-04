@@ -28,7 +28,7 @@ impl History {
         if trimmed.is_empty() {
             return;
         }
-        if self.entries.last().map_or(false, |e| e == trimmed) {
+        if self.entries.last().is_some_and(|e| e == trimmed) {
             return;
         }
         self.entries.push(trimmed.to_string());
@@ -315,8 +315,8 @@ fn motion_find_char(input: &str, cursor: usize, c: u8, dir: bool, before: bool) 
     let bytes = input.as_bytes();
     if dir {
         let start = cursor + 1;
-        for i in start..bytes.len() {
-            if bytes[i] == c {
+        for (i, &b) in bytes.iter().enumerate().skip(start) {
+            if b == c {
                 return Some(if before && i > 0 { i - 1 } else { i });
             }
         }
@@ -352,13 +352,13 @@ fn motion_match_bracket(input: &str, cursor: usize) -> Option<usize> {
     };
     if op == b'(' || op == b'{' || op == b'[' {
         let mut depth = 1i32;
-        for i in (cursor + 1)..bytes.len() {
-            if bytes[i] == cl {
+        for (i, &b) in bytes.iter().enumerate().skip(cursor + 1) {
+            if b == cl {
                 depth -= 1;
                 if depth == 0 {
                     return Some(i);
                 }
-            } else if bytes[i] == op {
+            } else if b == op {
                 depth += 1;
             }
         }
@@ -421,11 +421,10 @@ fn is_command_position(input: &str, start: usize) -> bool {
     if trimmed.is_empty() {
         return true;
     }
-    let ends_with_op = trimmed.ends_with('|')
+    trimmed.ends_with('|')
         || trimmed.ends_with(';')
         || trimmed.ends_with("&&")
-        || trimmed.ends_with("||");
-    ends_with_op
+        || trimmed.ends_with("||")
 }
 
 // ---- Syntax Highlighting -----------------------------------------------------
@@ -442,7 +441,7 @@ fn is_number(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    s.chars().all(|c| c >= '0' && c <= '9')
+    s.chars().all(|c: char| c.is_ascii_digit())
 }
 
 impl Highlighter {
@@ -848,7 +847,7 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                     i += 1;
                     continue;
                 }
-                if c >= 0x20 && c <= 0x7e && c != b'/' {
+                if (0x20..=0x7e).contains(&c) && c != b'/' {
                     search_query.push(c as char);
                     print!("\r\x1b[K\x1b[36m/\x1b[0m{}", search_query);
                     i += 1;
@@ -1236,7 +1235,7 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
                     }
                 }
                 _ => {
-                    if c >= 0x20 && c <= 0x7e && mode == Mode::Insert {
+                    if (0x20..=0x7e).contains(&c) && mode == Mode::Insert {
                         input.insert(cursor, c as char);
                         cursor += 1;
                         suggestion = do_suggestion(&input, unsafe { &mut *hist_ptr }, &completer);
@@ -1250,6 +1249,8 @@ pub fn read_line(history: &mut History, prompt: &str) -> String {
     input
 }
 
+// clippy: all editor state is passed explicitly; grouping would be a larger refactor
+#[allow(clippy::too_many_arguments)]
 fn handle_command_key(
     c: u8,
     prompt: &str,
@@ -1740,7 +1741,7 @@ fn handle_command_key(
                         si += 1;
                         continue;
                     }
-                    if sc >= 0x20 && sc <= 0x7e && sc != b'/' {
+                    if (0x20..=0x7e).contains(&sc) && sc != b'/' {
                         sq.push(sc as char);
                         print!("\r\x1b[K\x1b[36m/\x1b[0m{}", sq);
                     }

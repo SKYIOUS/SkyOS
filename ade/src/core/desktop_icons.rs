@@ -68,8 +68,8 @@ impl DesktopIcons {
             self.rubber = None;
             let rx = x1.min(x2);
             let ry = y1.min(y2);
-            let rw = (x1 - x2).abs() as u32;
-            let rh = (y1 - y2).abs() as u32;
+            let rw = (x1 - x2).unsigned_abs();
+            let rh = (y1 - y2).unsigned_abs();
             if rw < 4 && rh < 4 {
                 return selected;
             } // click, not drag
@@ -126,8 +126,8 @@ pub(crate) fn draw(
     if let Some((x1, y1, x2, y2)) = rubber {
         let rx = x1.min(x2) as u32;
         let ry = y1.min(y2) as u32;
-        let rw = (x1 - x2).abs() as u32;
-        let rh = (y1 - y2).abs() as u32;
+        let rw = (x1 - x2).unsigned_abs();
+        let rh = (y1 - y2).unsigned_abs();
         canvas.draw_rect_alpha(rx, ry, rw, rh, 0x223D5AFE);
         canvas.draw_rect_outline(rx, ry, rw, rh, 0xFF3D5AFE);
     }

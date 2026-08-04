@@ -1,7 +1,7 @@
-use alloc::string::String;
-use alloc::vec::Vec;
 use crate::ipc::message::{ApplicationId, RequestId};
 use crate::ipc::registry::ServiceId;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub(crate) struct ServiceRequest {
     pub request_id: RequestId,

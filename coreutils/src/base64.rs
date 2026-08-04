@@ -4,7 +4,7 @@ extern crate alloc;
 use alloc::string::String;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use libsarga::{args, io, print, println, sarga_main};
+use libsarga::{args, io, println, sarga_main};
 
 fn encode(data: &[u8]) -> String {
     STANDARD.encode(data)
@@ -19,10 +19,23 @@ fn user_main() -> i32 {
     let file_idx = if decode_mode { 2 } else { 1 };
     let data = if file_idx < args::argc() {
         let path = args::get(file_idx as usize).unwrap_or("");
-        match io::read_to_string(path) { Ok(s) => s.into_bytes(), Err(_) => { println!("base64: {}: No such file", path); return 1; } }
+        match io::read_to_string(path) {
+            Ok(s) => s.into_bytes(),
+            Err(_) => {
+                println!("base64: {}: No such file", path);
+                return 1;
+            }
+        }
     } else {
-        let mut buf = [0u8; 4096]; let mut all = alloc::vec::Vec::new();
-        loop { match io::read(0, &mut buf) { Ok(0) => break, Ok(n) => all.extend_from_slice(&buf[..n]), Err(_) => break, } }
+        let mut buf = [0u8; 4096];
+        let mut all = alloc::vec::Vec::new();
+        loop {
+            match io::read(0, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
         all
     };
 

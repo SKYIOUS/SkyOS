@@ -23,8 +23,8 @@ pub(crate) fn draw_clipboard(canvas: &mut Canvas, snap: &RenderSnapshot) {
         if iy + 24 > py + ph {
             break;
         }
-        let hover =
-            crate::core::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24).hit_test(snap.mouse);
+        let hover = crate::core::geometry::Rect::new(px as i32 + 4, iy as i32, pw - 8, 24)
+            .hit_test(snap.mouse);
         let bg = if hover { 0xFF3A3A5C } else { 0xFF2D2D2D };
         canvas.draw_rounded_rect(px + 4, iy, pw - 8, 24, 4, bg);
         let txt = if entry.text.len() > 28 {

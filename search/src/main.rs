@@ -134,11 +134,11 @@ fn user_main() -> i32 {
                 let q = query.to_lowercase();
                 let mut count = 0;
                 for (name, path, size, is_dir) in &all_entries {
-                    if name.to_lowercase().contains(&q) || path.to_lowercase().contains(&q) {
-                        if count < 20 {
-                            results.push((name.clone(), path.clone(), *size, *is_dir));
-                            count += 1;
-                        }
+                    if count < 20
+                        && (name.to_lowercase().contains(&q) || path.to_lowercase().contains(&q))
+                    {
+                        results.push((name.clone(), path.clone(), *size, *is_dir));
+                        count += 1;
                     }
                 }
             }
@@ -199,14 +199,14 @@ fn user_main() -> i32 {
                     query.pop();
                 }
                 0x0D | 0x0A => if let Some((_, _, _, _)) = results.first() {},
-                c if c >= 0x20 && c <= 0x7E => {
+                c if (0x20..=0x7E).contains(&c) => {
                     query.push(c as char);
                 }
                 _ => {}
             }
         }
 
-        if frame % 500 == 0 {
+        if frame.is_multiple_of(500) {
             all_entries = load_index();
         }
 

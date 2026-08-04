@@ -1,9 +1,18 @@
-use alloc::vec::Vec;
 use crate::sec::a11y::tree::A11yTree;
+use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// keep: Next/Prev/Last reserved for tab-cycle and end-key focus
+#[allow(dead_code)]
 pub(crate) enum FocusDirection {
-    Next, Prev, Up, Down, Left, Right, First, Last,
+    Next,
+    Prev,
+    Up,
+    Down,
+    Left,
+    Right,
+    First,
+    Last,
 }
 
 pub(crate) struct FocusManager {
@@ -40,7 +49,10 @@ impl FocusManager {
         match dir {
             FocusDirection::Next => {
                 let start = self.focused_id.map_or(0, |id| {
-                    tree.nodes.iter().position(|n| n.id == id).map_or(0, |i| i + 1)
+                    tree.nodes
+                        .iter()
+                        .position(|n| n.id == id)
+                        .map_or(0, |i| i + 1)
                 });
                 for i in start..tree.nodes.len() {
                     if tree.nodes[i].focusable && tree.nodes[i].state.visible {
@@ -94,7 +106,10 @@ impl FocusManager {
                 }
                 false
             }
-            FocusDirection::Left | FocusDirection::Right | FocusDirection::Up | FocusDirection::Down => {
+            FocusDirection::Left
+            | FocusDirection::Right
+            | FocusDirection::Up
+            | FocusDirection::Down => {
                 let cur = match self.focused_id {
                     Some(id) => id,
                     None => return self.move_focus(FocusDirection::First, tree),
@@ -131,8 +146,11 @@ impl FocusManager {
                     }
                 }
                 match best {
-                    Some(id) => { self.focus(id); true }
-                    None => false
+                    Some(id) => {
+                        self.focus(id);
+                        true
+                    }
+                    None => false,
                 }
             }
         }

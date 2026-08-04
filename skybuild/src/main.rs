@@ -62,10 +62,17 @@ fn cmd_build(args: &[&str]) {
     puts(&alloc::format!("Building package: {}", pkg_name));
 
     // Build with Cargo target
-    let status = run_cmd("/bin/cargo", &[
-        "build", "--target", "x86_64-skyos", "--release",
-        "-Z", "build-std=core,alloc",
-    ]);
+    let status = run_cmd(
+        "/bin/cargo",
+        &[
+            "build",
+            "--target",
+            "x86_64-skyos",
+            "--release",
+            "-Z",
+            "build-std=core,alloc",
+        ],
+    );
     if status != 0 {
         puts(&alloc::format!("Build failed (status {})", status));
         return;

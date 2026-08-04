@@ -48,12 +48,18 @@ pub(crate) fn test_compositor_layers() -> bool {
     };
 
     // Write a different color into each layer (one at a time to avoid borrow conflicts)
-    comp.layer_canvas(Layer::Wallpaper).fill_pixel(5, 5, 0xFF111111);
-    comp.layer_canvas(Layer::Desktop).fill_pixel(5, 5, 0xFF222222);
-    comp.layer_canvas(Layer::Windows).fill_pixel(5, 5, 0xFF333333);
-    comp.layer_canvas(Layer::Popups).fill_pixel(5, 5, 0xFF444444);
-    comp.layer_canvas(Layer::Overlay).fill_pixel(5, 5, 0xFF555555);
-    comp.layer_canvas(Layer::Cursor).fill_pixel(5, 5, 0xFF666666);
+    comp.layer_canvas(Layer::Wallpaper)
+        .fill_pixel(5, 5, 0xFF111111);
+    comp.layer_canvas(Layer::Desktop)
+        .fill_pixel(5, 5, 0xFF222222);
+    comp.layer_canvas(Layer::Windows)
+        .fill_pixel(5, 5, 0xFF333333);
+    comp.layer_canvas(Layer::Popups)
+        .fill_pixel(5, 5, 0xFF444444);
+    comp.layer_canvas(Layer::Overlay)
+        .fill_pixel(5, 5, 0xFF555555);
+    comp.layer_canvas(Layer::Cursor)
+        .fill_pixel(5, 5, 0xFF666666);
 
     // Verify each layer (one at a time)
     let expected = [

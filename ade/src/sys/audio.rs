@@ -34,7 +34,7 @@ pub struct AudioDevice {
     pub name: alloc::string::String,
     pub device_type: AudioDeviceType,
     pub state: DeviceState,
-    pub volume: u8,      // 0-100
+    pub volume: u8, // 0-100
     pub muted: bool,
     pub is_default: bool,
 }
@@ -43,7 +43,7 @@ pub struct AudioDevice {
 #[derive(Clone, Copy, Debug)]
 pub struct AppAudioSettings {
     pub pid: u32,
-    pub volume: u8,      // 0-100
+    pub volume: u8, // 0-100
     pub muted: bool,
 }
 

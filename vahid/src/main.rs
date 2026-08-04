@@ -4,14 +4,14 @@
 extern crate alloc;
 extern crate libsarga;
 
-use alloc::ffi::CString;
 use libsarga::io::{self, close, open};
 use libsarga::sarga_main;
-use libsarga::syscall::*;
 
 const PCI_DEVS: &str = "/sys/bus/pci/devices/";
 
-const VENDORS: &[(u16, &'static str, &[(u16, &'static str)])] = &[
+// allow: PCI vendor/device name table reserved for future device reporting; type is fixed and read-only
+#[allow(dead_code, clippy::type_complexity)]
+const VENDORS: &[(u16, &str, &[(u16, &str)])] = &[
     (
         0x8086,
         "Intel Corporation",
@@ -40,6 +40,8 @@ const VENDORS: &[(u16, &'static str, &[(u16, &'static str)])] = &[
     ),
 ];
 
+// allow: reserved for future device reporting
+#[allow(dead_code)]
 fn vendor_name(vid: u16) -> &'static str {
     for (v, name, _) in VENDORS {
         if *v == vid {
@@ -49,6 +51,8 @@ fn vendor_name(vid: u16) -> &'static str {
     "Unknown Vendor"
 }
 
+// allow: reserved for future device reporting
+#[allow(dead_code)]
 fn device_name(vid: u16, did: u16) -> &'static str {
     for (v, _, devices) in VENDORS {
         if *v == vid {
@@ -70,9 +74,9 @@ fn scan_pci() {
             let n = io::getdents64(fd, &mut buf).unwrap_or(0);
             let mut off = 0;
             while off + 19 < n {
-                let reclen = u16::from_le_bytes(
-                    buf[off + 16..off + 18].try_into().unwrap_or([0; 2]),
-                ) as usize;
+                let reclen =
+                    u16::from_le_bytes(buf[off + 16..off + 18].try_into().unwrap_or([0; 2]))
+                        as usize;
                 if reclen < 19 || off + reclen > n {
                     break;
                 }
@@ -80,8 +84,7 @@ fn scan_pci() {
                     .iter()
                     .position(|&b| b == 0)
                     .unwrap_or(reclen - 19);
-                let name =
-                    core::str::from_utf8(&buf[off + 19..off + 19 + name_end]).unwrap_or("");
+                let name = core::str::from_utf8(&buf[off + 19..off + 19 + name_end]).unwrap_or("");
                 if !name.is_empty() && name != "." && name != ".." {
                     io::print_str(&alloc::format!("  PCI device: {}\n", name));
                 }
@@ -111,7 +114,14 @@ fn create_devices() {
     for (name, major, minor) in nodes {
         let path = alloc::format!("/dev/{}", name);
         // Try mknod via raw syscall; fall back to O_CREAT if unavailable
-        let ret = unsafe { libsarga::syscall::syscall3(0x7d, path.as_ptr() as u64, 0x2000 | *major as u64, *minor as u64) };
+        let ret = unsafe {
+            libsarga::syscall::syscall3(
+                0x7d,
+                path.as_ptr() as u64,
+                0x2000 | *major as u64,
+                *minor as u64,
+            )
+        };
         if ret < 0 {
             let _ = open(&path, 0x41); // O_CREAT|O_WRONLY
         }

@@ -10,7 +10,7 @@ fn user_main() -> i32 {
             let r = unsafe {
                 libsarga::syscall::syscall3(78, fd as u64, buf.as_mut_ptr() as u64, 4096)
             };
-            if (r as i64) <= 0 {
+            if r <= 0 {
                 break;
             }
             let entries = &buf[..r as usize];
@@ -45,10 +45,8 @@ fn user_main() -> i32 {
     }
     if args::argc() > 1 {
         if let Some(iface) = args::get(1) {
-            if iface == "eth0" {
-                if args::argc() > 3 && args::get(2) == Some("up") {
-                    println!("ifconfig: {}: up", iface);
-                }
+            if iface == "eth0" && args::argc() > 3 && args::get(2) == Some("up") {
+                println!("ifconfig: {}: up", iface);
             }
         }
     }

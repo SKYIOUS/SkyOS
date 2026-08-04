@@ -7,10 +7,12 @@ pub(crate) struct Notification {
     pub id: u64,
     pub title: String,
     pub body: String,
+    #[allow(dead_code)] // icon id, notify() passes 0 today
     pub icon_id: u8,
     pub urgency: u8,
     pub created_tick: u64,
     pub timeout: u32,
+    #[allow(dead_code)] // action list, no notification action buttons yet
     pub actions: Vec<(&'static str, &'static str)>,
     pub dismissed: bool,
 }
@@ -130,14 +132,16 @@ impl NotificationManager {
     pub fn tick(&mut self, current_tick: u64) {
         let mut i = 0;
         while i < self.notifications.len() {
-            if self.notifications[i].timeout > 0 && !self.notifications[i].dismissed {
-                if current_tick >= self.notifications[i].created_tick + self.notifications[i].timeout as u64 {
-                    self.notifications[i].dismissed = true;
-                    self.visible_count = self.visible_count.saturating_sub(1);
-                    // Swap to keep visible contiguous
-                    if i < self.visible_count {
-                        self.notifications.swap(i, self.visible_count);
-                    }
+            if self.notifications[i].timeout > 0
+                && !self.notifications[i].dismissed
+                && current_tick
+                    >= self.notifications[i].created_tick + self.notifications[i].timeout as u64
+            {
+                self.notifications[i].dismissed = true;
+                self.visible_count = self.visible_count.saturating_sub(1);
+                // Swap to keep visible contiguous
+                if i < self.visible_count {
+                    self.notifications.swap(i, self.visible_count);
                 }
             }
             i += 1;

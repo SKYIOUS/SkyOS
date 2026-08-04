@@ -23,7 +23,7 @@ fn user_main() -> i32 {
     for f in &files {
         let flags = if append { 0x401 } else { 0x100 | 0x42 };
         let fd = unsafe { syscall::syscall2(2, f.as_ptr() as u64, flags) };
-        if (fd as i64) < 0 {
+        if fd < 0 {
             println!("tee: {}: open failed", f);
         } else {
             fds.push(fd);

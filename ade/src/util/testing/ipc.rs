@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use crate::ipc::message::{
-    ApplicationId, ChannelId, IpcTarget, Message, MessageBus, MessageId, MessagePayload, MessageType,
-    RequestId,
-};
 use crate::ipc::channel::{Channel, ChannelType};
+use crate::ipc::message::{
+    ApplicationId, ChannelId, IpcTarget, Message, MessageBus, MessageId, MessagePayload,
+    MessageType, RequestId,
+};
 use crate::ipc::permission::AppPermission;
 use crate::ipc::registry::{ServiceId, ServiceInfo, ServiceRegistry};
 use crate::ipc::request::ServiceRequest;
@@ -39,7 +39,7 @@ pub(crate) fn test_message_bus() -> bool {
         io::print_str("[test] FAIL test_message_bus: drain count wrong\n");
         return false;
     }
-    if bus.pending.len() != 0 {
+    if !bus.pending.is_empty() {
         io::print_str("[test] FAIL test_message_bus: drain did not clear pending\n");
         return false;
     }
@@ -61,7 +61,7 @@ pub(crate) fn test_message_bus() -> bool {
 
 pub(crate) fn test_service_registry() -> bool {
     let mut reg = ServiceRegistry::new();
-    if reg.services.len() != 0 {
+    if !reg.services.is_empty() {
         io::print_str("[test] FAIL test_service_registry: not empty\n");
         return false;
     }
@@ -349,13 +349,18 @@ pub(crate) fn test_service_wire() -> bool {
 }
 
 pub(crate) fn test_codec_roundtrip() -> bool {
-    let req = libsarga::ipc::encode_request(7, libsarga::ipc::SVC_NOTIFICATION, b"notify", b"t\0b\01\0");
+    let req = libsarga::ipc::encode_request(
+        7,
+        libsarga::ipc::SVC_NOTIFICATION,
+        b"notify",
+        b"t\x00b\x001\x00",
+    );
     match libsarga::ipc::decode_request(&req) {
         Some((rid, svc, method, args)) => {
             if rid != 7
                 || svc != libsarga::ipc::SVC_NOTIFICATION
                 || method.as_slice() != b"notify"
-                || args.as_slice() != b"t\0b\01\0"
+                || args.as_slice() != b"t\x00b\x001\x00"
             {
                 io::print_str("[test] FAIL test_codec_roundtrip: request mismatch\n");
                 return false;
@@ -391,7 +396,10 @@ pub(crate) fn test_frame_roundtrip() -> bool {
     ) {
         Ok(p) => p,
         Err(e) => {
-            io::print_str(&alloc::format!("[test] FAIL test_frame_roundtrip: socketpair: {}\n", e));
+            io::print_str(&alloc::format!(
+                "[test] FAIL test_frame_roundtrip: socketpair: {}\n",
+                e
+            ));
             return false;
         }
     };
@@ -426,11 +434,18 @@ pub(crate) fn test_poll_empty_socket() -> bool {
     ) {
         Ok(p) => p,
         Err(e) => {
-            io::print_str(&alloc::format!("[test] FAIL test_poll_empty_socket: socketpair: {}\n", e));
+            io::print_str(&alloc::format!(
+                "[test] FAIL test_poll_empty_socket: socketpair: {}\n",
+                e
+            ));
             return false;
         }
     };
-    let mut pfd = [PollFd { fd: a, events: POLLIN, revents: 0 }];
+    let mut pfd = [PollFd {
+        fd: a,
+        events: POLLIN,
+        revents: 0,
+    }];
     match libsarga::net::poll(&mut pfd, 0) {
         Ok(n) if n == 0 && pfd[0].revents & POLLIN == 0 => {}
         _ => {
@@ -452,7 +467,10 @@ pub(crate) fn test_transport_end_to_end(desktop: &mut crate::core::desktop::Desk
     ) {
         Ok(p) => p,
         Err(e) => {
-            io::print_str(&alloc::format!("[test] FAIL test_transport_end_to_end: socketpair: {}\n", e));
+            io::print_str(&alloc::format!(
+                "[test] FAIL test_transport_end_to_end: socketpair: {}\n",
+                e
+            ));
             return false;
         }
     };
@@ -461,7 +479,8 @@ pub(crate) fn test_transport_end_to_end(desktop: &mut crate::core::desktop::Desk
     desktop.permissions.register(pid, default_grant());
 
     // Client sends a clipboard "copy" request over the real socket.
-    let req = libsarga::ipc::encode_request(9, libsarga::ipc::SVC_CLIPBOARD, b"copy", b"via transport");
+    let req =
+        libsarga::ipc::encode_request(9, libsarga::ipc::SVC_CLIPBOARD, b"copy", b"via transport");
     if libsarga::ipc::write_frame(client_fd, &req).is_err() {
         io::print_str("[test] FAIL test_transport_end_to_end: client write failed\n");
         return false;

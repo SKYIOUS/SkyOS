@@ -3,7 +3,7 @@
 extern crate alloc;
 use alloc::string::String;
 use core::fmt::Write;
-use libsarga::{args, io, print, println, sarga_main};
+use libsarga::{args, io, println, sarga_main};
 use md5::{Digest, Md5};
 
 fn md5(data: &[u8]) -> [u8; 16] {
@@ -17,11 +17,20 @@ fn md5(data: &[u8]) -> [u8; 16] {
 
 fn user_main() -> i32 {
     if args::argc() < 2 {
-        let mut buf = [0u8; 4096]; let mut all = alloc::vec::Vec::new();
-        loop { match io::read(0, &mut buf) { Ok(0) => break, Ok(n) => all.extend_from_slice(&buf[..n]), Err(_) => break, } }
+        let mut buf = [0u8; 4096];
+        let mut all = alloc::vec::Vec::new();
+        loop {
+            match io::read(0, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => all.extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
         let hash = md5(&all);
         let mut s = String::new();
-        for &b in &hash { let _ = write!(s, "{:02x}", b); }
+        for &b in &hash {
+            let _ = write!(s, "{:02x}", b);
+        }
         println!("{}  -", s);
         return 0;
     }
@@ -31,10 +40,15 @@ fn user_main() -> i32 {
             Ok(content) => {
                 let hash = md5(content.as_bytes());
                 let mut s = String::new();
-                for &b in &hash { let _ = write!(s, "{:02x}", b); }
+                for &b in &hash {
+                    let _ = write!(s, "{:02x}", b);
+                }
                 println!("{}  {}", s, path);
             }
-            Err(_) => { println!("md5sum: {}: No such file", path); return 1; }
+            Err(_) => {
+                println!("md5sum: {}: No such file", path);
+                return 1;
+            }
         }
     }
     0

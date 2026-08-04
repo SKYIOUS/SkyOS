@@ -99,7 +99,11 @@ impl ServiceRegistry {
         };
         for (id, name, required) in [
             (ServiceId::Clipboard, "clipboard", PERM_CLIPBOARD.bits()),
-            (ServiceId::Notification, "notification", PERM_NOTIFICATIONS.bits()),
+            (
+                ServiceId::Notification,
+                "notification",
+                PERM_NOTIFICATIONS.bits(),
+            ),
             (ServiceId::Launcher, "launcher", PERM_FILESYSTEM.bits()),
             (ServiceId::FileDialog, "file_dialog", PERM_FILESYSTEM.bits()),
             (ServiceId::Settings, "settings", PERM_SETTINGS.bits()),

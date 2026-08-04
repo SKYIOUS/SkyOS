@@ -309,8 +309,15 @@ impl DeveloperPlatform {
     /// Generate diagnostic dump
     pub fn generate_diagnostics(&self) -> String {
         let mut dump = String::from("=== System Diagnostics ===\n");
-        dump.push_str(&alloc::format!("Memory: {} KB used / {} KB total\n", self.memory_stats.used_kb, self.memory_stats.total_kb));
-        dump.push_str(&alloc::format!("CPU Usage: {}%\n", self.cpu_stats.usage_percent));
+        dump.push_str(&alloc::format!(
+            "Memory: {} KB used / {} KB total\n",
+            self.memory_stats.used_kb,
+            self.memory_stats.total_kb
+        ));
+        dump.push_str(&alloc::format!(
+            "CPU Usage: {}%\n",
+            self.cpu_stats.usage_percent
+        ));
         dump.push_str(&alloc::format!("Processes: {}\n", self.processes.len()));
         dump.push_str(&alloc::format!("Windows: {}\n", self.windows.len()));
         dump.push_str(&alloc::format!("Log Entries: {}\n", self.logs.len()));

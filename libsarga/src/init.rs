@@ -39,12 +39,9 @@ impl InitManager {
                     continue;
                 }
                 progress = true;
-                match process::spawn(svc.command) {
-                    Ok(pid) => {
-                        started[i] = true;
-                        pids[i] = pid;
-                    }
-                    Err(_) => {}
+                if let Ok(pid) = process::spawn(svc.command) {
+                    started[i] = true;
+                    pids[i] = pid;
                 }
             }
             if !progress {
@@ -57,12 +54,10 @@ impl InitManager {
                 if !svc.respawn || !started[i] {
                     continue;
                 }
-                match process::waitpid(pids[i] as i64, 0) {
-                    Ok((_, _)) => match process::spawn(svc.command) {
-                        Ok(pid) => pids[i] = pid,
-                        Err(_) => {}
-                    },
-                    Err(_) => {}
+                if process::waitpid(pids[i] as i64, 0).is_ok() {
+                    if let Ok(pid) = process::spawn(svc.command) {
+                        pids[i] = pid;
+                    }
                 }
             }
             thread::sleep_ms(1000);

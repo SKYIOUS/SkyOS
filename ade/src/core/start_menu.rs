@@ -1,16 +1,17 @@
 //! Modern start menu — categories, search, pinned, keyboard navigation.
 
-use crate::util::app_db::{AppCategory, CATEGORIES};
-use crate::util::app_registry::{AppId, AppRegistry};
 use crate::core::event::Event;
 use crate::core::geometry::{Point, Rect};
 use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
+use crate::util::app_db::{AppCategory, CATEGORIES};
+use crate::util::app_registry::{AppId, AppRegistry};
 use alloc::vec::Vec;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuSection {
     Search,
+    #[allow(dead_code)] // sidebar navigation section, category UI not wired yet
     Sidebar,
     AppList,
     Recent,
@@ -31,11 +32,7 @@ pub(crate) struct StartMenuState {
     power_idx: usize,
 }
 
-const POWER_LABELS: &[(char, &str)] = &[
-    ('P', "Shutdown"),
-    ('R', "Restart"),
-    ('L', "Logout"),
-];
+const POWER_LABELS: &[(char, &str)] = &[('P', "Shutdown"), ('R', "Restart"), ('L', "Logout")];
 
 impl StartMenuState {
     pub fn new() -> Self {
@@ -90,6 +87,7 @@ impl StartMenuState {
         }
     }
 
+    #[allow(dead_code)] // open/close animation loop, desktop calls mark_full instead
     pub fn tick_anim(&mut self) {
         if self.anim_direction == 1 {
             if self.anim_progress < 255 {
@@ -107,10 +105,12 @@ impl StartMenuState {
         }
     }
 
+    #[allow(dead_code)] // close animation trigger, desktop toggles open directly
     pub fn start_close(&mut self) {
         self.anim_direction = -1;
     }
 
+    #[allow(dead_code)] // arrow-key navigation, keyboard menu input not dispatched yet
     pub fn move_selection(&mut self, dx: i32, dy: i32, reg: &AppRegistry) {
         self.keyboard_active = true;
         let cat_count = CATEGORIES.len();
@@ -180,20 +180,21 @@ impl StartMenuState {
                     self.power_idx += 1;
                 } else if dx < 0 && self.power_idx > 0 {
                     self.power_idx -= 1;
-                } else if dx < 0 && self.power_idx == 0 {
-                    self.section = MenuSection::Recent;
-                } else if dx > 0 && self.power_idx + 1 >= POWER_LABELS.len() {
+                } else if (dx < 0 && self.power_idx == 0)
+                    || (dx > 0 && self.power_idx + 1 >= POWER_LABELS.len())
+                {
                     self.section = MenuSection::Recent;
                 }
             }
         }
     }
 
+    #[allow(dead_code)] // enter-key activation, keyboard menu input not dispatched yet
     pub fn activate_selected(&mut self) -> Option<Event> {
         match self.section {
-            MenuSection::AppList => {
-                self.selected_app().map(|id| Event::ElementActivated(id.0 as u32))
-            }
+            MenuSection::AppList => self
+                .selected_app()
+                .map(|id| Event::ElementActivated(id.0 as u32)),
             MenuSection::Power => {
                 let code = match self.power_idx {
                     0 => 0,
@@ -244,9 +245,23 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
     canvas.draw_rounded_rect_outline(menu_x, menu_y, MENU_W, MENU_H, 8, theme.border);
 
     let search_y = menu_y + 8;
-    canvas.draw_rounded_rect(menu_x + 8, search_y, MENU_W - 16, SEARCH_H, 6, theme.bg_surface);
+    canvas.draw_rounded_rect(
+        menu_x + 8,
+        search_y,
+        MENU_W - 16,
+        SEARCH_H,
+        6,
+        theme.bg_surface,
+    );
     if state.section == MenuSection::Search && state.keyboard_active {
-        canvas.draw_rounded_rect_outline(menu_x + 8, search_y, MENU_W - 16, SEARCH_H, 6, theme.accent);
+        canvas.draw_rounded_rect_outline(
+            menu_x + 8,
+            search_y,
+            MENU_W - 16,
+            SEARCH_H,
+            6,
+            theme.accent,
+        );
     }
     let display = if state.search.is_empty() {
         ">  Search applications..."
@@ -268,7 +283,14 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
     let sidebar_x = menu_x + 4;
     let sidebar_y = search_y + SEARCH_H + 6;
     let sidebar_h = MENU_H - (sidebar_y - menu_y) - 8;
-    canvas.draw_rounded_rect(sidebar_x, sidebar_y, SIDEBAR_W, sidebar_h, 6, theme.bg_surface);
+    canvas.draw_rounded_rect(
+        sidebar_x,
+        sidebar_y,
+        SIDEBAR_W,
+        sidebar_h,
+        6,
+        theme.bg_surface,
+    );
 
     for (i, &(cat_name, _)) in CATEGORIES.iter().enumerate() {
         let iy = sidebar_y + 4 + i as u32 * 28;
@@ -276,7 +298,8 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
             break;
         }
         let selected = i == state.cat_idx;
-        let hover = Rect::new((sidebar_x + 4) as i32, iy as i32, SIDEBAR_W - 8, 24).hit_test(snap.mouse);
+        let hover =
+            Rect::new((sidebar_x + 4) as i32, iy as i32, SIDEBAR_W - 8, 24).hit_test(snap.mouse);
         let bg = if selected {
             theme.accent
         } else if hover {
@@ -284,7 +307,11 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         } else {
             theme.bg_surface
         };
-        let txt = if selected { theme.text } else { theme.text_secondary };
+        let txt = if selected {
+            theme.text
+        } else {
+            theme.text_secondary
+        };
         canvas.draw_rounded_rect(sidebar_x + 4, iy, SIDEBAR_W - 8, 24, 4, bg);
         canvas.draw_string(sidebar_x + 10, iy + 5, cat_name, txt, 0);
     }
@@ -303,7 +330,8 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
             let app = &reg.apps[app_id.0];
             let iy = list_y + 2 + (i - start) as u32 * ITEM_H;
             let sel = i == state.selected && state.section == MenuSection::AppList;
-            let hover = Rect::new(list_x as i32, iy as i32, list_w, ITEM_H - 2).hit_test(snap.mouse);
+            let hover =
+                Rect::new(list_x as i32, iy as i32, list_w, ITEM_H - 2).hit_test(snap.mouse);
             let bg = if sel {
                 theme.accent
             } else if hover {
@@ -317,12 +345,26 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
             } else {
                 app.name
             };
-            canvas.draw_char(list_x + 8, iy + 7, app.icon, if sel { theme.text } else { theme.text_secondary }, 0);
+            canvas.draw_char(
+                list_x + 8,
+                iy + 7,
+                app.icon,
+                if sel {
+                    theme.text
+                } else {
+                    theme.text_secondary
+                },
+                0,
+            );
             canvas.draw_string(
                 list_x + 18,
                 iy + 7,
                 label,
-                if sel { theme.text } else { theme.text_secondary },
+                if sel {
+                    theme.text
+                } else {
+                    theme.text_secondary
+                },
                 0,
             );
             if reg.db.pinned[app_id.0] {
@@ -334,9 +376,19 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
     let bottom_y = menu_y + MENU_H - 36;
     canvas.draw_rect(menu_x + 2, bottom_y, MENU_W - 4, 34, theme.bg_surface);
 
-    canvas.draw_string(menu_x + 12, bottom_y + 10, "Recent:", theme.text_disabled, 0);
+    canvas.draw_string(
+        menu_x + 12,
+        bottom_y + 10,
+        "Recent:",
+        theme.text_disabled,
+        0,
+    );
     let mut rx = menu_x + 72;
-    let recent_n = if reg.db.recent.len() > 2 { 2 } else { reg.db.recent.len() };
+    let recent_n = if reg.db.recent.len() > 2 {
+        2
+    } else {
+        reg.db.recent.len()
+    };
     for ri in 0..recent_n {
         let idx = reg.db.recent[ri];
         if idx >= reg.apps.len() {
@@ -354,10 +406,31 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         let hover = Rect::new(rx as i32, bottom_y as i32 + 2, 80, 30)
             .hit_test(Point::new(snap.mouse.x, snap.mouse.y));
         let sel = state.section == MenuSection::Recent && ri == 0;
-        canvas.draw_rounded_rect(rx, bottom_y + 4, 80, 26, 4,
-            if sel { theme.accent } else if hover { theme.border } else { theme.bg_elevated });
-        canvas.draw_string(rx + 6, bottom_y + 7, label,
-            if sel { theme.text } else { theme.text_secondary }, 0);
+        canvas.draw_rounded_rect(
+            rx,
+            bottom_y + 4,
+            80,
+            26,
+            4,
+            if sel {
+                theme.accent
+            } else if hover {
+                theme.border
+            } else {
+                theme.bg_elevated
+            },
+        );
+        canvas.draw_string(
+            rx + 6,
+            bottom_y + 7,
+            label,
+            if sel {
+                theme.text
+            } else {
+                theme.text_secondary
+            },
+            0,
+        );
         rx += 84;
     }
 
@@ -367,9 +440,35 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         let px = power_x + pi as u32 * 64;
         let hover = Rect::new(px as i32, power_y as i32, 58, 26).hit_test(snap.mouse);
         let sel = pi == state.power_idx && state.section == MenuSection::Power;
-        let bg = if sel { theme.accent } else if hover { theme.hover } else { theme.bg_elevated };
+        let bg = if sel {
+            theme.accent
+        } else if hover {
+            theme.hover
+        } else {
+            theme.bg_elevated
+        };
         canvas.draw_rounded_rect(px, power_y, 58, 26, 4, bg);
-        canvas.draw_char(px + 6, power_y + 5, icon, if sel { theme.text } else { theme.text_secondary }, 0);
-        canvas.draw_string(px + 16, power_y + 5, label, if sel { theme.text } else { theme.text_secondary }, 0);
+        canvas.draw_char(
+            px + 6,
+            power_y + 5,
+            icon,
+            if sel {
+                theme.text
+            } else {
+                theme.text_secondary
+            },
+            0,
+        );
+        canvas.draw_string(
+            px + 16,
+            power_y + 5,
+            label,
+            if sel {
+                theme.text
+            } else {
+                theme.text_secondary
+            },
+            0,
+        );
     }
 }

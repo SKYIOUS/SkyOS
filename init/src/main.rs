@@ -62,13 +62,13 @@ fn user_main() -> i32 {
     let _ = io::mkdir("/tmp", 0o777);
     let _ = io::mkdir("/dev", 0o755);
     let _ = io::mkdir("/ctl", 0o755);
-    if let Err(_) = io::mount("none", "/tmp", "tmpfs", 0) {
+    if io::mount("none", "/tmp", "tmpfs", 0).is_err() {
         let _ = io::write_all(1, b"[init] WARN: failed to mount /tmp\n");
     }
-    if let Err(_) = io::mount("none", "/dev", "devfs", 0) {
+    if io::mount("none", "/dev", "devfs", 0).is_err() {
         let _ = io::write_all(1, b"[init] WARN: failed to mount /dev\n");
     }
-    if let Err(_) = io::mount("none", "/ctl", "ctlfs", 0) {
+    if io::mount("none", "/ctl", "ctlfs", 0).is_err() {
         let _ = io::write_all(1, b"[init] WARN: failed to mount /ctl\n");
     }
 

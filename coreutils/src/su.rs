@@ -147,8 +147,8 @@ fn user_main() -> i32 {
         io::print_str("\n");
     }
 
-    setgid(gid as u64);
-    setuid(uid as u64);
+    let _ = setgid(gid as u64);
+    let _ = setuid(uid as u64);
 
     let shell_name = core::str::from_utf8(&shell).unwrap_or("/bin/sash");
     let home_dir = core::str::from_utf8(&home).unwrap_or("/");
@@ -165,8 +165,8 @@ fn user_main() -> i32 {
         .map(|s: &alloc::string::String| s.as_str())
         .collect();
 
-    execve(shell_name, &[], &env_refs);
-    return 1;
+    let _ = execve(shell_name, &[], &env_refs);
+    1
 }
 
 sarga_main!(user_main);

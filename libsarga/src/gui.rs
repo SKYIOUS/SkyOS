@@ -90,7 +90,7 @@ impl OutlineBuilder {
 
     fn finish_contour(&mut self) {
         if !self.current.is_empty() {
-            let c = core::mem::replace(&mut self.current, Vec::new());
+            let c = core::mem::take(&mut self.current);
             self.contours.push(OutlineContour { points: c });
         }
         self.first = None;
@@ -219,7 +219,6 @@ fn outline_rasterize(contours: &[OutlineContour], scale: f32, width: u32, height
 // ═════════════════════════════════════════════════════════════════════════════
 
 pub struct TtfFont {
-    data: &'static [u8],
     font: ttf_parser::Face<'static>,
     cache: GlyphCache,
 }
@@ -231,7 +230,6 @@ impl TtfFont {
         let data: &'static [u8] = data.leak();
         let font = ttf_parser::Face::parse(data, 0).ok()?;
         Some(TtfFont {
-            data,
             font,
             cache: GlyphCache::new(2048),
         })
@@ -315,8 +313,8 @@ impl TtfFont {
             .outline_glyph(ttf_parser::GlyphId(gid), &mut builder);
         builder.finish_contour();
 
-        let gw = w.max(1) as u32;
-        let gh = h.max(1) as u32;
+        let gw = w.max(1);
+        let gh = h.max(1);
         let data = outline_rasterize(&builder.contours, scale, gw, gh);
 
         // Cache the result
@@ -341,6 +339,7 @@ impl TtfFont {
 // Font Abstraction
 // ═════════════════════════════════════════════════════════════════════════════
 
+#[allow(clippy::large_enum_variant)] // TtfFont is intentionally inline; boxing would complicate the API
 pub enum Font {
     Ttf(TtfFont),
     Bitmap,
@@ -376,7 +375,7 @@ impl Font {
         match self {
             Font::Ttf(f) => {
                 let asc = f.ascender(size).max(0) as u32;
-                let desc = f.descender(size).abs() as u32;
+                let desc = f.descender(size).unsigned_abs();
                 asc + desc + size / 6
             }
             Font::Bitmap => size,
@@ -636,6 +635,7 @@ impl Window {
         self.draw_line_v(x + w - 1, y, h, color);
     }
 
+    #[allow(clippy::too_many_arguments)] // drawing API; all 7 args are independent draw parameters
     pub fn draw_gradient_rect(
         &mut self,
         x: u32,

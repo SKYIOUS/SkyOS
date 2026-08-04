@@ -17,57 +17,59 @@ pub(crate) struct ConfigNamespace {
 
 pub(crate) struct Config {
     pub namespaces: Vec<ConfigNamespace>,
+    #[allow(clippy::type_complexity)] // observer (ns, key, callback) triple
     observers: Vec<(&'static str, &'static str, fn(&str, &str))>,
 }
 
 impl Config {
     pub fn new() -> Self {
-        let mut namespaces = Vec::new();
-        namespaces.push(ConfigNamespace {
-            name: "desktop",
-            keys: vec![
-                (
-                    "theme",
-                    ConfigValue {
-                        value: String::from("dark"),
-                        default: String::from("dark"),
-                    },
-                ),
-                (
-                    "wallpaper",
-                    ConfigValue {
-                        value: String::from(""),
-                        default: String::from(""),
-                    },
-                ),
-                (
-                    "sound_enabled",
-                    ConfigValue {
-                        value: String::from("true"),
-                        default: String::from("true"),
-                    },
-                ),
-            ],
-        });
-        namespaces.push(ConfigNamespace {
-            name: "session",
-            keys: vec![
-                (
-                    "auto_restore",
-                    ConfigValue {
-                        value: String::from("true"),
-                        default: String::from("true"),
-                    },
-                ),
-                (
-                    "save_on_exit",
-                    ConfigValue {
-                        value: String::from("true"),
-                        default: String::from("true"),
-                    },
-                ),
-            ],
-        });
+        let namespaces = vec![
+            ConfigNamespace {
+                name: "desktop",
+                keys: vec![
+                    (
+                        "theme",
+                        ConfigValue {
+                            value: String::from("dark"),
+                            default: String::from("dark"),
+                        },
+                    ),
+                    (
+                        "wallpaper",
+                        ConfigValue {
+                            value: String::from(""),
+                            default: String::from(""),
+                        },
+                    ),
+                    (
+                        "sound_enabled",
+                        ConfigValue {
+                            value: String::from("true"),
+                            default: String::from("true"),
+                        },
+                    ),
+                ],
+            },
+            ConfigNamespace {
+                name: "session",
+                keys: vec![
+                    (
+                        "auto_restore",
+                        ConfigValue {
+                            value: String::from("true"),
+                            default: String::from("true"),
+                        },
+                    ),
+                    (
+                        "save_on_exit",
+                        ConfigValue {
+                            value: String::from("true"),
+                            default: String::from("true"),
+                        },
+                    ),
+                ],
+            },
+        ];
         Config {
             namespaces,
             observers: Vec::new(),

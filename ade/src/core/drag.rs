@@ -2,6 +2,7 @@
 
 use crate::core::window::WindowId;
 
+#[allow(dead_code)] // unified drag-drop abstraction, windows/icons still use bespoke paths
 pub(crate) enum DragOp {
     None,
     WindowMove(WindowId),

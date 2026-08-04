@@ -18,7 +18,9 @@ pub(crate) struct PackageUpdater {
 
 impl PackageUpdater {
     pub fn new() -> Self {
-        PackageUpdater { updates: Vec::new() }
+        PackageUpdater {
+            updates: Vec::new(),
+        }
     }
 
     pub fn check(&mut self, _db: &crate::util::package::database::PackageDatabase) {

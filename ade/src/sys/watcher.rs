@@ -66,7 +66,7 @@ impl FileWatcher {
         let mut buf = [0u8; 4096];
         loop {
             let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
-            if n <= 0 {
+            if n == 0 {
                 break;
             }
             let mut off = 0usize;

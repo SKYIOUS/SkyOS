@@ -23,8 +23,9 @@ fn user_main() -> i32 {
     }
 
     // Request a notification via the ADE security portal.
-    let args_payload: &[u8] = b"IPC Echo\0Hello from ipc_echo via AF_UNIX socketpair\01\0";
-    let req = libsarga::ipc::encode_request(1, libsarga::ipc::SVC_NOTIFICATION, b"notify", args_payload);
+    let args_payload: &[u8] = b"IPC Echo\0Hello from ipc_echo via AF_UNIX socketpair\x01\0";
+    let req =
+        libsarga::ipc::encode_request(1, libsarga::ipc::SVC_NOTIFICATION, b"notify", args_payload);
     if libsarga::ipc::write_frame(ipc_fd, &req).is_err() {
         io::print_str("[ipc_echo] send failed\n");
         return 1;
@@ -44,7 +45,11 @@ fn user_main() -> i32 {
                     success,
                     data.len()
                 ));
-                if success { 0 } else { 1 }
+                if success {
+                    0
+                } else {
+                    1
+                }
             }
             None => {
                 io::print_str("[ipc_echo] bad response frame\n");

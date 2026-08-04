@@ -8,7 +8,7 @@ use libsarga::io::{self, close, fchmod, open};
 use libsarga::sarga_main;
 
 fn parse_mode(s: &str) -> Option<u32> {
-    if s.as_bytes().iter().all(|&b| b >= b'0' && b <= b'7') {
+    if s.as_bytes().iter().all(|&b| (b'0'..=b'7').contains(&b)) {
         return u32::from_str_radix(s, 8).ok();
     }
     None
@@ -50,7 +50,7 @@ fn user_main() -> i32 {
             io::print_str(&alloc::format!("chmod: {}: failed\n", file));
         }
     }
-    return 0;
+    0
 }
 
 sarga_main!(user_main);

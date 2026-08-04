@@ -189,9 +189,7 @@ pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
     }
 
     let mut out = [0u16; 8];
-    for i in 0..p_len {
-        out[i] = prefix[i];
-    }
+    out[..p_len].copy_from_slice(&prefix[..p_len]);
     for i in 0..s_len {
         out[8 - s_len + i] = suffix[i];
     }
@@ -413,39 +411,97 @@ pub struct IoVec {
 
 /// Send a message on a socket.
 pub fn sendmsg(sockfd: i64, msg: &MsgHdr, flags: i32) -> Result<usize, Error> {
-    let r = unsafe { crate::syscall::syscall3(46, sockfd as u64, msg as *const MsgHdr as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+    let r = unsafe {
+        crate::syscall::syscall3(46, sockfd as u64, msg as *const MsgHdr as u64, flags as u64)
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// Receive a message on a socket.
 pub fn recvmsg(sockfd: i64, msg: &mut MsgHdr, flags: i32) -> Result<usize, Error> {
-    let r = unsafe { crate::syscall::syscall3(47, sockfd as u64, msg as *mut MsgHdr as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+    let r = unsafe {
+        crate::syscall::syscall3(47, sockfd as u64, msg as *mut MsgHdr as u64, flags as u64)
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// Get socket name (local address).
 pub fn getsockname(sockfd: i64, addr: &mut [u8], addrlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(51, sockfd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            51,
+            sockfd as u64,
+            addr.as_mut_ptr() as u64,
+            addrlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Get peer name (remote address).
 pub fn getpeername(sockfd: i64, addr: &mut [u8], addrlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(52, sockfd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            52,
+            sockfd as u64,
+            addr.as_mut_ptr() as u64,
+            addrlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Get a socket option.
-pub fn getsockopt(sockfd: i64, level: i32, optname: i32, optval: &mut [u8], optlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall5(55, sockfd as u64, level as u64, optname as u64, optval.as_mut_ptr() as u64, optlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+pub fn getsockopt(
+    sockfd: i64,
+    level: i32,
+    optname: i32,
+    optval: &mut [u8],
+    optlen: &mut u32,
+) -> Result<(), Error> {
+    let r = unsafe {
+        crate::syscall::syscall5(
+            55,
+            sockfd as u64,
+            level as u64,
+            optname as u64,
+            optval.as_mut_ptr() as u64,
+            optlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Create a pair of connected sockets.
 pub fn socketpair(domain: u64, type_: u64, protocol: u64) -> Result<(i64, i64), Error> {
     let mut sv = [0i32; 2];
-    let r = unsafe { crate::syscall::syscall4(53, domain, type_, protocol, sv.as_mut_ptr() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok((sv[0] as i64, sv[1] as i64)) }
+    let r =
+        unsafe { crate::syscall::syscall4(53, domain, type_, protocol, sv.as_mut_ptr() as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok((sv[0] as i64, sv[1] as i64))
+    }
 }
 
 /// Parses an IPv4 address from a string.
@@ -669,11 +725,7 @@ impl HttpClient {
 
 /// Find the position of \r\n\r\n in a byte slice
 fn find_double_crlf(data: &[u8]) -> Option<usize> {
-    for i in 0..data.len().saturating_sub(3) {
-        if data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
-        {
-            return Some(i);
-        }
-    }
-    None
+    (0..data.len().saturating_sub(3)).find(|&i| {
+        data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
+    })
 }

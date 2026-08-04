@@ -9,7 +9,10 @@ fn user_main() -> i32 {
         let path = args::get(1).unwrap();
         match io::read_to_string(path) {
             Ok(s) => s.lines().map(|l| l.to_string()).collect(),
-            Err(_) => { println!("more: {}: No such file", path); return 1; }
+            Err(_) => {
+                println!("more: {}: No such file", path);
+                return 1;
+            }
         }
     } else {
         let mut buf = [0u8; 4096];
@@ -17,7 +20,11 @@ fn user_main() -> i32 {
         loop {
             match io::read(0, &mut buf) {
                 Ok(0) => break,
-                Ok(n) => if let Ok(s) = core::str::from_utf8(&buf[..n]) { all.push_str(s); },
+                Ok(n) => {
+                    if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                        all.push_str(s);
+                    }
+                }
                 Err(_) => break,
             }
         }
@@ -27,7 +34,9 @@ fn user_main() -> i32 {
     let mut i = 0;
     while i < lines.len() {
         let end = core::cmp::min(i + 24, lines.len());
-        for j in i..end { println!("{}", lines[j]); }
+        for line in lines.iter().take(end).skip(i) {
+            println!("{}", line);
+        }
         i = end;
         if i < lines.len() {
             println!("--More--({}%)", i * 100 / lines.len());

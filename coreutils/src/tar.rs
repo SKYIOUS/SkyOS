@@ -7,14 +7,14 @@ use libsarga::sarga_main;
 
 fn read_file(path: &str) -> alloc::vec::Vec<u8> {
     let fd = unsafe { libsarga::syscall::syscall2(2, path.as_ptr() as u64, 0) };
-    if (fd as i64) < 0 {
+    if fd < 0 {
         return alloc::vec::Vec::new();
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
     loop {
         let n = unsafe { libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, 4096) };
-        if (n as i64) <= 0 {
+        if n <= 0 {
             break;
         }
         data.extend_from_slice(&buf[..n as usize]);
@@ -26,7 +26,7 @@ fn read_file(path: &str) -> alloc::vec::Vec<u8> {
 fn oct_to_num(s: &str) -> u64 {
     let mut n: u64 = 0;
     for b in s.bytes() {
-        if b >= b'0' && b <= b'7' {
+        if (b'0'..=b'7').contains(&b) {
             n = n * 8 + (b - b'0') as u64;
         }
     }
@@ -47,9 +47,9 @@ fn user_main() -> i32 {
             list = true;
         } else if arg == "-c" || arg == "--create" {
             create = true;
-        } else if arg.starts_with("-f") {
+        } else if let Some(stripped) = arg.strip_prefix("-f") {
             file = if arg.len() > 2 {
-                &arg[2..]
+                stripped
             } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
@@ -116,7 +116,7 @@ fn user_main() -> i32 {
                 io::print_str(&alloc::format!("tar: cannot create {}\n", name));
             }
         }
-        let blocks = (size + 511) / 512;
+        let blocks = size.div_ceil(512);
         offset += 512 + blocks as usize * 512;
     }
     0

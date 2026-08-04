@@ -4,10 +4,12 @@ use alloc::collections::VecDeque;
 
 pub(crate) struct SessionManager {
     boot_tick: u64,
+    #[allow(dead_code)] // login tracking, read by session_duration (unused today)
     login_tick: u64,
     pub(crate) shutdown_requested: bool,
     pub(crate) restart_requested: bool,
     pub(crate) logout_requested: bool,
+    #[allow(dead_code)] // save-on-exit flag, persistence not wired yet
     pub(crate) desktop_state_saved: bool,
     pub(crate) recent_apps: VecDeque<u64>,
 }
@@ -29,6 +31,7 @@ impl SessionManager {
         current_tick.saturating_sub(self.boot_tick)
     }
 
+    #[allow(dead_code)] // session stat API, callers use uptime() today
     pub fn session_duration(&self, current_tick: u64) -> u64 {
         current_tick.saturating_sub(self.login_tick)
     }
@@ -45,6 +48,7 @@ impl SessionManager {
         self.logout_requested = true;
     }
 
+    #[allow(dead_code)] // state-persistence hook, persistence not wired yet
     pub fn mark_state_saved(&mut self) {
         self.desktop_state_saved = true;
     }
@@ -57,6 +61,7 @@ impl SessionManager {
         }
     }
 
+    #[allow(dead_code)] // session reset on re-login, not wired yet
     pub fn reset(&mut self, current_tick: u64) {
         self.login_tick = current_tick;
         self.shutdown_requested = false;

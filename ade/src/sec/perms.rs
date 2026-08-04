@@ -2,8 +2,8 @@
 // Permission API v1.0 — STABLE
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use crate::ipc::permission::AppPermission;
+use alloc::vec::Vec;
 
 /// Permission API v1.0
 pub(crate) struct PermissionManager {

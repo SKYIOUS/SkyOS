@@ -2,7 +2,10 @@
 
 pub(crate) struct ConfigStore {
     pub theme_dark: bool,
+    // keep: defaults for future window-blend settings
+    #[allow(dead_code)]
     pub window_opacity: u8,
+    #[allow(dead_code)]
     pub notification_timeout: u32,
 }
 
@@ -22,6 +25,8 @@ impl ConfigStore {
         }
     }
 
+    // keep: setter reserved until settings UI writes to the store
+    #[allow(dead_code)]
     pub fn set(&mut self, key: &str, value: &str) {
         match (key, value) {
             ("theme", "dark") => self.theme_dark = true,
@@ -30,6 +35,8 @@ impl ConfigStore {
         }
     }
 
+    // keep: persistence stub, store not yet backed by disk
+    #[allow(dead_code)]
     pub fn save(&self) {}
 
     pub fn load() -> Self {

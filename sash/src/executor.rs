@@ -4,7 +4,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use libsarga::posix::{WNOHANG, WUNTRACED};
+use libsarga::posix::WUNTRACED;
 use libsarga::println;
 use libsarga::signal::*;
 
@@ -117,7 +117,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
             }
             if r as u64 == pid {
                 if WIFSTOPPED(st) {
-                    let sig = WSTOPSIG(st);
+                    let _sig = WSTOPSIG(st);
                     crate::add_stopped_job(pid, "");
                     println!("\n[{}] {} Stopped", 0, pid);
                     return 0;
@@ -393,7 +393,9 @@ pub fn capture_output(cmd_str: &str) -> String {
         unsafe {
             libsarga::syscall::syscall1(1, 1);
         }
-        loop {}
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     let _ = unsafe { libsarga::syscall::syscall1(3, fds[1] as u64) };

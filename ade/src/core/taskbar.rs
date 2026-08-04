@@ -2,9 +2,9 @@
 
 use crate::core::constants::TASKBAR_H;
 use crate::core::geometry::Rect;
+use crate::core::window::WindowState;
 use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
-use crate::core::window::WindowState;
 
 pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot, clock_str: &str) {
     let ty = snap.taskbar_y();

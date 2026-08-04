@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
 use crate::ipc::message::{ApplicationId, ChannelId, Message};
+use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChannelType {

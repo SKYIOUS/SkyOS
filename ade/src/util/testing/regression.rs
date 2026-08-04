@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use alloc::string::String;
 use crate::core::desktop::Desktop;
-use crate::ipc::message::{IpcTarget, MessageBus};
 use crate::core::window::{AppWindow, VisualFlags, WindowState};
+use crate::ipc::message::{IpcTarget, MessageBus};
+use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::io;
 
@@ -23,14 +23,32 @@ pub(crate) fn run_regression_suite(desktop: &mut Desktop) -> bool {
 fn test_window_create_close(desktop: &mut Desktop) -> bool {
     let before = desktop.wm.len();
     let win = AppWindow {
-        x: 10, y: 10, w: 200, h: 150,
-        prev_x: 10, prev_y: 10, prev_w: 200, prev_h: 150,
-        title: String::from("RegWin"), content: alloc::vec::Vec::new(),
-        scroll: 0, id: 0, pid: None, focused: true, dragging: false,
-        drag_ox: 0, drag_oy: 0, state: WindowState::Normal,
-        prev_state: WindowState::Normal, flags: VisualFlags::new(),
-        selection: None, anim: None, closing: false, anim_opacity: 0,
-        always_on_top: false, explorer_id: None,
+        x: 10,
+        y: 10,
+        w: 200,
+        h: 150,
+        prev_x: 10,
+        prev_y: 10,
+        prev_w: 200,
+        prev_h: 150,
+        title: String::from("RegWin"),
+        content: alloc::vec::Vec::new(),
+        scroll: 0,
+        id: 0,
+        pid: None,
+        focused: true,
+        dragging: false,
+        drag_ox: 0,
+        drag_oy: 0,
+        state: WindowState::Normal,
+        prev_state: WindowState::Normal,
+        flags: VisualFlags::new(),
+        selection: None,
+        anim: None,
+        closing: false,
+        anim_opacity: 0,
+        always_on_top: false,
+        explorer_id: None,
     };
     let id = desktop.wm.create(win);
     if desktop.wm.len() != before + 1 {
@@ -48,24 +66,60 @@ fn test_window_create_close(desktop: &mut Desktop) -> bool {
 
 fn test_window_focus(desktop: &mut Desktop) -> bool {
     let win_a = AppWindow {
-        x: 20, y: 20, w: 200, h: 150,
-        prev_x: 20, prev_y: 20, prev_w: 200, prev_h: 150,
-        title: String::from("RegA"), content: alloc::vec::Vec::new(),
-        scroll: 0, id: 0, pid: None, focused: true, dragging: false,
-        drag_ox: 0, drag_oy: 0, state: WindowState::Normal,
-        prev_state: WindowState::Normal, flags: VisualFlags::new(),
-        selection: None, anim: None, closing: false, anim_opacity: 0,
-        always_on_top: false, explorer_id: None,
+        x: 20,
+        y: 20,
+        w: 200,
+        h: 150,
+        prev_x: 20,
+        prev_y: 20,
+        prev_w: 200,
+        prev_h: 150,
+        title: String::from("RegA"),
+        content: alloc::vec::Vec::new(),
+        scroll: 0,
+        id: 0,
+        pid: None,
+        focused: true,
+        dragging: false,
+        drag_ox: 0,
+        drag_oy: 0,
+        state: WindowState::Normal,
+        prev_state: WindowState::Normal,
+        flags: VisualFlags::new(),
+        selection: None,
+        anim: None,
+        closing: false,
+        anim_opacity: 0,
+        always_on_top: false,
+        explorer_id: None,
     };
     let win_b = AppWindow {
-        x: 100, y: 100, w: 200, h: 150,
-        prev_x: 100, prev_y: 100, prev_w: 200, prev_h: 150,
-        title: String::from("RegB"), content: alloc::vec::Vec::new(),
-        scroll: 0, id: 0, pid: None, focused: false, dragging: false,
-        drag_ox: 0, drag_oy: 0, state: WindowState::Normal,
-        prev_state: WindowState::Normal, flags: VisualFlags::new(),
-        selection: None, anim: None, closing: false, anim_opacity: 0,
-        always_on_top: false, explorer_id: None,
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 150,
+        prev_x: 100,
+        prev_y: 100,
+        prev_w: 200,
+        prev_h: 150,
+        title: String::from("RegB"),
+        content: alloc::vec::Vec::new(),
+        scroll: 0,
+        id: 0,
+        pid: None,
+        focused: false,
+        dragging: false,
+        drag_ox: 0,
+        drag_oy: 0,
+        state: WindowState::Normal,
+        prev_state: WindowState::Normal,
+        flags: VisualFlags::new(),
+        selection: None,
+        anim: None,
+        closing: false,
+        anim_opacity: 0,
+        always_on_top: false,
+        explorer_id: None,
     };
     let id_a = desktop.wm.create(win_a);
     let _id_b = desktop.wm.create(win_b);
@@ -73,19 +127,37 @@ fn test_window_focus(desktop: &mut Desktop) -> bool {
     desktop.wm.close(id_a);
     desktop.wm.close(desktop.wm.active().unwrap());
     io::print_str("[regression] PASS window_focus\n");
-    return true;
+    true
 }
 
 fn test_drag(desktop: &mut Desktop) -> bool {
     let win = AppWindow {
-        x: 30, y: 30, w: 200, h: 150,
-        prev_x: 30, prev_y: 30, prev_w: 200, prev_h: 150,
-        title: String::from("DragWin"), content: alloc::vec::Vec::new(),
-        scroll: 0, id: 0, pid: None, focused: true, dragging: false,
-        drag_ox: 0, drag_oy: 0, state: WindowState::Normal,
-        prev_state: WindowState::Normal, flags: VisualFlags::new(),
-        selection: None, anim: None, closing: false, anim_opacity: 0,
-        always_on_top: false, explorer_id: None,
+        x: 30,
+        y: 30,
+        w: 200,
+        h: 150,
+        prev_x: 30,
+        prev_y: 30,
+        prev_w: 200,
+        prev_h: 150,
+        title: String::from("DragWin"),
+        content: alloc::vec::Vec::new(),
+        scroll: 0,
+        id: 0,
+        pid: None,
+        focused: true,
+        dragging: false,
+        drag_ox: 0,
+        drag_oy: 0,
+        state: WindowState::Normal,
+        prev_state: WindowState::Normal,
+        flags: VisualFlags::new(),
+        selection: None,
+        anim: None,
+        closing: false,
+        anim_opacity: 0,
+        always_on_top: false,
+        explorer_id: None,
     };
     let id = desktop.wm.create(win);
     desktop.wm.begin_drag(id, 40, 40);
@@ -106,7 +178,10 @@ fn test_start_menu(desktop: &mut Desktop) -> bool {
 }
 
 fn test_notifications(desktop: &mut Desktop) -> bool {
-    let id = desktop.services.notifications.notify("Reg Title", "Reg Body", 1, 60);
+    let id = desktop
+        .services
+        .notifications
+        .notify("Reg Title", "Reg Body", 1, 60);
     if id == 0 {
         io::print_str("[regression] FAIL notifications\n");
         return false;

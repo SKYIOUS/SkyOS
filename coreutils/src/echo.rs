@@ -4,7 +4,7 @@ extern crate alloc;
 use libsarga::{args, print, sarga_main};
 
 fn user_main() -> i32 {
-    let newline = !args::get(1).map_or(false, |a| a == "-n");
+    let newline = args::get(1).is_none_or(|a| a != "-n");
     let start = if !newline && args::argc() > 1 { 2 } else { 1 };
 
     for i in start..args::argc() {

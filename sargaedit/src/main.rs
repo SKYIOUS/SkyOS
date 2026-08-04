@@ -575,8 +575,8 @@ fn user_main() -> i32 {
                     }
                 }
                 c => {
-                    if ed.mode == EditMode::Command || (c >= 0x20 && c < 0x7F) {
-                        if c >= 0x20 && c < 0x7F {
+                    if ed.mode == EditMode::Command || (0x20..0x7F).contains(&c) {
+                        if (0x20..0x7F).contains(&c) {
                             ed.insert_char(c as char);
                         } else {
                             if let Some(code) = ed.handle_key(c) {

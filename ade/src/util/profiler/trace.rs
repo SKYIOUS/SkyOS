@@ -1,7 +1,10 @@
 #[derive(Clone, Copy)]
 pub(crate) struct TraceEntry {
+    #[allow(dead_code)] // trace entry data surface, read via future trace UI
     pub tick: u64,
+    #[allow(dead_code)] // trace entry data surface, read via future trace UI
     pub event: &'static str,
+    #[allow(dead_code)] // trace entry data surface, read via future trace UI
     pub data: u64,
 }
 
@@ -14,7 +17,11 @@ pub(crate) struct TraceBuffer {
 impl TraceBuffer {
     pub fn new() -> Self {
         TraceBuffer {
-            entries: [TraceEntry { tick: 0, event: "", data: 0 }; 256],
+            entries: [TraceEntry {
+                tick: 0,
+                event: "",
+                data: 0,
+            }; 256],
             index: 0,
             count: 0,
         }
@@ -28,6 +35,7 @@ impl TraceBuffer {
         }
     }
 
+    #[allow(dead_code)] // trace API reader
     pub fn iter(&self) -> core::slice::Iter<'_, TraceEntry> {
         self.entries[..self.count].iter()
     }

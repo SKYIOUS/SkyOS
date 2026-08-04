@@ -22,7 +22,7 @@ fn copy_file(src: &str, dst: &str) -> i64 {
         }
     };
     let dst_fd = unsafe { syscall::syscall2(2, dst.as_ptr() as u64, 0o100 | 0x42) };
-    if (dst_fd as i64) < 0 {
+    if dst_fd < 0 {
         println!("cp: {}: create failed", dst);
         unsafe {
             syscall::syscall1(3, src_fd as u64);
@@ -158,7 +158,7 @@ fn user_main() -> i32 {
         } else if is_dir {
             println!("cp: {}: omitting directory (use -r)", src);
         } else {
-            if files.len() > 0 || dst.ends_with('/') {
+            if !files.is_empty() || dst.ends_with('/') {
                 let base = src.rsplit('/').next().unwrap_or(src);
                 let dst_path = join_path(&dst, base);
                 copy_file(src, &dst_path);

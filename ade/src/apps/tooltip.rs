@@ -1,5 +1,5 @@
-use alloc::string::String;
 use crate::render::compositor::Canvas;
+use alloc::string::String;
 
 pub(crate) struct Tooltip {
     pub text: String,
@@ -11,6 +11,8 @@ pub(crate) struct Tooltip {
 
 pub(crate) struct TooltipManager {
     pub active: Option<Tooltip>,
+    // keep: show-delay timing, unused until hover-delay is wired
+    #[allow(dead_code)]
     delay: u32,
 }
 
@@ -47,7 +49,9 @@ impl TooltipManager {
         }
     }
 
-    pub fn draw(&self, canvas: &mut Canvas, screen_w: u32, screen_h: u32) {
+    // keep: rendering not yet wired into the compositor
+    #[allow(dead_code)]
+    pub fn draw(&self, canvas: &mut Canvas, screen_w: u32, _screen_h: u32) {
         if let Some(ref t) = self.active {
             if !t.visible {
                 return;

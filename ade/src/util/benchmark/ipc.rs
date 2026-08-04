@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use alloc::vec::Vec;
-use crate::util::benchmark::BenchmarkResult;
 use crate::core::desktop::Desktop;
 use crate::ipc::message::{IpcTarget, MessageBus};
+use crate::util::benchmark::BenchmarkResult;
+use alloc::vec::Vec;
 use libsarga::io;
 
 pub(crate) fn bench_message_roundtrip(desktop: &mut Desktop) -> BenchmarkResult {
@@ -19,7 +19,9 @@ pub(crate) fn bench_message_roundtrip(desktop: &mut Desktop) -> BenchmarkResult 
 
     let elapsed = desktop.clock_ticks - start;
     io::print_str(&alloc::format!(
-        "[bench] ipc_message_roundtrip: {} messages in {} ticks\n", n, elapsed
+        "[bench] ipc_message_roundtrip: {} messages in {} ticks\n",
+        n,
+        elapsed
     ));
     BenchmarkResult {
         name: "ipc_message_roundtrip",

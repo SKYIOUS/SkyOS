@@ -4,7 +4,7 @@
 extern crate alloc;
 extern crate libsarga;
 
-use libsarga::{args, io, process, sarga_main};
+use libsarga::{io, process, sarga_main};
 
 fn user_main() -> i32 {
     io::print_str("========================================\n");
