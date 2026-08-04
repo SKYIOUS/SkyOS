@@ -177,7 +177,7 @@ impl Desktop {
             switcher_idx: 0,
             app_reg: crate::util::app_registry::AppRegistry::new(),
             lifecycle: crate::sys::lifecycle::LifecycleManager::new(),
-            services: crate::service::service_manager::ServiceManager::new(0),
+            services: crate::service::service_manager::ServiceManager::new(64),
             tray: SystemTray::new(),
             settings: crate::core::settings::SettingsState::new(),
             config_store: crate::apps::config_store::ConfigStore::new(),
@@ -238,7 +238,7 @@ impl Desktop {
                                 ExitClass::Clean => unreachable!(),
                             };
                             self.services
-                                .notify("Application Crashed", &reason, 2, 8000);
+                                .notify("Application Crashed", &reason, 2, 8000, self.clock_ticks);
                         }
                     }
                     self.lifecycle.remove(pid);
@@ -607,7 +607,7 @@ impl Desktop {
             Event::AppFocused(_id) => {}
             Event::AppCrashed(_id) => {
                 self.crash_diag.record_event("app_crashed");
-                self.services.notify("App Crashed", "An application has crashed", 2, 120);
+                self.services.notify("App Crashed", "An application has crashed", 2, 120, self.clock_ticks);
             }
             Event::SettingsChanged => {}
             Event::FocusChanged(_id) => {}
@@ -986,7 +986,7 @@ impl Desktop {
                     }
                 }
                 ShortcutAction::DemoNotification => {
-                    self.services.notify("Demo", "This is a test notification", 1, 120);
+                    self.services.notify("Demo", "This is a test notification", 1, 120, self.clock_ticks);
                     self.damage.mark_full();
                 }
                 ShortcutAction::DismissNotification => {
@@ -1130,7 +1130,7 @@ impl Desktop {
             w.flags.opacity = 0;
             w.animate_to(w.x, w.y, w.w, w.h);
         }
-        self.services.notify("App Launched", "File Explorer", 1, 120);
+        self.services.notify("App Launched", "File Explorer", 1, 120, self.clock_ticks);
         self.damage.mark_full();
     }
 

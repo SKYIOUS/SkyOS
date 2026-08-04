@@ -1,7 +1,15 @@
 use crate::syscall::syscall3;
-use crate::syscall::SYS_FUTEX;
+use crate::syscall::{SYS_CLOCK_GETTIME, SYS_FUTEX};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
+
+fn clock_gettime_ns() -> i64 {
+    let mut ts: [i64; 2] = [0, 0];
+    unsafe {
+        crate::syscall::syscall2(SYS_CLOCK_GETTIME, &mut ts as *mut [i64; 2] as u64, 0);
+    }
+    ts[0] * 1_000_000_000 + ts[1]
+}
 
 // Raw Mutex (no value wrapping)
 pub struct RawMutex {
@@ -23,7 +31,7 @@ impl RawMutex {
     /// Returns Ok(()) if lock acquired, Err(()) if timeout elapsed.
     pub fn try_lock_timeout(&self, timeout_ms: Option<u64>) -> Result<(), ()> {
         let start = if timeout_ms.is_some() {
-            Some(unsafe { crate::syscall::syscall1(96, 0) }) // clock_gettime
+            Some(clock_gettime_ns())
         } else {
             None
         };
@@ -38,7 +46,7 @@ impl RawMutex {
             }
 
             if let Some(timeout) = timeout_ms {
-                let now = unsafe { crate::syscall::syscall1(96, 0) };
+                let now = clock_gettime_ns();
                 if now - start.unwrap() > (timeout * 1_000_000) as i64 {
                     return Err(());
                 }
@@ -46,7 +54,7 @@ impl RawMutex {
 
             // SAFETY: FUTEX_WAIT syscall is safe here - state.as_ptr() is a valid pointer to AtomicU32,
             // and we're passing valid futex operation codes. The syscall will block until woken.
-            unsafe { syscall3(202, self.state.as_ptr() as u64, 0, 1) };
+            unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 0, 1) };
         }
     }
 
@@ -54,7 +62,7 @@ impl RawMutex {
         self.state.store(0, Ordering::Release);
         // SAFETY: FUTEX_WAKE syscall is safe here - state.as_ptr() is a valid pointer to AtomicU32,
         // and waking waiters is safe even if none are waiting.
-        unsafe { syscall3(202, self.state.as_ptr() as u64, 1, 1) };
+        unsafe { syscall3(SYS_FUTEX, self.state.as_ptr() as u64, 1, 1) };
     }
 }
 
@@ -241,7 +249,7 @@ impl Condvar {
     /// Wait with timeout in milliseconds. Returns true if signaled, false if timeout.
     pub fn wait_timeout(&self, mutex: &RawMutex, timeout_ms: Option<u64>) -> bool {
         let start = if timeout_ms.is_some() {
-            Some(unsafe { crate::syscall::syscall1(96, 0) }) // clock_gettime
+            Some(clock_gettime_ns())
         } else {
             None
         };
@@ -257,7 +265,7 @@ impl Condvar {
             }
 
             if let Some(timeout) = timeout_ms {
-                let now = unsafe { crate::syscall::syscall1(96, 0) };
+                let now = clock_gettime_ns();
                 if now - start.unwrap() > (timeout * 1_000_000) as i64 {
                     mutex.lock();
                     return false;

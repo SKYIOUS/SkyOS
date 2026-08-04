@@ -1,0 +1,70 @@
+name: Bug Report
+description: Report a bug to help us improve SkyOS
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: version
+    attributes:
+      label: SkyOS Version
+      description: What version of SkyOS are you running?
+      placeholder: "0.6.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - kernel
+        - userspace
+        - ade (desktop)
+        - libsarga
+        - sash (shell)
+        - coreutils
+        - build system
+        - docs
+        - CI
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      placeholder: |
+        1. Build with 'python build_disk.py'
+        2. Boot in QEMU
+        3. Run '...'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs / Output
+      description: Paste any relevant logs or QEMU serial output
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Rust version, QEMU version
+      placeholder: "Windows 11, Rust nightly 2026-01-01, QEMU 9.0"

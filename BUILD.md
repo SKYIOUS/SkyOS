@@ -1,56 +1,51 @@
 # SkyOS Build System
 
-## Single Entry Point
-
-`build_disk.py` is the unified build script for SkyOS. It handles the entire build pipeline from userspace compilation to disk image creation.
-
 ## Quick Start
 
 ```bash
-# Full build (userspace → kernel → UEFI image → VDI)
+# Full build (userspace → kernel → UEFI image)
 python build_disk.py
 
-# Kernel-only build (faster for kernel development)
+# Kernel + bootimage only (faster for kernel dev)
 python build_disk.py --kernel-only
 
-# Userspace-only build
+# Userspace + initrd only
 python build_disk.py --userspace-only
 
-# Build with ISO output
+# Full build with ISO output
 python build_disk.py --iso --version 0.6.0
 
-# Build in release mode
+# Release build (optimized)
 python build_disk.py --release
 ```
 
-## Build Options
+## Options
 
 | Option | Description |
 |--------|-------------|
-| `--kernel-only` | Only build kernel and UEFI bootimage (skips userspace) |
-| `--userspace-only` | Only build userspace binaries and initrd (skips kernel) |
+| `--kernel-only` | Build kernel + UEFI bootimage only (skips userspace) |
+| `--userspace-only` | Build userspace + initrd only (skips kernel) |
 | `--no-vdi` | Skip VirtualBox VDI conversion |
 | `--iso` | Create bootable ISO image |
-| `--version VERSION` | Version string for ISO output (default: 0.6.0) |
-| `--release` | Build in release mode with optimizations |
+| `--version VERSION` | Version for ISO output (default: 0.6.0) |
+| `--release` | Optimized release build |
 
-## Build Pipeline
+## Pipeline
 
-The full build pipeline (`python build_disk.py`) performs the following steps:
+| Step | Component | Output |
+|------|-----------|--------|
+| 1 | Userspace (cargo build) | `target/x86_64-sarga/{debug,release}/` |
+| 2 | Initrd (build_initrd.py) | `initrd.tar` |
+| 3 | Kernel (cargo +nightly build) | Kernel ELF |
+| 4 | Bootimage (builder) | `skyos_uefi.img` |
+| 5 | VDI (VBoxManage, optional) | `skyos.vdi` |
+| 6 | ISO (make_iso.py, optional) | `release/skyos-{version}.iso` |
 
-1. **Userspace Build**: Compiles all userspace binaries for `x86_64-sarga` target
-2. **Initrd Creation**: Creates `initrd.tar` with FHS directory structure
-3. **Kernel Build**: Builds kernel with bootloader integration
-4. **Bootimage Creation**: Creates UEFI bootimage (`skyos_uefi.img`)
-5. **VDI Conversion**: Converts to VirtualBox VDI format (optional)
-6. **ISO Creation**: Creates bootable ISO image (optional with `--iso`)
+## Outputs
 
-## Build Outputs
-
-- `skyos_uefi.img` - UEFI bootable disk image
-- `skyos.vdi` - VirtualBox disk image (if not skipped)
-- `release/skyos-<version>.iso` - Bootable ISO (if `--iso` specified)
-- `initrd.tar` - Initial ramdisk with userspace
+- `skyos_uefi.img` — UEFI bootable disk image (primary)
+- `skyos.vdi` — VirtualBox disk image
+- `release/skyos-{version}.iso` — Bootable ISO
 
 ## Running
 
@@ -58,60 +53,33 @@ The full build pipeline (`python build_disk.py`) performs the following steps:
 
 ```bash
 qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
+qemu-system-x86_64 -bios OVMF.fd -cdrom release/skyos-0.6.0.iso -m 512M -smp 2
 ```
 
-### VirtualBox
-
-Use `skyos.vdi` with EFI enabled in System > Motherboard settings.
-
-### ISO
+### Makefile (WSL/Linux)
 
 ```bash
-qemu-system-x86_64 -bios OVMF.fd -cdrom release/skyos-<version>.iso -m 512M -smp 2
+make run        # build + QEMU with display
+make test       # build + QEMU nographic + check login
 ```
 
 ## Prerequisites
 
-- **Rust nightly** with `rust-src` and `llvm-tools-preview` components
+- **Rust nightly** with `rust-src` + `llvm-tools-preview` components
 - **Python 3** for build scripts
-- **QEMU** for testing (optional)
-- **VirtualBox** with VBoxManage for VDI conversion (optional)
-- **xorriso** for ISO creation (optional, can use WSL on Windows)
+- **QEMU** for testing (recommended)
+- **xorriso** for ISO creation (or `pip install pycdlib` as fallback)
+- **VirtualBox** with VBoxManage for VDI (optional)
 
-## Development Workflow
-
-For kernel development, use `--kernel-only` to skip userspace compilation:
+## Development
 
 ```bash
+# Fast kernel iteration (skips userspace)
 python build_disk.py --kernel-only
-```
 
-For userspace development, use `--userspace-only`:
-
-```bash
+# Fast userspace iteration (skips kernel)
 python build_disk.py --userspace-only
+
+# Specific crate
+cargo build --target x86_64-sarga.json -p sash
 ```
-
-## Legacy Scripts
-
-The following scripts have been removed and their functionality consolidated into `build_disk.py`:
-
-- `build.ps1` - Use `python build_disk.py` instead
-- `make_bootimage.ps1` - Use `python build_disk.py --kernel-only` instead
-- `make_installer_iso.py` - Use `python build_disk.py --iso` instead
-- `build_userspace.ps1` - Use `python build_disk.py --userspace-only` instead
-- `rebuild_initrd.ps1` - Use `python build_disk.py --userspace-only` instead
-
-## Troubleshooting
-
-### Kernel directory not found
-
-The build expects the kernel to be in a `kernel/` subdirectory or the separate SKYIOUS KERNEL repo. Ensure the kernel is available at the expected location.
-
-### VBoxManage not found
-
-If VDI conversion fails, install VirtualBox or use `--no-vdi` to skip this step.
-
-### xorriso not found
-
-ISO creation requires xorriso. On Windows, it can be accessed via WSL. If unavailable, omit the `--iso` flag.

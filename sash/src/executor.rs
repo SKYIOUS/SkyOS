@@ -80,6 +80,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
 
     if pid == 0 {
         // Child process
+        crate::reset_sigint_for_child();
         apply_redirections(cmd);
         if let Some(fd) = stdin {
             unsafe { libsarga::syscall::syscall2(33, fd as u64, 0) };

@@ -65,6 +65,38 @@ impl NotificationManager {
         id
     }
 
+    pub fn notify_with_icon_at_tick(
+        &mut self,
+        title: &str,
+        body: &str,
+        icon_id: u8,
+        urgency: u8,
+        timeout: u32,
+        current_tick: u64,
+    ) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        if self.notifications.len() >= 64 {
+            self.notifications.remove(0);
+            if self.visible_count > 0 {
+                self.visible_count -= 1;
+            }
+        }
+        self.notifications.push(Notification {
+            id,
+            title: String::from(title),
+            body: String::from(body),
+            icon_id,
+            urgency,
+            created_tick: current_tick,
+            timeout,
+            actions: Vec::new(),
+            dismissed: false,
+        });
+        self.visible_count += 1;
+        id
+    }
+
     pub fn dismiss(&mut self, id: u64) -> bool {
         if let Some(pos) = self.notifications.iter().position(|n| n.id == id) {
             if !self.notifications[pos].dismissed {

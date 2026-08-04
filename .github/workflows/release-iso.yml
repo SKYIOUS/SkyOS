@@ -1,31 +1,29 @@
-name: Build Release ISO (UEFI)
+name: Build Release ISO
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., 0.6.0)'
+        description: "Release version (e.g. 0.6.0)"
         required: true
-        default: '0.6.0'
+        default: "0.6.0"
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout SkyOS (userspace + build scripts)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Checkout SKYIOUS KERNEL
+      - name: Checkout kernel
         uses: actions/checkout@v4
         with:
           repository: SKYIOUS/SKYIOUS-KERNEL
           path: SKYIOUS-KERNEL
 
-      - name: Install system dependencies
+      - name: Install deps
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso
 
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
           rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
           rustup default nightly
@@ -40,22 +38,23 @@ jobs:
       - name: Build initrd
         run: python3 build_initrd.py
 
-      - name: Copy initrd to builder fallback path
+      - name: Copy initrd
         run: |
           mkdir -p SKYIOUS-KERNEL/SkyOS
           cp initrd.tar SKYIOUS-KERNEL/SkyOS/
 
-      - name: Run builder (creates UEFI bootimage)
+      - name: Run builder
         working-directory: SKYIOUS-KERNEL
         run: cargo run --release --manifest-path builder/Cargo.toml
 
-      - name: Extract ESP and create ISO
+      - name: Create ISO
         run: |
           pip install pycdlib 2>/dev/null || true
           python3 scripts/make_iso.py "${{ github.event.inputs.version }}"
 
-      - name: Upload ISO artifact
+      - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: skyos-${{ github.event.inputs.version }}-iso
           path: release/
+          compression-level: 0

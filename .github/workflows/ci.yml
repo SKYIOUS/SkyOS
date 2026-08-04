@@ -8,83 +8,118 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fmt:
-    name: Formatting
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
           rustup toolchain install nightly --component rustfmt --allow-downgrade
           rustup default nightly
-      - name: cargo fmt
-        run: cargo fmt --check
+      - run: cargo fmt --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
           rustup toolchain install nightly --component clippy --component rust-src --allow-downgrade
           rustup default nightly
-      - name: cargo clippy
-        run: cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          key: clippy-${{ hashFiles('Cargo.lock') }}
+          restore-keys: clippy-
+      - run: cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
 
-  check-all-targets:
-    name: Check all targets build
+  build:
+    name: Build
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [debug, release]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly with rust-src
+      - name: Install nightly
         run: |
           rustup toolchain install nightly --component rust-src --allow-downgrade
           rustup default nightly
-      - name: Build debug
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json
-      - name: Build release
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          key: build-${{ matrix.profile }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: build-${{ matrix.profile }}-
+      - name: Build (${{ matrix.profile }})
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json ${{ matrix.profile == 'release' && '--release' || '' }}
 
-  integration-qemu:
-    name: QEMU integration test
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  integration:
+    name: Integration (QEMU)
     runs-on: ubuntu-22.04
-    needs: [check-all-targets]
+    needs: [build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
           path: SkyOS
 
-      - name: Checkout SKYIOUS KERNEL
+      - name: Checkout kernel
         uses: actions/checkout@v4
         with:
           repository: SKYIOUS/SKYIOUS-KERNEL
           path: SKYIOUS-KERNEL
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 mtools expect
 
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
           rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
           rustup default nightly
 
-      - name: Build kernel with self_test
+      - name: Build kernel (self_test)
         working-directory: SKYIOUS-KERNEL/kernel
         run: cargo build --release --target x86_64-unknown-none -Zbuild-std=core,alloc --features net,smp,ai_rule,self_test
 
-      - name: Build userspace
+      - name: Build userspace (release)
         working-directory: SkyOS
         run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
 
-      - name: Build initrd and bootimage
+      - name: Build initrd
         working-directory: SkyOS
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
         run: |
-          python3 build_initrd.py
           mkdir -p SKYIOUS-KERNEL/SkyOS
-          cp initrd.tar SKYIOUS-KERNEL/SkyOS/
+          cp SkyOS/initrd.tar SKYIOUS-KERNEL/SkyOS/
 
       - name: Create UEFI bootimage
         working-directory: SKYIOUS-KERNEL
@@ -96,20 +131,17 @@ jobs:
           pip install pycdlib 2>/dev/null || true
           python3 scripts/make_iso.py "ci-$(date +%Y%m%d)"
 
-      - name: QEMU integration test
+      - name: QEMU boot test
         working-directory: SkyOS
         timeout-minutes: 5
         run: |
           ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
-          if [ -z "$ISO" ]; then
-            echo "ERROR: No ISO found"
-            exit 1
-          fi
-          # Try expect-based integration test if available
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+
           if command -v expect &>/dev/null; then
             expect tests/qemu_shell_test.exp "$ISO" 180 || true
           fi
-          # Simple boot test (always runs)
+
           timeout 120 qemu-system-x86_64 \
             -bios OVMF.fd \
             -cdrom "$ISO" \
@@ -119,32 +151,21 @@ jobs:
             -device e1000,netdev=net0 -netdev user,id=net0 \
             2>&1 | tee qemu_log.txt
 
-      - name: Check boot log and selftests
+      - name: Verify boot
         working-directory: SkyOS
         run: |
           if grep -q "login:" qemu_log.txt; then
-            echo "PASS: System booted and login prompt detected"
-            if grep -q "PASS" qemu_log.txt; then
-              echo "PASS: Additional integration tests passed"
+            echo "PASS: Login prompt detected"
+            if grep -q "not ok" qemu_log.txt; then
+              echo "FAIL: Self-test failures detected"
+              grep "not ok" qemu_log.txt
+              exit 1
+            fi
+            if grep -q "TAP version 13" qemu_log.txt; then
+              echo "PASS: Self-test TAP output detected"
             fi
           else
-            echo "FAIL: No login prompt found in QEMU output"
+            echo "FAIL: No login prompt"
             cat qemu_log.txt
             exit 1
-          fi
-          
-          # Check for self-test failures (TAP format: "not ok")
-          if grep -q "not ok" qemu_log.txt; then
-            echo "FAIL: Self-test failures detected"
-            grep "not ok" qemu_log.txt
-            exit 1
-          fi
-          
-          # Verify TAP header was emitted
-          if grep -q "TAP version 13" qemu_log.txt; then
-            echo "PASS: Self-test TAP output detected"
-            # Extract and display summary
-            grep "# .* passed" qemu_log.txt || true
-          else
-            echo "WARN: No TAP output found (selftests may not have run)"
           fi

@@ -1,0 +1,18 @@
+# Default owners for everything
+* @SKYIOUS
+
+# Kernel-related paths (owned by kernel team)
+/kernel/ @SKYIOUS
+
+# Build system
+/build_disk.py @SKYIOUS
+/build_initrd.py @SKYIOUS
+/scripts/make_iso.py @SKYIOUS
+/Makefile @SKYIOUS
+
+# CI/CD
+/.github/ @SKYIOUS
+
+# Documentation
+/docs/ @SKYIOUS
+/*.md @SKYIOUS

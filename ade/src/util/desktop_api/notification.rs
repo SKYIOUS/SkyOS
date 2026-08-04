@@ -16,7 +16,7 @@ pub(crate) fn notify(
     if !desktop.permission_check(app, PERM_NOTIFICATIONS) {
         return;
     }
-    desktop.services.notify(title, body, urgency, timeout);
+    desktop.services.notify(title, body, urgency, timeout, desktop.clock_ticks);
 }
 
 /// Desktop API v1.0

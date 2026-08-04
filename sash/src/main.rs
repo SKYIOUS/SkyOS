@@ -264,7 +264,7 @@ pub fn fg_job(id: usize) -> i64 {
         if r as u64 == job.pid {
             if WIFSTOPPED(st) {
                 // Stopped again — add back to job table
-                let mut tbl = JOB_TABLE.0.lock();
+    let tbl = JOB_TABLE.0.lock();
                 tbl.push(JobEntry {
                     pid: job.pid,
                     cmd: job.cmd.clone(),
@@ -286,12 +286,14 @@ pub fn fg_job(id: usize) -> i64 {
 }
 
 pub fn bg_job(id: usize) -> i64 {
-    let tbl = JOB_TABLE.0.lock();
+    let mut tbl = JOB_TABLE.0.lock();
     if id == 0 || id > tbl.len() {
         println!("bg: job not found");
         return 1;
     }
-    println!("[{}] {} &", id, tbl[id - 1].pid);
+    let pid = tbl[id - 1].pid;
+    println!("[{}] {} &", id, pid);
+    let _ = libsarga::process::kill(pid as i64, SIGCONT);
     0
 }
 
@@ -426,13 +428,21 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
 }
 
 fn init_signal_handlers() {
-    // Ignore SIGINT in the shell itself (child processes inherit default disposition)
+    // SIGINT: shell ignores it (child processes reset via reset_sigint_for_child before exec)
     let _ = rt_sigaction(SIGINT, Some(&SigAction::handler(SIG_IGN)), None);
-    // SIGCHLD: we poll via waitpid in the main loop, so keep default (no async handler needed)
-    // SIGTSTP: let child processes handle it; shell ignores it
     let _ = rt_sigaction(SIGTSTP, Some(&SigAction::handler(SIG_IGN)), None);
-    // SIGQUIT: ignore
     let _ = rt_sigaction(SIGQUIT, Some(&SigAction::handler(SIG_IGN)), None);
+}
+
+/// Reset SIGINT to SIG_DFL before exec so child processes respond to Ctrl+C.
+pub(crate) fn reset_sigint_for_child() {
+    let dfl = SigAction {
+        sa_handler: SIG_DFL,
+        sa_flags: 0,
+        sa_restorer: 0,
+        sa_mask: 0,
+    };
+    let _ = rt_sigaction(SIGINT, Some(&dfl), None);
 }
 
 fn user_main() -> i32 {
@@ -531,6 +541,8 @@ fn expand_shell_vars(s: &str) -> String {
                     pos += 2;
                 }
                 '$' => {
+                    let pid_str = alloc::format!("{}", libsarga::process::getpid());
+                    out.push_str(&pid_str);
                     pos += 2;
                 }
                 c if c.is_alphabetic() || c == '_' => {

@@ -145,6 +145,6 @@ pub(crate) fn spawn_app_at(
         w.flags.opacity = 0;
         w.animate_to(w.x, w.y, w.w, w.h);
     }
-    desktop.services.notify("App Launched", title, 1, 120);
+    desktop.services.notify("App Launched", title, 1, 120, desktop.clock_ticks);
     desktop.damage.mark_full();
 }

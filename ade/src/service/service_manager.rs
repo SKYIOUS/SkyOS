@@ -27,7 +27,11 @@ impl ServiceManager {
         self.power.tick(current_tick);
     }
 
-    pub fn notify(&mut self, title: &str, body: &str, urgency: u8, timeout: u32) -> u64 {
-        self.notifications.notify(title, body, urgency, timeout)
+    pub fn notify(&mut self, title: &str, body: &str, urgency: u8, timeout: u32, current_tick: u64) -> u64 {
+        self.notifications.notify_with_icon_at_tick(title, body, 0, urgency, timeout, current_tick)
+    }
+
+    pub fn notify_with_icon(&mut self, title: &str, body: &str, icon_id: u8, urgency: u8, timeout: u32, current_tick: u64) -> u64 {
+        self.notifications.notify_with_icon_at_tick(title, body, icon_id, urgency, timeout, current_tick)
     }
 }

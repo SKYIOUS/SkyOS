@@ -303,14 +303,19 @@ fn builtin_read(args: &[String]) -> i64 {
         .get(1)
         .map(|s| s.clone())
         .unwrap_or_else(|| String::from("REPLY"));
-    let mut buf = [0u8; 4096];
-    let n = libsarga::io::read(0, &mut buf).unwrap_or(0);
-    if n == 0 {
-        return 1;
+    let mut line = alloc::string::String::new();
+    let mut buf = [0u8; 1];
+    loop {
+        let n = libsarga::io::read(0, &mut buf).unwrap_or(0);
+        if n == 0 {
+            break;
+        }
+        if buf[0] == b'\n' {
+            break;
+        }
+        line.push(buf[0] as char);
     }
-    let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
-    let trimmed = s.trim_end_matches('\n');
-    crate::set_env(&var, trimmed);
+    crate::set_env(&var, &line);
     0
 }
 
