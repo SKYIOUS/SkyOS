@@ -316,9 +316,89 @@ impl Desktop {
         self.build_a11y_tree();
         self.tooltips.tick();
         self.tick_tooltip_hover();
+        self.pump_terminals();
         self.profiler.frame_timer.stop(self.clock_ticks);
         if self.clock_ticks.is_multiple_of(1000) {
             self.logger.info(self.clock_ticks, "tick");
+        }
+    }
+
+    /// Pump pty output from terminal windows into their content lines.
+    /// Stateless ANSI filter: ESC sequences and control chars are dropped,
+    /// `\r` ignored, `\n` starts a new line, printable text appended.
+    /// ponytail: no persistent ANSI state machine — a CSI split across reads
+    /// can drop one escape; upgrade if sash output ever looks garbled.
+    fn pump_terminals(&mut self) {
+        for i in 0..self.wm.len() {
+            let Some(id) = self.wm.id_at(i) else { continue };
+            let Some(fd) = self.wm.lookup(id).and_then(|w| w.pty_fd) else { continue };
+            let mut pfds = [libsarga::net::PollFd {
+                fd,
+                events: libsarga::net::POLLIN,
+                revents: 0,
+            }];
+            if libsarga::net::poll(&mut pfds, 0).unwrap_or(0) <= 0 {
+                continue;
+            }
+            if pfds[0].revents & libsarga::net::POLLIN == 0 {
+                continue;
+            }
+            let mut buf = [0u8; 256];
+            let n = match libsarga::io::read(fd, &mut buf) {
+                Ok(n) => n,
+                Err(_) => continue, // slave side closed (sash exited)
+            };
+            if n == 0 {
+                continue;
+            }
+            let mut text = alloc::string::String::new();
+            let mut in_esc = false;
+            for &b in &buf[..n] {
+                if in_esc {
+                    if (0x40..=0x7E).contains(&b) || b < 0x20 {
+                        in_esc = false; // CSI/OSC final byte (or control end)
+                    }
+                    continue;
+                }
+                match b {
+                    0x1B => in_esc = true,
+                    b'\r' => {}
+                    b'\n' => text.push('\n'),
+                    b'\t' => text.push_str("    "),
+                    0x20..=0x7E => text.push(b as char),
+                    _ => {}
+                }
+            }
+            if text.is_empty() {
+                continue;
+            }
+            let mut changed = false;
+            if let Some(w) = self.wm.lookup_mut(id) {
+                for line in text.split('\n') {
+                    if !line.is_empty() {
+                        if w.content.is_empty() {
+                            w.content.push(alloc::string::String::new());
+                        }
+                        if w.content.last().is_none_or(|l| l.len() > 80) {
+                            w.content.push(alloc::string::String::new());
+                        }
+                        if let Some(l) = w.content.last_mut() {
+                            l.push_str(line);
+                        }
+                        changed = true;
+                    }
+                }
+                if text.ends_with('\n') {
+                    w.content.push(alloc::string::String::new());
+                    changed = true;
+                }
+                if w.content.len() > 500 {
+                    w.content.drain(0..w.content.len() - 500);
+                }
+            }
+            if changed {
+                self.damage.mark_full();
+            }
         }
     }
 
@@ -992,6 +1072,17 @@ impl Desktop {
             }
             return;
         }
+        // Terminal window focused: every key goes to the pty master, not the
+        // desktop (Ctrl+C to the shell, backspace to readline, etc.).
+        // ponytail: no Alt+Tab/global shortcuts while a terminal is focused;
+        // close via the window button. Refine when key routing gets modifiers.
+        if let Some(last) = self.wm.focused_mut() {
+            if let Some(fd) = last.pty_fd {
+                let byte = if key == 0x0A || key == 0x0D { 0x0D } else { key };
+                let _ = libsarga::io::write(fd, &[byte]);
+                return;
+            }
+        }
         if let Some(action) = self.shortcuts.handle(key) {
             match action {
                 ShortcutAction::Quit => {
@@ -1112,6 +1203,18 @@ impl Desktop {
         crate::core::launcher::spawn_app(self, path, title);
     }
 
+    pub(crate) fn spawn_terminal(&mut self) {
+        crate::core::launcher::spawn_terminal(self);
+    }
+
+    /// True when the focused window hosts a terminal (pty master).
+    pub(crate) fn focused_has_pty(&self) -> bool {
+        self.wm
+            .active()
+            .and_then(|id| self.wm.lookup(id))
+            .is_some_and(|w| w.pty_fd.is_some())
+    }
+
     #[allow(dead_code)]
     // path is a fixed literal; guard kept for readability
     #[allow(clippy::const_is_empty)]
@@ -1148,6 +1251,7 @@ impl Desktop {
             anim_opacity: 0,
             always_on_top: false,
             explorer_id: Some(id),
+            pty_fd: None,
         };
         app_win.content.push(alloc::string::String::new());
         if !path.is_empty() {

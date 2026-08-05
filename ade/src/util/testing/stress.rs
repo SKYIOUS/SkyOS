@@ -46,6 +46,7 @@ pub(crate) fn test_100_windows(desktop: &mut Desktop) {
             anim_opacity: 0,
             always_on_top: false,
             explorer_id: None,
+            pty_fd: None,
         };
         ids.push(desktop.wm.create(win));
     }
@@ -118,6 +119,7 @@ pub(crate) fn test_rapid_focus(desktop: &mut Desktop) {
             anim_opacity: 0,
             always_on_top: false,
             explorer_id: None,
+            pty_fd: None,
         };
         ids.push(desktop.wm.create(win));
     }

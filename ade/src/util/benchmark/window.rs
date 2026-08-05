@@ -40,6 +40,7 @@ pub(crate) fn bench_create_destroy(desktop: &mut Desktop) -> BenchmarkResult {
             anim_opacity: 0,
             always_on_top: false,
             explorer_id: None,
+            pty_fd: None,
         };
         ids.push(desktop.wm.create(win));
     }

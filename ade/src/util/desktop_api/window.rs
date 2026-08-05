@@ -45,6 +45,7 @@ pub(crate) fn create(
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     app_win.content.push(alloc::string::String::new());
     let wid = desktop.wm.create(app_win);

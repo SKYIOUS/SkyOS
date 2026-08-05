@@ -35,6 +35,7 @@ pub(crate) fn test_full_flow(desktop: &mut Desktop) -> bool {
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     let id = desktop.wm.create(win);
     if desktop.wm.len() != before + 1 {
@@ -69,6 +70,7 @@ pub(crate) fn test_full_flow(desktop: &mut Desktop) -> bool {
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     let id2 = desktop.wm.create(win2);
     if desktop.wm.len() != before + 2 {

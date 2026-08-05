@@ -34,6 +34,7 @@ pub(crate) fn test_window_creation(desktop: &mut Desktop) -> bool {
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     let id = desktop.wm.create(win);
     if desktop.wm.len() != before + 1 {
@@ -82,6 +83,7 @@ pub(crate) fn test_window_focus(desktop: &mut Desktop) -> bool {
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     let win_b = AppWindow {
         x: 200,
@@ -110,6 +112,7 @@ pub(crate) fn test_window_focus(desktop: &mut Desktop) -> bool {
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     let id_a = desktop.wm.create(win_a);
     let id_b = desktop.wm.create(win_b);

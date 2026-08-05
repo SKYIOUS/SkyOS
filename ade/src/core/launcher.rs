@@ -9,6 +9,10 @@ pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
         desktop.spawn_explorer();
         return;
     }
+    if path == "/bin/sash" {
+        desktop.spawn_terminal();
+        return;
+    }
     spawn_app_at(
         desktop,
         path,
@@ -27,6 +31,10 @@ pub(crate) fn spawn_app_from_registry(desktop: &mut Desktop, app: &AppInfo) {
         desktop.spawn_explorer();
         return;
     }
+    if path == "/bin/sash" {
+        desktop.spawn_terminal();
+        return;
+    }
     if path.is_empty() {
         // About dialog or similar — handled in launch_app
         return;
@@ -42,6 +50,90 @@ pub(crate) fn spawn_app_from_registry(desktop: &mut Desktop, app: &AppInfo) {
     );
     desktop.app_reg.record_launch(app.id);
     desktop.services.session.record_app_launch(app.id.0 as u64);
+}
+
+pub(crate) fn spawn_terminal(desktop: &mut Desktop) {
+    let (master, slave) = match libsarga::io::openpty() {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let (x, y, w, h) = (
+        80 + desktop.wm.len() as i32 * 30,
+        40 + desktop.wm.len() as i32 * 20,
+        520,
+        360,
+    );
+    let mut app_win = AppWindow {
+        x,
+        y,
+        w,
+        h,
+        prev_x: x,
+        prev_y: y,
+        prev_w: w,
+        prev_h: h,
+        title: alloc::string::String::from("Terminal"),
+        content: alloc::vec::Vec::new(),
+        scroll: 0,
+        id: 0,
+        pid: None,
+        focused: true,
+        dragging: false,
+        drag_ox: 0,
+        drag_oy: 0,
+        state: WindowState::Normal,
+        prev_state: WindowState::Normal,
+        flags: VisualFlags::new(),
+        selection: None,
+        anim: None,
+        closing: false,
+        anim_opacity: 0,
+        always_on_top: false,
+        explorer_id: None,
+        pty_fd: None,
+    };
+    app_win.content.push(alloc::string::String::new());
+    match libsarga::process::fork() {
+        Ok(0) => {
+            // Child: pty slave becomes stdin/stdout/stderr, then sash.
+            let _ = libsarga::io::dup2(slave, 0);
+            let _ = libsarga::io::dup2(slave, 1);
+            let _ = libsarga::io::dup2(slave, 2);
+            let _ = libsarga::io::close(master);
+            let _ = libsarga::io::close(slave);
+            let _ = libsarga::process::execve("/bin/sash", &["/bin/sash"], &[]);
+            libsarga::process::exit(1);
+        }
+        Ok(pid) => {
+            let _ = libsarga::io::close(slave);
+            app_win.pid = Some(pid);
+            app_win.pty_fd = Some(master);
+            let app_idx = desktop
+                .app_reg
+                .find_by_exec("/bin/sash")
+                .map(|id| id.0)
+                .unwrap_or(0);
+            desktop.lifecycle.register(pid, app_idx);
+            desktop
+                .permissions
+                .register(pid, crate::sec::perms::default_grant());
+            desktop.lifecycle.mark_running(pid);
+        }
+        Err(_) => {
+            let _ = libsarga::io::close(master);
+            let _ = libsarga::io::close(slave);
+            return;
+        }
+    }
+    let id = desktop.wm.create(app_win);
+    if let Some(w) = desktop.wm.lookup_mut(id) {
+        w.flags.opacity = 0;
+        w.animate_to(w.x, w.y, w.w, w.h);
+    }
+    desktop
+        .services
+        .notify("App Launched", "Terminal", 1, 120, desktop.clock_ticks);
+    desktop.damage.mark_full();
 }
 
 pub(crate) fn spawn_app_at(
@@ -84,6 +176,7 @@ pub(crate) fn spawn_app_at(
         anim_opacity: 0,
         always_on_top: false,
         explorer_id: None,
+        pty_fd: None,
     };
     app_win.content.push(alloc::format!("> {}", path));
     app_win.content.push(alloc::string::String::new());

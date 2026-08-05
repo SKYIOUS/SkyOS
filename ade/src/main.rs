@@ -56,8 +56,9 @@ fn user_main() -> i32 {
         desktop.tick();
 
         while let Some(key) = desktop_win.get_key() {
-            // Session lifecycle: Ctrl+Alt+Backspace → clean session end
-            if key == 0x7F || key == 0x08 {
+            // Session lifecycle: Ctrl+Alt+Backspace → clean session end.
+            // Backspace typed inside a terminal goes to the shell instead.
+            if (key == 0x7F || key == 0x08) && !desktop.focused_has_pty() {
                 io::print_str("[ade] session ending via keyboard\n");
                 running = false;
                 break;

@@ -90,6 +90,8 @@ pub struct AppWindow {
     pub(crate) closing: bool,
     pub(crate) always_on_top: bool,
     pub(crate) explorer_id: Option<u32>,
+    /// Master fd of a pty when this window hosts a terminal (sash).
+    pub(crate) pty_fd: Option<i64>,
     pub(crate) anim_opacity: u8,
 }
 
