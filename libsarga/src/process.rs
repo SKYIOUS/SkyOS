@@ -42,13 +42,12 @@ pub fn setgid(gid: u64) -> Result<(), Error> {
 
 /// Sets a signal handler.
 pub fn signal(sig: u64, handler: u64) -> Result<u64, Error> {
-    // SYS_RT_SIGACTION = 13, sets handler, 0 for oldact
-    let r = unsafe { syscall3(13, sig, 0, handler) };
-    if r < 0 {
-        Err(Error::from_i64(r))
-    } else {
-        Ok(r as u64)
-    }
+    // SYS_RT_SIGACTION (13) expects a `SigAction` struct. The old ABI here
+    // passed the raw handler value as the oldact pointer — the handler was
+    // never installed (and the kernel wrote a SigAction over the address).
+    let act = crate::signal::SigAction::handler(handler);
+    crate::signal::rt_sigaction(sig as u32, Some(&act), None)?;
+    Ok(handler)
 }
 
 /// Sends a signal to a process.

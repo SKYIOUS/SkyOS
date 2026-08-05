@@ -32,8 +32,10 @@ impl Service {
 
         match process::fork() {
             Ok(0) => {
-                // Child
-                if let Err(_e) = process::execve(&self.exec, &[], &[]) {
+                // Child: pass argv[0] and the path so services see their own
+                // name; empty argv made getopt/argv scans misbehave.
+                let path = self.exec.as_str();
+                if let Err(_e) = process::execve(path, &[path], &[]) {
                     let msg = alloc::format!("[init] exec failed for {}: {}\n", self.name, _e);
                     let _ = io::write_all(1, msg.as_bytes());
                     process::exit(1);
@@ -99,7 +101,7 @@ fn user_main() -> i32 {
 
         // Wait for any child process to exit (-1 means any child)
         match process::waitpid(-1, 0) {
-            Ok((pid, _status)) => {
+            Ok((pid, status)) => {
                 let mut found = false;
                 for svc in &mut services {
                     if svc.pid == Some(pid) {
@@ -108,6 +110,12 @@ fn user_main() -> i32 {
                         let _ = io::write_all(1, b" exited\n");
 
                         svc.pid = None;
+                        // Clean exit (status == 0) means the service ran its
+                        // course — reset the crash counter so a single bad
+                        // streak doesn't permanently kill a service.
+                        if status == 0 {
+                            svc.crashes = 0;
+                        }
                         if svc.respawn {
                             svc.crashes += 1;
                             if svc.crashes > MAX_RESPAWNS {
