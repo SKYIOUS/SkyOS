@@ -124,8 +124,20 @@ def create_iso_xorriso(esp_path, output_path, version):
 
 
 def _patch_hybrid(output_path):
-    """Patch MBR + GPT onto an xorriso-produced ISO."""
+    """Patch MBR + GPT onto an ISO (xorriso- or pycdlib-produced)."""
+    # Pad tiny ISOs to a 1 MiB floor so the backup GPT (written across the
+    # final 33 sectors) can never overlap the El Torito boot catalog, which
+    # pycdlib places at a low LBA (~25). On a small image the backup region
+    # would reach back and zero the catalog's validation entry, leaving a
+    # hybrid ISO that OVMF refuses to boot. Real multi-MB images are never
+    # small enough to hit this, but the regression test uses a minimal ESP.
     size = os.path.getsize(output_path)
+    floor = 1024 * 1024
+    if size < floor:
+        with open(output_path, "ab") as f:
+            f.write(bytes(floor - size))  # zero padding
+        log(f"padded ISO to {floor:,}B for hybrid backup GPT")
+        size = floor
     total_sectors = size // 512
 
     with open(output_path, "r+b") as f:
@@ -230,7 +242,15 @@ def create_iso_pycdlib(esp_path, output_path, version):
     iso = pycdlib.PyCdlib()
     iso.new(interchange_level=2, vol_ident=f"SKYOS_{version}"[:32])
     iso.add_file(esp_path, "/ESP.IMG;1")
-    iso.add_fp(io.BytesIO(b"SkyOS boot ISO\n"), "/README.TXT;1")
+    iso.add_fp(
+        io.BytesIO(b"SkyOS boot ISO\n"),
+        len(b"SkyOS boot ISO\n"),
+        iso_path="/README.TXT;1",
+    )
+    # El Torito EFI boot entry pointing at the ESP image (no-emul), so the
+    # boot catalog exists for `_patch_hybrid` and OVMF's CD boot path can
+    # load it — mirroring the xorriso path's `-e ESP.IMG -no-emul-boot`.
+    iso.add_eltorito("/ESP.IMG;1", efi=True, bootcatfile="/BOOT.CATALOG;1")
     iso.write(output_path)
     iso.close()
 
