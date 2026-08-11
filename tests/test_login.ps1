@@ -14,8 +14,8 @@ spawn $qemu -bios $bios -cpu max -smp 1 -m 512M -no-reboot -nographic `
 
 expect {
     "login:" { send "root\r"; exp_continue }
-    "Password:" { send "root\r"; exp_continue }
-    "\$ " { puts "PASS: Got shell prompt"; exit 0 }
+    "Password:" { log_user 0; send "skyos\r"; log_user 1; exp_continue }
+    "sash\[" { puts "PASS: Got shell prompt"; exit 0 }
     timeout { puts "FAIL: Timeout"; exit 1 }
     eof { puts "FAIL: QEMU exited early"; exit 1 }
 }

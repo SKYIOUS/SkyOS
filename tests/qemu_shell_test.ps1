@@ -23,7 +23,7 @@ Write-Host "=== SkyOS QEMU Shell Test ===" -ForegroundColor Cyan
 if (-not $IsoPath) {
     Write-Host "--- Building userspace ---"
     Push-Location $SkyOSDir
-    cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+    cargo build "-Zbuild-std=core,alloc" --target x86_64-sarga.json --release
     if (-not $?) { Write-Host "FAIL: userspace build failed" -ForegroundColor Red; exit 1 }
     Pop-Location
 
@@ -68,16 +68,21 @@ $psi.CreateNoWindow = $true
 $p = [System.Diagnostics.Process]::Start($psi)
 if (-not $p) { Write-Host "FAIL: Could not start QEMU" -ForegroundColor Red; exit 1 }
 
+# NOTE on password echo: this harness writes via StandardInput and captures
+# only StandardOutput. The guest never echoes (kernel serial is TX-only;
+# login reads without writing back), so the password never lands in the
+# captured stream — unlike the expect harnesses, which echo their own send
+# and wrap the password in log_user 0. No suppression needed here.
 $output = New-Object System.Text.StringBuilder
 $commands = @(
     @{ after = "login:";        send = "root`r" }
-    @{ after = "Password:";     send = "root`r" }
-    @{ after = "[#$] ";         send = "ls /`r" }
+    @{ after = "Password:";     send = "skyos`r" }
+    @{ after = "sash\\[";       send = "ls /`r" }
     @{ after = "bin";           send = "uname -a`r" }
-    @{ after = "SkyOS|sarga";   send = "echo SHELL_TEST_OK`r" }
+    @{ after = "Vahi|sarga-os"; send = "echo SHELL_TEST_OK`r" }
     @{ after = "SHELL_TEST_OK"; send = "ls /bin/ | head -10`r" }
-    @{ after = "sash|ls|cat";   send = "/bin/futex_test`r" }
-    @{ after = "PASS|OK";       send = "exit`r" }
+    @{ after = "sash|init|cat"; send = "/bin/futex_test`r" }
+    @{ after = "PASS";          send = "exit`r" }
 )
 
 $cmdIdx = 0
@@ -119,11 +124,11 @@ Write-Host "`n=== Results ===" -ForegroundColor Cyan
 
 $tests = @(
     @{ name = "Boot to login";         pattern = "login:" }
-    @{ name = "Shell prompt";          pattern = "[#$] " }
+    @{ name = "Shell prompt";          pattern = "sash\\[" }
     @{ name = "ls / output";           pattern = "bin" }
-    @{ name = "uname output";          pattern = "SkyOS|sarga" }
+    @{ name = "uname output";          pattern = "Vahi|sarga-os" }
     @{ name = "echo test";             pattern = "SHELL_TEST_OK" }
-    @{ name = "futex_test binary";     pattern = "PASS|OK" }
+    @{ name = "futex_test binary";     pattern = "PASS" }
 )
 
 $allPass = $true

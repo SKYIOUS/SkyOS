@@ -1,0 +1,463 @@
+#!/usr/bin/expect -f
+# Phase B (ade/docs/session-lifecycle.md): drive the GUI login path end-to-end.
+#
+# Boots the ISO, injects root/skyos into login-manager's fields via the QEMU
+# monitor (sendkey). Before the real login it submits a WRONG password
+# once and requires the window to re-prompt in place (serial announce,
+# no exit, no respawn) - the re-prompt property proven on real hardware.
+# Then it logs in correctly, waits for "[ade] session established", and
+# first proves Ctrl+Q is unbound on REAL input (step 4b: sendkey ctrl-q on
+# the empty desktop must NOT end the session or respawn ade - the negative
+# counterpart of the synthetic pins in test_session_end_gate/test_keymap),
+# then
+# ends the session by sending Esc (sendkey esc) on the empty ade desktop -
+# the
+# byte-deliverable session-end path since Aug 9 2026: Esc arrives as Unicode
+# 0x1B, the one distinct control byte the stream carries, and ade ends the
+# session when nothing is open. (The Ctrl+Alt+Backspace chord is the other
+# path but is kernel-gated on Alt delivery.) Asserts the logout markers and
+# the login-manager respawn.
+#
+# KERNEL ROUTING (re-verified Aug 8 2026 against kernel source AND the
+# vendored pc-keyboard 0.5.1 crate; session-lifecycle.md Gap 2): sendkey ->
+# i8042 PS/2 ports -> drivers/ps2.rs -> task/keyboard.rs GUI_SCANCODE_QUEUE
+# -> gui_refresh_task (main.rs, pc_keyboard with HandleControl::Ignore) ->
+# COMPOSITOR.handle_keyboard -> focused window's key_events (gui/window.rs)
+# -> SYS_GUI_GET_KEY -> Window::get_key().
+#   - Letters/digits/printables arrive as Unicode bytes.          (works)
+#   - Tab/Enter/Backspace arrive as Unicode bytes TOO: pc-keyboard 0.5.1's
+#     US104 layout maps Backspace -> Unicode(0x08), Tab -> Unicode(0x09),
+#     Enter -> Unicode(10) (src/layouts/us104.rs). HandleControl::Ignore only
+#     affects Ctrl+letter. So login-manager's Tab/Enter/Backspace handling
+#     IS reachable - the login half of this script is expected to PASS on a
+#     kernel built from the current source (the old "RawKey drop" blocker
+#     was disproven by reading the vendored crate).
+#   - Esc arrives as Unicode(0x1B) - pc-keyboard's US104 layout maps Esc ->
+#     Unicode(0x1B), forwarded as byte 0x1B. On ade's empty desktop that byte
+#     is the session-end key (the a11y Esc arm requests session end when
+#     nothing is open), so the logout half of this script is expected to PASS
+#     on a kernel built from the current source.
+#   - The Ctrl+Alt+Backspace chord remains KERNEL-GATED on modifier delivery:
+#     pc-keyboard decodes Backspace to Unicode(0x08) even with Ctrl+Alt held
+#     (the layout entry is unconditional), and the one-byte window stream
+#     drops the Alt state, so ade sees plain Backspace. That path is the
+#     Phase C kernel gate (docs/kernel-gui-modifier-delivery.md), NOT what
+#     this harness uses to end the session.
+#
+# PER-CHECK AUDIT (Aug 9, 2026) — every pattern verified against sources:
+#
+#   1 init_spawn      (?s)\[init\] starting service: .*?login-manager
+#                                            REAL*: init writes "starting service: ",
+#                                            the name, and "\n" in THREE write_all
+#                                            calls (init/src/main.rs:28-30), and the
+#                                            kernel's TTY0 write path emits a
+#                                            "[TTY0W] len=N" diagnostic before each
+#                                            part (kernel/src/vfs/devfs.rs:110), so
+#                                            the name lands on its OWN line. The old
+#                                            full-name pattern was DEAD (never
+#                                            contiguous on the wire). (?s) spans the
+#                                            interleaved diag; the name is required
+#                                            so a vahid/svc spawn can't false-PASS.
+#   2 login_fail      \[login\] failed to create window
+#                                            REAL  login-manager/src/main.rs:27
+#                                            (single print_str).
+#   3 ade_established \[ade\] session established
+#                                            REAL  ade/src/main.rs:57 (single
+#                                            write_all; ade inherits the console fd
+#                                            from login-manager's exec).
+#   4 login_execve    \[login\] execve failed, continuing
+#                                            REAL  login-manager/src/main.rs:61.
+#   5 ade_ended       \[ade\] session ended
+#                                            REAL  ade/src/main.rs:133. Chain: Esc
+#                                            (0x1B) -> a11y Esc arm
+#                                            (ade/src/core/desktop.rs:617,643,
+#                                            nothing_open) -> request_end -> main
+#                                            loop exit -> marker.
+#   6 init_exit       (?s)\[init\] service .*?login-manager
+#                                            REAL*: exit is 3-part too
+#                                            (init/src/main.rs:125-129). The name is
+#                                            REQUIRED because svc exits with usage
+#                                            (svc/src/main.rs:121-122) and init
+#                                            respawns it — a prefix-only match could
+#                                            false-PASS on svc's exit.
+#   7 init_respawn    (?s)\[init\] starting service: .*?login-manager
+#                                            REAL*: as #1 (the respawn after #6).
+#   8 panic           "=== KERNEL PANIC ==="
+#                                            REAL  kernel/src/main.rs:631-632
+#                                            ("\n=== KERNEL PANIC ===\n" then
+#                                            "[PANIC] "). "SARGA OS PANIC" was DEAD —
+#                                            that string does not exist in the kernel.
+#   9 bad_creds       \[login\] invalid credentials - re-prompting
+#                                            REAL  login-manager/src/main.rs:103
+#                                            (single print_str in the bad-creds
+#                                            else branch, after the
+#                                            note_failed_attempt call - parity
+#                                            with the console getty's
+#                                            "Login incorrect"). The window
+#                                            error text itself is framebuffer-only;
+#                                            this marker is its assertable serial
+#                                            proxy for the probe in step 3.
+#  10 no_respawn      \[init\] starting service: login-manager
+#                                            REAL*: as #1. Its ABSENCE between the
+#                                            bad-cred rejection (step 3a) and the
+#                                            correct login (step 3c) proves the
+#                                            window re-prompted in place - an exit
+#                                            would respawn (init service
+#                                            login-manager, respawn: true).
+#  11 ctrl_q_unbound  ABSENCE of \[ade\] session ended AND of a second
+#                     \[ade\] session established between sendkey ctrl-q
+#                     (step 4b) and its 8s timeout proves Ctrl+Q is unbound
+#                     on REAL input, not just synthetic events (the Rust
+#                     pins in test_session_end_gate/test_keymap are
+#                     synthetic-only). Delivery: pc-keyboard 0.5.1 decodes
+#                     with HandleControl::Ignore (lib.rs:207), so ctrl-q
+#                     arrives as plain 'q' (0x71) - equally unbound, so a
+#                     resurrection of EITHER old session-end gate (Ctrl+Q
+#                     or plain 'q') trips this probe. A second
+#                     \[ade\] session established means ade exited and init
+#                     respawned login-manager, which execs ade again
+#                     (respawn: true) - also FAIL.
+#  12 kbd_irq1        \[KBD\] IRQ1 fired!
+#                     REAL  one-shot kernel marker (interrupts.rs:656); sent
+#                     via sendkey shift in step 2b BEFORE the login typing,
+#                     so the routing question (kernel-keyboard-gate.md §6) is
+#                     answered before any sendkey-driven assertion.
+#  13 chord_inert     ABSENCE of \[ade\] session ended AND of a second
+#                     \[ade\] session established after sendkey_chord
+#                     {ctrl alt} backspace (step 4c) proves the true chord
+#                     cannot end the session on today's kernel (Backspace
+#                     arrives as Unicode 0x08, no mods - the Phase C gate).
+#                     Forward contract: flip to PASS-on-ended when the
+#                     kernel lands Design A (kernel-gui-modifier-delivery.md).
+#  14 second_session   \[ade\] session established (second occurrence,
+#                     step 7) REAL  ade/src/main.rs:57. The respawned
+#                     login-manager execs ade directly (GUI path - no
+#                     getty on respawn), so the marker is the ONLY
+#                     signal the second desktop is live.
+#  15 window_open      \[ade\] launched Terminal (step 8) REAL
+#                     ade/src/core/desktop.rs launch_app (single print_str
+#                     after spawn_app_from_registry). The POSITIVE control
+#                     that the keyboard chain opened a window before the
+#                     negative chord probe.
+#  16 guard_holds      ABSENCE of \[ade\] session ended / respawn markers
+#                     after sendkey_chord {ctrl alt} backspace with a
+#                     window open (step 9) - the wm.is_empty() guard on
+#                     real input, QEMU counterpart of test_session_end_gate.
+#   (* init's multi-write messages + devfs TTY0W diag interleave)
+#
+# pc-keyboard 0.5.1 US104 (vendored) verified: Esc->Unicode(0x1B) (us104.rs:23),
+# Backspace->0x08 (:108), Tab->0x09 (:109), Enter->10 (:317) — the sendkey
+# sequences in this script reach login-manager's fields.
+# Usage: expect# Usage: expect qemu_gui_login.exp <iso_path> [timeout_seconds]
+
+set iso [lindex $argv 0]
+set timeout [lindex $argv 1]
+if {$timeout == ""} { set timeout 240 }
+
+spawn qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -cdrom "$iso" \
+    -m 512M -smp 2 \
+    -nographic -no-reboot \
+    -serial mon:stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+
+# Ctrl-A C toggles the serial console <-> QEMU monitor on mon:stdio.
+# The one place that knows the monitor toggle protocol (Ctrl-A C on
+# mon:stdio): toggle in, run a command, wait for the prompt, toggle back.
+# A future switch to a socket monitor touches only here. Hyphenated sendkey
+# combos are valid through sendkey_seq too — "ctrl-q" already forms a
+# single-modifier chord (QEMU presses in order, releases in reverse);
+# sendkey_chord is the explicit multi-modifier form.
+proc monitor_cmd {cmd} {
+    send "\x01c"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: QEMU monitor not reachable\n"; exit 1 }
+    }
+    send "$cmd\r"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: monitor command '$cmd' not acknowledged\n"; exit 1 }
+    }
+    send "\x01c"
+}
+
+proc sendkey_seq {keys} {
+    monitor_cmd "sendkey $keys"
+}
+
+# True chord: press the modifier keys in order, type the key, release in
+# reverse. QEMU monitor sendkey expresses this as the hyphenated form in a
+# SINGLE command ("sendkey ctrl-alt-backspace"): every key is pressed in
+# order, then released in reverse, so the kernel's raw-scancode tracker
+# (gui_refresh_task) sees ctrl-make, alt-make, key-make before any release
+# — a real chord. This is what sendkey_seq "ctrl alt backspace"
+# (space-separated) is NOT: each key gets its own press+release before the
+# next presses, so no chord ever forms. (sendkey_seq "ctrl-q" already forms
+# a single-modifier chord via the hyphenated form; sendkey_chord is the
+# explicit multi-modifier form.) Key names are QEMU monitor names: ctrl,
+# alt, shift, backspace, ret, esc, etc.
+proc sendkey_chord {mods key} {
+    set combo [join [concat $mods [list $key]] "-"]
+    monitor_cmd "sendkey $combo"
+}
+
+# 1. Boot: login-manager must be spawned by init (GUI compositor gate).
+expect -timeout 90 {
+    -re {(?s)\[init\] starting service: .*?login-manager} {
+        send_user "PASS: init spawned login-manager\n"
+    }
+    "=== KERNEL PANIC ===" { send_user "FAIL: kernel panicked during boot\n"; exit 1 }
+    timeout { send_user "FAIL: boot timeout - login-manager never spawned (kernel gate)\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited during boot\n"; exit 1 }
+}
+
+# 2. Let the window come up; fail fast if Window::create failed.
+expect -timeout 10 {
+    {\[login\] failed to create window} {
+        send_user "FAIL: login-manager could not create a GUI window (kernel compositor gate)\n"
+        exit 1
+    }
+    timeout { }
+}
+
+# 2b. Routing probe: [KBD] IRQ1 fired! is the kernel's ONE-SHOT marker that
+#     IRQ1 actually fired (interrupts.rs:656, AtomicBool swap) — the answer
+#     to the Phase B open question (kernel-keyboard-gate.md §6): do QEMU
+#     monitor sendkey scancodes reach the kernel's keyboard handler on this
+#     build? Send one harmless key (Shift — no side effects on the login
+#     fields) and require the marker BEFORE any login assertion: if sendkey
+#     never routes into the kernel, every sendkey-driven check below is
+#     meaningless. The marker is one-shot per boot, so this step must come
+#     first; later sendkeys still work (only the print is one-shot).
+send_user "=== routing probe: \[KBD\] IRQ1 fired! ===\n"
+sendkey_seq "shift"
+expect -timeout 10 {
+    {\[KBD\] IRQ1 fired!} {
+        send_user "PASS: sendkey reached IRQ1 (kernel keyboard path live)\n"
+    }
+    timeout {
+        send_user "FAIL: \[KBD\] IRQ1 fired! never appeared - sendkey does not route into the kernel keyboard handler\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during routing probe\n"; exit 1 }
+}
+
+# 3. Type the login via the monitor. Tab/Enter/Backspace arrive as Unicode
+#    bytes (pc-keyboard 0.5.1 US104 layout - see header), so this completes.
+#    The monitor echoes each literal 'sendkey ...' command back onto the
+#    console, so the password keystrokes are sent with log_user 0 to keep
+#    them out of the CI log (the username is public).
+#
+#    Bad-password probe (Aug 10, 2026): the FIRST submit uses a wrong
+#    password so the re-prompt property is proven on real hardware input,
+#    not just by source contract (tests/test_login_flow.py pins the source;
+#    this drives it). login-manager must reject IN PLACE: serial announce
+#    '[login] invalid credentials - re-prompting', window stays up (no exit,
+#    no execve, no respawn), then the SAME window accepts the correct
+#    password. The username and the active field survive (login-manager
+#    clears only the password buffer on a bad attempt).
+send_user "=== probe: bad password rejected in place ===\n"
+sendkey_seq "r o o t"
+sendkey_seq "tab"
+log_user 0
+sendkey_seq "w r o n g"
+log_user 1
+sendkey_seq "ret"
+
+expect -timeout 15 {
+    {\[login\] invalid credentials - re-prompting} {
+        send_user "PASS: bad password rejected in place (serial announce)\n"
+    }
+    {\[login\] execve failed, continuing} {
+        send_user "FAIL: execve attempted on a bad password (auth bypass?)\n"
+        exit 1
+    }
+    -re {(?s)\[init\] service .*?login-manager} {
+        send_user "FAIL: login-manager exited after bad password (respawn)\n"
+        exit 1
+    }
+    "=== KERNEL PANIC ===" { send_user "FAIL: kernel panicked at bad password\n"; exit 1 }
+    timeout {
+        send_user "FAIL: bad password not rejected - no serial announce (window died or auth bypassed)\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during bad-password probe\n"; exit 1 }
+}
+
+# 3b. The window must survive WITHOUT a respawn: login-manager re-prompts in
+# place, so no '[init] starting service: login-manager' marker may appear
+# between the rejection and the correct login (an exit would respawn it).
+expect -timeout 10 {
+    {\[init\] starting service: login-manager} {
+        send_user "FAIL: login-manager respawned after bad password (must re-prompt in place)\n"
+        exit 1
+    }
+    timeout {
+        send_user "PASS: no respawn after bad password (window stayed up)\n"
+    }
+    eof { send_user "FAIL: QEMU exited during no-respawn check\n"; exit 1 }
+}
+
+# 3c. Log in correctly with the REAL password: the username "root" and the
+# active password field survived the bad attempt.
+send_user "=== logging in correctly ===\n"
+log_user 0
+sendkey_seq "s k y o s"
+log_user 1
+sendkey_seq "ret"
+
+# 4. A successful verify execs ade, which prints its session markers.
+expect {
+    {\[ade\] session established} {
+        send_user "PASS: GUI login reached the ade session\n"
+    }
+    {\[login\] execve failed, continuing} {
+        send_user "FAIL: login-manager could not exec ade\n"
+        exit 1
+    }
+    "=== KERNEL PANIC ===" { send_user "FAIL: kernel panicked at login\n"; exit 1 }
+    timeout {
+        send_user "FAIL: '\[ade] session established' never appeared - check login-manager's verify_password (root/skyos vs the initrd shadow), the Window::create path, and that the ISO was built from current sources (see ade/docs/session-lifecycle.md Gap 2).\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited at login\n"; exit 1 }
+}
+
+# 4b. Negative QEMU-facing probe: Ctrl+Q is UNBOUND. The synthetic pins
+#     (test_session_end_gate: 'ctrl+q ended empty session' and the
+#     plain-'q' arm; test_keymap: ctrl_q_unbound) prove the keymap
+#     resolves nothing for 0x11 / 0x71; this drives the same property on
+#     REAL hardware input: on the empty desktop the monitor sends Ctrl+Q
+#     and the session must survive. If either old session-end gate were
+#     ever resurrected, ade would exit - either "[ade] session ended"
+#     prints directly, or init respawns login-manager and a SECOND
+#     "[ade] session established" prints. Assert neither appears; then
+#     step 5 (Esc) is the positive control proving the session is alive.
+send_user "=== negative probe: ctrl+q on empty desktop must NOT end session ===\n"
+sendkey_seq "ctrl-q"
+expect -timeout 8 {
+    {\[ade\] session ended} {
+        send_user "FAIL: ctrl+q ended the empty session (a session-end gate was resurrected)\n"
+        exit 1
+    }
+    {\[ade\] session established} {
+        send_user "FAIL: ctrl+q killed the session - login-manager respawned ade\n"
+        exit 1
+    }
+    -re {(?s)\[init\] starting service: .*?login-manager} {
+        send_user "FAIL: ctrl+q killed the session - init respawned login-manager\n"
+        exit 1
+    }
+    timeout {
+        send_user "PASS: ctrl+q on the empty desktop did not end the session (unbound holds on real input)\n"
+    }
+    eof { send_user "FAIL: QEMU exited during the ctrl+q probe\n"; exit 1 }
+}
+
+# 4c. True-chord probe (forward contract): a REAL Ctrl+Alt+Backspace via
+#     sendkey_chord. On today's kernel the chord cannot END the session —
+#     Backspace still arrives as Unicode 0x08 with no modifier bits
+#     (HandleControl::Ignore + no mods delivery, the Phase C gate), so this
+#     asserts the session SURVIVES (same arms as 4b). When the kernel lands
+#     Design A (packed modifier bits, kernel-gui-modifier-delivery.md), flip
+#     this expect to PASS on '[ade] session ended' — the harness is already
+#     capable today via sendkey_chord.
+send_user "=== probe: true ctrl+alt+backspace must NOT end session on today's kernel ===\n"
+sendkey_chord {ctrl alt} backspace
+expect -timeout 8 {
+    {\[ade\] session ended} {
+        send_user "FAIL: ctrl+alt+backspace ended the session on today's kernel (unexpected mods delivery?)\n"
+        exit 1
+    }
+    {\[ade\] session established} {
+        send_user "FAIL: ctrl+alt+backspace killed the session - respawned\n"
+        exit 1
+    }
+    timeout {
+        send_user "PASS: true chord did not end the session (kernel-gated on mods delivery, as expected)\n"
+    }
+    eof { send_user "FAIL: QEMU exited during chord probe\n"; exit 1 }
+}
+
+# 5. End the session with Esc on the empty ade desktop - the byte-deliverable
+#    session-end path (0x1B, the one distinct control byte the stream
+#    carries). ade has no windows open after login, so Esc requests session
+#    end; the Ctrl+Alt+Backspace chord is the other path but needs kernel Alt
+#    delivery (the Phase C gate - docs/kernel-gui-modifier-delivery.md).
+send_user "=== ending session (esc on empty desktop) ===\n"
+sendkey_seq "esc"
+
+expect {
+    {\[ade\] session ended} {
+        send_user "PASS: session ended marker\n"
+    }
+    timeout { send_user "FAIL: '\[ade] session ended' never appeared\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before session end\n"; exit 1 }
+}
+
+# 6. init observes login-manager's pid exit(0) and respawns it.
+expect {
+    -re {(?s)\[init\] service .*?login-manager} {
+        send_user "PASS: init observed login-manager exit\n"
+    }
+    timeout { send_user "FAIL: no '\[init] service login-manager exited'\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before respawn check\n"; exit 1 }
+}
+expect {
+    -re {(?s)\[init\] starting service: .*?login-manager} {
+        send_user "PASS: login-manager respawned\n"
+    }
+    timeout { send_user "FAIL: no login-manager respawn\n"; exit 1 }
+}
+
+# 7. Second session: ade exited -> init reaped it (step 6) and respawned
+#    login-manager, which execs ade DIRECTLY (GUI path - there is no getty
+#    'login:' prompt on respawn, unlike the console path). So the second
+#    session is the fresh '[ade] session established' marker, and the
+#    negative leg then runs on a live desktop with a window.
+send_user "=== second session ===\n"
+expect {
+    "\[ade\] session established" {
+        send_user "PASS: second session established\n"
+    }
+    timeout { send_user "FAIL: second '\[ade] session established' never appeared\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before second session\n"; exit 1 }
+}
+
+# 8. Keyboard window-open chain (the ONLY path that opens a window on
+#    today's kernel: arrows are E0-dropped, Ctrl+letter folds don't arrive).
+#    Tab starts the a11y ring on the Taskbar (FocusNext fallback, desktop.rs),
+#    Enter opens the start menu, typing filters the catalog, Enter launches.
+send_user "=== keyboard window-open chain ===\n"
+sendkey_seq "tab"
+sendkey_seq "\r"
+sendkey_seq "term"
+sendkey_seq "\r"
+expect {
+    "\[ade\] launched Terminal" {
+        send_user "PASS: window opened via keyboard\n"
+    }
+    timeout { send_user "FAIL: no '\[ade] launched Terminal' marker\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before window open\n"; exit 1 }
+}
+
+# 9. NEGATIVE leg: with a window open, the true chord must NOT end the
+#    session - the wm.is_empty() guard (desktop.rs) holds on real input,
+#    the QEMU counterpart of test_session_end_gate's synthetic window case.
+send_user "=== negative leg: chord with window open ===\n"
+sendkey_chord {ctrl alt} backspace
+expect {
+    "\[ade\] session ended" {
+        send_user "FAIL: chord ended the session with a window open!\n"; exit 1
+    }
+    timeout {
+        send_user "PASS: guard_holds - chord did not end session with window open\n"
+    }
+    eof { send_user "FAIL: QEMU exited during negative leg\n"; exit 1 }
+}
+
+
+send_user "\n=== GUI login integration: PASS ===\n"
+exit 0
