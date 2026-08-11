@@ -716,3 +716,7 @@ jobs:
         run: |
           pip install pycdlib 2>/dev/null || true
           python3 tests/test_make_iso_pycdlib.py
+
+      - name: Probe expect-consume semantics contract test
+        working-directory: SkyOS
+        run: python3 tests/test_probe_consume.py
