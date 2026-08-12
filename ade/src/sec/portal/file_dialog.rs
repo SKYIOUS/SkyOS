@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::core::desktop::Desktop;
 use crate::ipc::{ApplicationId, ServiceRequest, ServiceResponse};
 

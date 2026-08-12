@@ -627,6 +627,7 @@ fn user_main() -> i32 {
 
         // Handle keyboard
         while let Some(k) = win.get_key() {
+            let k = k as u8;
             match k {
                 0x0E => {
                     // Ctrl+N — new tab

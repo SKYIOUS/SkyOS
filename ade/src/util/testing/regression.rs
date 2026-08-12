@@ -1,235 +1,84 @@
-#![allow(dead_code)]
+//! Regression suite — spot checks across subsystems that a later change
+//! could silently break.
+//!
+//! Deliberately slim: the original suite's other checks (window
+//! create/close, focus, start menu, notifications, clipboard) are already
+//! covered by dedicated tests in `run_all` — duplicating them here would
+//! re-run the same assertions. What was unique is kept: the window drag
+//! path (`begin_drag`/`update_drag`/`end_drag`, which no other test
+//! exercises) and the theme service's default state. The old IPC check
+//! tested the legacy `MessageBus`, deleted in Phase 1.
+//!
+//! Close idiom: `WindowManager::close` is animated; windows leave the list
+//! only after `Desktop::tick` drains them via `process_closing`. Count
+//! assertions tick first, like `launcher::check_spawn_registers`.
 
 use crate::core::desktop::Desktop;
-use crate::core::window::{AppWindow, VisualFlags, WindowState};
-use crate::ipc::message::{IpcTarget, MessageBus};
-use alloc::string::String;
-use alloc::vec::Vec;
+use crate::core::window::AppWindow;
 use libsarga::io;
+
+/// Drain pending close animations so the window count is a stable baseline.
+fn settle(desktop: &mut Desktop) {
+    for _ in 0..60 {
+        desktop.tick();
+    }
+}
 
 pub(crate) fn run_regression_suite(desktop: &mut Desktop) -> bool {
     let mut ok = true;
-    ok &= test_window_create_close(desktop);
-    ok &= test_window_focus(desktop);
     ok &= test_drag(desktop);
-    ok &= test_start_menu(desktop);
-    ok &= test_notifications(desktop);
-    ok &= test_clipboard(desktop);
-    ok &= test_ipc();
     ok &= test_theme(desktop);
     ok
 }
 
-fn test_window_create_close(desktop: &mut Desktop) -> bool {
+/// Window drag: `begin_drag` pins the grab offset; `update_drag` moves the
+/// window so it tracks the cursor; `end_drag` releases the grab.
+pub(crate) fn test_drag(desktop: &mut Desktop) -> bool {
+    settle(desktop);
     let before = desktop.wm.len();
-    let win = AppWindow {
-        x: 10,
-        y: 10,
-        w: 200,
-        h: 150,
-        prev_x: 10,
-        prev_y: 10,
-        prev_w: 200,
-        prev_h: 150,
-        title: String::from("RegWin"),
-        content: alloc::vec::Vec::new(),
-        scroll: 0,
-        id: 0,
-        pid: None,
-        focused: true,
-        dragging: false,
-        drag_ox: 0,
-        drag_oy: 0,
-        state: WindowState::Normal,
-        prev_state: WindowState::Normal,
-        flags: VisualFlags::new(),
-        selection: None,
-        anim: None,
-        closing: false,
-        anim_opacity: 0,
-        always_on_top: false,
-        explorer_id: None,
-        pty_fd: None,
-    };
+    let win = AppWindow::new(30, 30, 200, 150, "DragWin");
     let id = desktop.wm.create(win);
-    if desktop.wm.len() != before + 1 {
-        io::print_str("[regression] FAIL window_create_close\n");
+
+    desktop.wm.begin_drag(id, 40, 40); // grab 10px right/down of the origin
+    desktop.wm.update_drag(60, 60);
+    let w = desktop.wm.lookup(id).unwrap();
+    if w.x != 50 || w.y != 50 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_drag: expected (50, 50), got ({}, {})\n",
+            w.x,
+            w.y
+        ));
         return false;
     }
+    if !w.dragging {
+        io::print_str("[test] FAIL test_drag: window not marked dragging\n");
+        return false;
+    }
+    desktop.wm.end_drag();
+    if desktop.wm.lookup(id).unwrap().dragging {
+        io::print_str("[test] FAIL test_drag: end_drag did not release\n");
+        return false;
+    }
+
     desktop.wm.close(id);
+    settle(desktop);
     if desktop.wm.len() != before {
-        io::print_str("[regression] FAIL window_create_close: close\n");
+        io::print_str("[test] FAIL test_drag: window leaked after close\n");
         return false;
     }
-    io::print_str("[regression] PASS window_create_close\n");
+    io::print_str("[test] PASS test_drag\n");
     true
 }
 
-fn test_window_focus(desktop: &mut Desktop) -> bool {
-    let win_a = AppWindow {
-        x: 20,
-        y: 20,
-        w: 200,
-        h: 150,
-        prev_x: 20,
-        prev_y: 20,
-        prev_w: 200,
-        prev_h: 150,
-        title: String::from("RegA"),
-        content: alloc::vec::Vec::new(),
-        scroll: 0,
-        id: 0,
-        pid: None,
-        focused: true,
-        dragging: false,
-        drag_ox: 0,
-        drag_oy: 0,
-        state: WindowState::Normal,
-        prev_state: WindowState::Normal,
-        flags: VisualFlags::new(),
-        selection: None,
-        anim: None,
-        closing: false,
-        anim_opacity: 0,
-        always_on_top: false,
-        explorer_id: None,
-        pty_fd: None,
-    };
-    let win_b = AppWindow {
-        x: 100,
-        y: 100,
-        w: 200,
-        h: 150,
-        prev_x: 100,
-        prev_y: 100,
-        prev_w: 200,
-        prev_h: 150,
-        title: String::from("RegB"),
-        content: alloc::vec::Vec::new(),
-        scroll: 0,
-        id: 0,
-        pid: None,
-        focused: false,
-        dragging: false,
-        drag_ox: 0,
-        drag_oy: 0,
-        state: WindowState::Normal,
-        prev_state: WindowState::Normal,
-        flags: VisualFlags::new(),
-        selection: None,
-        anim: None,
-        closing: false,
-        anim_opacity: 0,
-        always_on_top: false,
-        explorer_id: None,
-        pty_fd: None,
-    };
-    let id_a = desktop.wm.create(win_a);
-    let _id_b = desktop.wm.create(win_b);
-    desktop.wm.bring_to_front(id_a);
-    desktop.wm.close(id_a);
-    desktop.wm.close(desktop.wm.active().unwrap());
-    io::print_str("[regression] PASS window_focus\n");
-    true
-}
-
-fn test_drag(desktop: &mut Desktop) -> bool {
-    let win = AppWindow {
-        x: 30,
-        y: 30,
-        w: 200,
-        h: 150,
-        prev_x: 30,
-        prev_y: 30,
-        prev_w: 200,
-        prev_h: 150,
-        title: String::from("DragWin"),
-        content: alloc::vec::Vec::new(),
-        scroll: 0,
-        id: 0,
-        pid: None,
-        focused: true,
-        dragging: false,
-        drag_ox: 0,
-        drag_oy: 0,
-        state: WindowState::Normal,
-        prev_state: WindowState::Normal,
-        flags: VisualFlags::new(),
-        selection: None,
-        anim: None,
-        closing: false,
-        anim_opacity: 0,
-        always_on_top: false,
-        explorer_id: None,
-        pty_fd: None,
-    };
-    let id = desktop.wm.create(win);
-    desktop.wm.begin_drag(id, 40, 40);
-    desktop.wm.close(id);
-    io::print_str("[regression] PASS drag\n");
-    true
-}
-
-fn test_start_menu(desktop: &mut Desktop) -> bool {
-    desktop.start_menu.open_with(&desktop.app_reg);
-    if !desktop.start_menu.open {
-        io::print_str("[regression] FAIL start_menu\n");
-        return false;
-    }
-    desktop.start_menu.open = false;
-    io::print_str("[regression] PASS start_menu\n");
-    true
-}
-
-fn test_notifications(desktop: &mut Desktop) -> bool {
-    let id = desktop
-        .services
-        .notifications
-        .notify("Reg Title", "Reg Body", 1, 60);
-    if id == 0 {
-        io::print_str("[regression] FAIL notifications\n");
-        return false;
-    }
-    desktop.services.notifications.dismiss(id);
-    io::print_str("[regression] PASS notifications\n");
-    true
-}
-
-fn test_clipboard(desktop: &mut Desktop) -> bool {
-    desktop.services.clipboard.copy("regression data", 0);
-    let data = desktop.services.clipboard.paste();
-    if data != "regression data" {
-        io::print_str("[regression] FAIL clipboard\n");
-        return false;
-    }
-    desktop.services.clipboard.clear();
-    io::print_str("[regression] PASS clipboard\n");
-    true
-}
-
-fn test_ipc() -> bool {
-    let mut bus = MessageBus::new();
-    let seq = bus.request(IpcTarget::Desktop, "ping", Vec::new());
-    if seq == 0 {
-        io::print_str("[regression] FAIL ipc\n");
-        return false;
-    }
-    bus.respond(seq, true, Vec::new());
-    let drained = bus.drain();
-    if drained.len() != 2 {
-        io::print_str("[regression] FAIL ipc: drain count\n");
-        return false;
-    }
-    io::print_str("[regression] PASS ipc\n");
-    true
-}
-
-fn test_theme(desktop: &mut Desktop) -> bool {
+/// The theme service must come up with a usable theme (ConfigStore default
+/// is unset → `Theme::dark()`), so a non-zero accent is the load-bearing
+/// invariant behind every window titlebar draw.
+pub(crate) fn test_theme(desktop: &mut Desktop) -> bool {
     let theme = desktop.theme_svc.current();
     if theme.accent == 0 {
-        io::print_str("[regression] FAIL theme: accent is 0\n");
+        io::print_str("[test] FAIL test_theme: accent is 0\n");
         return false;
     }
-    io::print_str("[regression] PASS theme\n");
+    io::print_str("[test] PASS test_theme\n");
     true
 }

@@ -7,13 +7,9 @@ pub(crate) struct Notification {
     pub id: u64,
     pub title: String,
     pub body: String,
-    #[allow(dead_code)] // icon id, notify() passes 0 today
-    pub icon_id: u8,
     pub urgency: u8,
     pub created_tick: u64,
     pub timeout: u32,
-    #[allow(dead_code)] // action list, no notification action buttons yet
-    pub actions: Vec<(&'static str, &'static str)>,
     pub dismissed: bool,
 }
 
@@ -33,45 +29,13 @@ impl NotificationManager {
     }
 
     pub fn notify(&mut self, title: &str, body: &str, urgency: u8, timeout: u32) -> u64 {
-        self.notify_with_icon(title, body, 0, urgency, timeout)
+        self.notify_at_tick(title, body, urgency, timeout, 0)
     }
 
-    pub fn notify_with_icon(
+    pub fn notify_at_tick(
         &mut self,
         title: &str,
         body: &str,
-        icon_id: u8,
-        urgency: u8,
-        timeout: u32,
-    ) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        if self.notifications.len() >= 64 {
-            self.notifications.remove(0);
-            if self.visible_count > 0 {
-                self.visible_count -= 1;
-            }
-        }
-        self.notifications.push(Notification {
-            id,
-            title: String::from(title),
-            body: String::from(body),
-            icon_id,
-            urgency,
-            created_tick: 0,
-            timeout,
-            actions: Vec::new(),
-            dismissed: false,
-        });
-        self.visible_count += 1;
-        id
-    }
-
-    pub fn notify_with_icon_at_tick(
-        &mut self,
-        title: &str,
-        body: &str,
-        icon_id: u8,
         urgency: u8,
         timeout: u32,
         current_tick: u64,
@@ -88,11 +52,9 @@ impl NotificationManager {
             id,
             title: String::from(title),
             body: String::from(body),
-            icon_id,
             urgency,
             created_tick: current_tick,
             timeout,
-            actions: Vec::new(),
             dismissed: false,
         });
         self.visible_count += 1;

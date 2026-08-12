@@ -491,6 +491,7 @@ fn user_main() -> i32 {
 
     loop {
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x1B => {
                     return 0;

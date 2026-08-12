@@ -1,13 +1,8 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use libsarga::semver::Version;
 
-// fields kept for future constraint-checking; parse_dep writes them but no reader yet
-#[allow(dead_code)]
 pub struct DepConstraint {
     pub name: String,
-    pub operator: String, // ">=", "~>", "==", ">", "<"
-    pub version: String,
 }
 
 pub fn parse_dep(s: &str) -> Option<DepConstraint> {
@@ -17,46 +12,14 @@ pub fn parse_dep(s: &str) -> Option<DepConstraint> {
             let name = s[..idx].trim().to_string();
             let ver = s[idx + op.len()..].trim().to_string();
             if !name.is_empty() && !ver.is_empty() {
-                return Some(DepConstraint {
-                    name,
-                    operator: op.to_string(),
-                    version: ver,
-                });
+                return Some(DepConstraint { name });
             }
         }
     }
     // bare name, no constraint
     Some(DepConstraint {
         name: s.to_string(),
-        operator: String::new(),
-        version: String::new(),
     })
-}
-
-// never called: constraint checking pending until upgrade path lands
-#[allow(dead_code)]
-pub fn satisfies(version: &str, constraint: &DepConstraint) -> bool {
-    if constraint.operator.is_empty() {
-        return true;
-    }
-    let v = match Version::parse(version) {
-        Some(v) => v,
-        None => return true,
-    };
-    let c = match Version::parse(&constraint.version) {
-        Some(c) => c,
-        None => return true,
-    };
-    match constraint.operator.as_str() {
-        ">=" => v.compare(&c) >= 0,
-        ">" => v.compare(&c) > 0,
-        "==" => v.compare(&c) == 0,
-        "<" => v.compare(&c) < 0,
-        "~>" => {
-            v.major == c.major && (v.minor > c.minor || (v.minor == c.minor && v.patch >= c.patch))
-        }
-        _ => true,
-    }
 }
 
 pub fn resolve(

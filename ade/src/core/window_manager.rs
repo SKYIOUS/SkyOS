@@ -1,19 +1,9 @@
 //! Window manager — ordered window list, focus, drag, minimize, close.
 
-use crate::core::constants::SNAP_MARGIN;
+use crate::core::geometry::Rect;
 use crate::core::window::{AppWindow, WindowId, WindowState};
+use crate::layout::{self, SnapRegion, SNAP_MARGIN};
 use alloc::vec::Vec;
-
-pub(crate) enum SnapRegion {
-    Left,
-    Right,
-    Top,
-    Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
 
 pub(crate) struct SnapPreview {
     pub x: i32,
@@ -65,12 +55,26 @@ impl WindowManager {
             if !w.closing {
                 w.closing = true;
                 w.animate_close();
+                // Terminal windows: kill the shell and free the master fd —
+                // otherwise sash orphans forever on the slave side. The
+                // surface stays on the window so the shrink animation still
+                // draws the terminal's last text.
+                if let Some(fd) = w.detach_terminal_fd() {
+                    if let Some(pid) = w.pid {
+                        let _ = libsarga::process::kill(pid as i64, 9);
+                    }
+                    let _ = libsarga::io::close(fd);
+                }
             }
         }
     }
 
     pub fn close_by_pid(&mut self, pid: u64) {
         if let Some(pos) = self.windows.iter().position(|w| w.pid == Some(pid)) {
+            // App already exited (reaped): free the pty master fd.
+            if let Some(fd) = self.windows[pos].take_terminal() {
+                let _ = libsarga::io::close(fd);
+            }
             let removed = self.windows.remove(pos).id;
             self.clear_refs(removed);
         }
@@ -101,17 +105,6 @@ impl WindowManager {
         closed
     }
 
-    #[allow(dead_code)]
-    pub fn focus(&mut self, id: WindowId) {
-        if let Some(i) = self.find_index(id) {
-            for w in &mut self.windows {
-                w.focused = false;
-            }
-            self.windows[i].focused = true;
-            self.focused = Some(id.0);
-        }
-    }
-
     /// WindowManager API v1.0
     pub fn bring_to_front(&mut self, id: WindowId) {
         if let Some(i) = self.find_index(id) {
@@ -131,21 +124,13 @@ impl WindowManager {
             let w = &mut self.windows[i];
             w.prev_state = w.state;
             w.state = WindowState::Minimized;
-            let tab_x = 75 + i as u32 * 125;
-            w.animate_to(tab_x as i32, (taskbar_h - 28) as i32, 120, 28);
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn maximize(&mut self, id: WindowId, screen_w: u32, taskbar_h: u32) {
-        if let Some(i) = self.find_index(id) {
-            let w = &mut self.windows[i];
-            w.prev_x = w.x;
-            w.prev_y = w.y;
-            w.prev_w = w.w;
-            w.prev_h = w.h;
-            w.animate_to(0, 0, screen_w, taskbar_h);
-            w.state = WindowState::Maximized;
+            let tab_x = layout::taskbar_btn_x(i);
+            w.animate_to(
+                tab_x as i32,
+                (taskbar_h - layout::TASKBAR_BTN_H) as i32,
+                layout::TASKBAR_BTN_W,
+                layout::TASKBAR_BTN_H,
+            );
         }
     }
 
@@ -229,6 +214,40 @@ impl WindowManager {
                 w.state = WindowState::Normal;
             }
         }
+    }
+
+    /// Resize a window mid-drag. `origin` is the geometry at drag start,
+    /// `edges` the edge flags being dragged (1 = left, 2 = right, 4 = bottom),
+    /// and `(dx, dy)` the delta from the drag start point.
+    pub fn resize_drag(&mut self, id: WindowId, origin: Rect, edges: u8, dx: i32, dy: i32) {
+        let Some(w) = self.lookup_mut(id) else {
+            return;
+        };
+        let (ox, oy, ow, oh) = (origin.x, origin.y, origin.w, origin.h);
+        let mut nx = ox;
+        let mut nw = ow;
+        let mut nh = oh;
+        if edges & 1 != 0 {
+            nx = ox + dx;
+            nw = (ow as i32 - dx) as u32;
+        }
+        if edges & 2 != 0 {
+            nw = (ow as i32 + dx) as u32;
+        }
+        if edges & 4 != 0 {
+            nh = (oh as i32 + dy) as u32;
+        }
+        if nw < layout::MIN_WIN_W {
+            nw = layout::MIN_WIN_W;
+            nx = ox + ow as i32 - layout::MIN_WIN_W as i32;
+        }
+        if nh < layout::MIN_WIN_H {
+            nh = layout::MIN_WIN_H;
+        }
+        w.x = nx;
+        w.y = oy;
+        w.w = nw;
+        w.h = nh;
     }
 
     pub fn show_snap_preview(&mut self, mx: i32, my: i32, sw: u32, _sh: u32, tb_h: u32) {
@@ -418,27 +437,6 @@ impl WindowManager {
         let n = (idx + 1) % self.windows.len();
         self.windows[n].focused = true;
         self.focused = Some(self.windows[n].id);
-        true
-    }
-
-    pub fn focus_prev(&mut self) -> bool {
-        if self.windows.is_empty() {
-            return false;
-        }
-        for w in &mut self.windows {
-            w.focused = false;
-        }
-        let idx = self
-            .focused
-            .and_then(|id| self.find_index(WindowId(id)))
-            .unwrap_or(0);
-        let p = if idx == 0 {
-            self.windows.len() - 1
-        } else {
-            idx - 1
-        };
-        self.windows[p].focused = true;
-        self.focused = Some(self.windows[p].id);
         true
     }
 }

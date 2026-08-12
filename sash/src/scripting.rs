@@ -12,22 +12,6 @@ struct ScriptContext {
     continue_flag: bool,
 }
 
-#[allow(dead_code)]
-pub fn run_script(path: &str) -> i64 {
-    let content = read_file(path);
-    if content.is_empty() {
-        return 1;
-    }
-    let mut ctx = ScriptContext {
-        vars: Vec::new(),
-        funcs: Vec::new(),
-        pos_args: Vec::new(),
-        break_flag: false,
-        continue_flag: false,
-    };
-    execute_lines(&content, &mut ctx)
-}
-
 pub fn run_script_with_args(path: &str, args: &[String]) -> i64 {
     let content = read_file(path);
     if content.is_empty() {

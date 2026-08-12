@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::render::compositor::Compositor;
 use crate::render::layer::Layer;
 use libsarga::io;

@@ -356,6 +356,7 @@ fn user_main() -> i32 {
 
         // Keyboard
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'+' | b'=' => {

@@ -1,29 +1,125 @@
-//! Session manager — boot/login tracking, shutdown/restart/logout requests, recent apps.
+//! Session lifecycle — process supervision (reap), lifecycle tracking, and
+//! the session-end protocol with `init`.
+//!
+//! One owner for every launched process: `LifecycleManager` records the
+//! table, `reap` classifies exits and notifies every subsystem that tracked
+//! the child, and `request_end`/`exit_code` define how a deliberate logout
+//! unwinds back to `init`.
 
-use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use libsarga::process;
+
+use crate::core::window_manager::WindowManager;
+use crate::ipc::transport::IpcTransport;
+use crate::sec::perms::PermissionManager;
+use crate::service::service_manager::ServiceManager;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AppState {
+    Starting,
+    Running,
+    Terminated,
+    Crashed,
+}
+
+/// How a process exited, derived from the raw wait4 status.
+/// The kernel encodes this per Unix convention: 0 = clean exit,
+/// 1..=127 = exit code, 128+sig = killed by fatal signal, negative = killed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExitClass {
+    Clean,
+    Error(u32),
+    Signal(u32),
+    Killed,
+}
+
+/// Classifies a raw wait4 status into how the process exited.
+pub(crate) fn exit_class(status: i32) -> ExitClass {
+    if status == 0 {
+        ExitClass::Clean
+    } else if status < 0 {
+        ExitClass::Killed
+    } else if status > 128 {
+        ExitClass::Signal((status - 128) as u32)
+    } else {
+        ExitClass::Error(status as u32)
+    }
+}
+
+pub(crate) struct AppLifecycle {
+    pub pid: u64,
+    pub state: AppState,
+    pub crash_count: u32,
+}
+
+pub(crate) struct LifecycleManager {
+    pub procs: Vec<AppLifecycle>,
+}
+
+impl LifecycleManager {
+    pub fn new() -> Self {
+        LifecycleManager { procs: Vec::new() }
+    }
+
+    pub fn register(&mut self, pid: u64) {
+        self.procs.push(AppLifecycle {
+            pid,
+            state: AppState::Starting,
+            crash_count: 0,
+        });
+    }
+
+    pub fn mark_running(&mut self, pid: u64) {
+        for p in &mut self.procs {
+            if p.pid == pid && p.state == AppState::Starting {
+                p.state = AppState::Running;
+                return;
+            }
+        }
+    }
+
+    pub fn mark_terminated(&mut self, pid: u64) {
+        for p in &mut self.procs {
+            if p.pid == pid {
+                p.state = AppState::Terminated;
+                return;
+            }
+        }
+    }
+
+    pub fn mark_crashed(&mut self, pid: u64) {
+        for p in &mut self.procs {
+            if p.pid == pid {
+                p.state = AppState::Crashed;
+                p.crash_count += 1;
+                return;
+            }
+        }
+    }
+
+    pub fn remove(&mut self, pid: u64) {
+        self.procs.retain(|p| p.pid != pid);
+    }
+}
+
+/// Session end codes — the exit-code contract with `init`: 0 = clean logout
+/// (init resets its crash counter and respawns the login service); non-zero
+/// = crash (init counts it toward `MAX_RESPAWNS`). A future reboot/poweroff
+/// request would add its own code here.
+const EXIT_LOGOUT: i32 = 0;
 
 pub(crate) struct SessionManager {
     boot_tick: u64,
-    #[allow(dead_code)] // login tracking, read by session_duration (unused today)
-    login_tick: u64,
-    pub(crate) shutdown_requested: bool,
-    pub(crate) restart_requested: bool,
-    pub(crate) logout_requested: bool,
-    #[allow(dead_code)] // save-on-exit flag, persistence not wired yet
-    pub(crate) desktop_state_saved: bool,
-    pub(crate) recent_apps: VecDeque<u64>,
+    pub(crate) lifecycle: LifecycleManager,
+    ending: bool,
 }
 
 impl SessionManager {
     pub fn new(boot_tick: u64) -> Self {
         SessionManager {
             boot_tick,
-            login_tick: boot_tick,
-            shutdown_requested: false,
-            restart_requested: false,
-            logout_requested: false,
-            desktop_state_saved: false,
-            recent_apps: VecDeque::new(),
+            lifecycle: LifecycleManager::new(),
+            ending: false,
         }
     }
 
@@ -31,42 +127,62 @@ impl SessionManager {
         current_tick.saturating_sub(self.boot_tick)
     }
 
-    #[allow(dead_code)] // session stat API, callers use uptime() today
-    pub fn session_duration(&self, current_tick: u64) -> u64 {
-        current_tick.saturating_sub(self.login_tick)
+    /// Begin the session-end sequence (logout). The main loop observes
+    /// `is_ending()` and unwinds to a clean `process::exit(exit_code())`.
+    pub fn request_end(&mut self) {
+        self.ending = true;
     }
 
-    pub fn request_shutdown(&mut self) {
-        self.shutdown_requested = true;
+    pub fn is_ending(&self) -> bool {
+        self.ending
     }
 
-    pub fn request_restart(&mut self) {
-        self.restart_requested = true;
+    /// The exit code the session hands to `init` when it ends. Deliberate
+    /// logouts are clean (0) so init treats them as graceful; crashes must
+    /// exit non-zero (they never route through here).
+    pub fn exit_code(&self) -> i32 {
+        EXIT_LOGOUT
     }
 
-    pub fn request_logout(&mut self) {
-        self.logout_requested = true;
-    }
-
-    #[allow(dead_code)] // state-persistence hook, persistence not wired yet
-    pub fn mark_state_saved(&mut self) {
-        self.desktop_state_saved = true;
-    }
-
-    pub fn record_app_launch(&mut self, app_id: u64) {
-        self.recent_apps.retain(|&id| id != app_id);
-        self.recent_apps.push_front(app_id);
-        if self.recent_apps.len() > 10 {
-            self.recent_apps.pop_back();
+    /// Reap exited children and update every subsystem that tracked them:
+    /// the crash notification goes to `services`, the permission/IPC
+    /// registries are unregistered, and the window manager drops the window
+    /// (which also frees terminal pty masters). Returns true when at least
+    /// one child was reaped so the caller can repaint.
+    pub fn reap(
+        &mut self,
+        wm: &mut WindowManager,
+        services: &mut ServiceManager,
+        permissions: &mut PermissionManager,
+        ipc_transport: &mut IpcTransport,
+        current_tick: u64,
+    ) -> bool {
+        let mut reaped = false;
+        loop {
+            match process::waitpid(-1, 1) {
+                Ok((pid, status)) if pid > 0 => {
+                    reaped = true;
+                    match exit_class(status) {
+                        ExitClass::Clean => self.lifecycle.mark_terminated(pid),
+                        cls => {
+                            self.lifecycle.mark_crashed(pid);
+                            let reason = match cls {
+                                ExitClass::Killed => alloc::string::String::from("killed"),
+                                ExitClass::Signal(sig) => alloc::format!("signal {}", sig),
+                                ExitClass::Error(code) => alloc::format!("exit {}", code),
+                                ExitClass::Clean => unreachable!(),
+                            };
+                            services.notify("Application Crashed", &reason, 2, 8000, current_tick);
+                        }
+                    }
+                    self.lifecycle.remove(pid);
+                    permissions.unregister(pid);
+                    ipc_transport.unregister(pid);
+                    wm.close_by_pid(pid);
+                }
+                _ => break,
+            }
         }
-    }
-
-    #[allow(dead_code)] // session reset on re-login, not wired yet
-    pub fn reset(&mut self, current_tick: u64) {
-        self.login_tick = current_tick;
-        self.shutdown_requested = false;
-        self.restart_requested = false;
-        self.logout_requested = false;
-        self.desktop_state_saved = false;
+        reaped
     }
 }

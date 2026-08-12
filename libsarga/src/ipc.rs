@@ -9,15 +9,13 @@ pub const MAX_IPC_MSG: usize = 4096;
 pub const HEADER_LEN: usize = 4;
 
 /// Canonical wire ids for ADE services (order must match ade ServiceId).
+/// Every id is backed by a `sec::portal` handler in ade; re-adding a service
+/// requires landing its portal handler first (facility audit F5).
 pub const SVC_CLIPBOARD: u8 = 0;
 pub const SVC_NOTIFICATION: u8 = 1;
-pub const SVC_LAUNCHER: u8 = 2;
-pub const SVC_FILE_DIALOG: u8 = 3;
-pub const SVC_SETTINGS: u8 = 4;
-pub const SVC_SESSION: u8 = 5;
-pub const SVC_WINDOW: u8 = 6;
-pub const SVC_THEME: u8 = 7;
-pub const SVC_POWER: u8 = 8;
+pub const SVC_FILE_DIALOG: u8 = 2;
+pub const SVC_SETTINGS: u8 = 3;
+pub const SVC_WINDOW: u8 = 4;
 
 /// Writes one complete frame (u32 LE length + payload) in a single write.
 /// A single write becomes a single queued datagram at the peer; oversized

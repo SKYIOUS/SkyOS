@@ -1,6 +1,6 @@
 //! Desktop icons — selection, multi-select, move, delete, rectangle selection.
 
-use crate::core::geometry::{Point, Rect};
+use crate::core::geometry::{Point, Rect, RubberBand};
 use crate::render::compositor::Canvas;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,7 +15,7 @@ pub(crate) struct DesktopIcon {
 pub(crate) struct DesktopIcons {
     pub icons: Vec<DesktopIcon>,
     pub drag_icon: bool,
-    pub rubber: Option<(i32, i32, i32, i32)>,
+    pub rubber: Option<RubberBand>,
 }
 
 impl DesktopIcons {
@@ -52,28 +52,43 @@ impl DesktopIcons {
         None
     }
 
+    /// Toggle the selection of icon `idx`; a newly selected icon becomes
+    /// drag-eligible.
+    pub fn toggle_icon(&mut self, idx: usize) {
+        let sel = !self.icons[idx].selected;
+        self.icons[idx].selected = sel;
+        if sel {
+            self.drag_icon = true; // will move on drag
+        }
+    }
+
+    /// Click on empty desktop space: clear all selections and start a rubber
+    /// band at `(mx, my)`.
+    pub fn click_empty(&mut self, mx: i32, my: i32) {
+        for ic in &mut self.icons {
+            ic.selected = false;
+        }
+        self.begin_select(mx, my);
+    }
+
     pub fn begin_select(&mut self, mx: i32, my: i32) {
-        self.rubber = Some((mx, my, mx, my));
+        self.rubber = Some(RubberBand::new(mx, my));
     }
 
     pub fn update_rubber(&mut self, mx: i32, my: i32) {
-        if let Some((ox, oy, _, _)) = self.rubber {
-            self.rubber = Some((ox, oy, mx, my));
+        if let Some(r) = self.rubber.as_mut() {
+            r.drag_to(mx, my);
         }
     }
 
     pub fn end_select(&mut self) -> Vec<usize> {
         let mut selected = Vec::new();
-        if let Some((x1, y1, x2, y2)) = self.rubber {
+        if let Some(rubber) = self.rubber {
             self.rubber = None;
-            let rx = x1.min(x2);
-            let ry = y1.min(y2);
-            let rw = (x1 - x2).unsigned_abs();
-            let rh = (y1 - y2).unsigned_abs();
-            if rw < 4 && rh < 4 {
+            let rr = rubber.rect();
+            if rr.w < 4 && rr.h < 4 {
                 return selected;
             } // click, not drag
-            let rr = Rect::new(rx, ry, rw, rh);
             for (i, ic) in self.icons.iter().enumerate() {
                 if rr.intersects(&Rect::new(ic.x, ic.y, 48, 56)) {
                     selected.push(i);
@@ -97,7 +112,7 @@ pub(crate) fn draw(
     canvas: &mut Canvas,
     icons: &[DesktopIcon],
     theme: &libsarga::theme::Theme,
-    rubber: Option<(i32, i32, i32, i32)>,
+    rubber: Option<RubberBand>,
 ) {
     for ic in icons {
         if ic.selected {
@@ -110,7 +125,7 @@ pub(crate) fn draw(
                 theme.accent,
             );
         }
-        canvas.draw_rounded_rect(ic.x as u32 + 8, ic.y as u32 + 2, 32, 32, 8, 0xFF3D5AFE);
+        canvas.draw_rounded_rect(ic.x as u32 + 8, ic.y as u32 + 2, 32, 32, 8, theme.accent);
         canvas.draw_string(
             ic.x as u32 + 4,
             ic.y as u32 + 40,
@@ -123,12 +138,11 @@ pub(crate) fn draw(
             0,
         );
     }
-    if let Some((x1, y1, x2, y2)) = rubber {
-        let rx = x1.min(x2) as u32;
-        let ry = y1.min(y2) as u32;
-        let rw = (x1 - x2).unsigned_abs();
-        let rh = (y1 - y2).unsigned_abs();
-        canvas.draw_rect_alpha(rx, ry, rw, rh, 0x223D5AFE);
-        canvas.draw_rect_outline(rx, ry, rw, rh, 0xFF3D5AFE);
+    if let Some(r) = rubber {
+        let rr = r.rect();
+        let accent = theme.accent;
+        let fill = (accent & 0x00FF_FFFF) | 0x22_000000;
+        canvas.draw_rect_alpha(rr.x as u32, rr.y as u32, rr.w, rr.h, fill);
+        canvas.draw_rect_outline(rr.x as u32, rr.y as u32, rr.w, rr.h, accent);
     }
 }

@@ -119,7 +119,6 @@ impl History {
         }
     }
 
-    #[allow(dead_code)]
     pub fn save(&self) {
         let home = crate::get_env("HOME").unwrap_or_else(|| String::from("/"));
         let path = format!("{}/.sash_history", home);

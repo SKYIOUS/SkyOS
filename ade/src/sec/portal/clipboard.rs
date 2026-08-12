@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::core::desktop::Desktop;
 use crate::ipc::{ApplicationId, ServiceRequest, ServiceResponse};
 
@@ -19,10 +17,10 @@ pub(crate) fn handle_request(
             }
         }
         "paste" => match crate::util::desktop_api::clipboard::paste(desktop, app) {
-            Some(text) => ServiceResponse {
+            Some(data) => ServiceResponse {
                 request_id: req.request_id,
                 success: true,
-                data: text.as_bytes().to_vec(),
+                data,
                 recipient: app,
             },
             None => ServiceResponse {

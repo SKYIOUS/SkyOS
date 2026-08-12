@@ -1,6 +1,5 @@
 //! Permissions layer — application capability grants.
 // Permission API v1.0 — STABLE
-#![allow(dead_code)]
 
 use crate::ipc::permission::AppPermission;
 use alloc::vec::Vec;

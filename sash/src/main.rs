@@ -28,9 +28,6 @@ static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 enum JobStatus {
     Running,
     Stopped,
-    // allow: kept for future job completion reporting (matched in jobs listing)
-    #[allow(dead_code)]
-    Done,
 }
 
 struct JobEntry {
@@ -173,7 +170,6 @@ pub fn print_jobs() {
                 }
             }
             JobStatus::Stopped => "Stopped",
-            JobStatus::Done => "Done",
         };
         println!(
             "[{}] {} {}{}",

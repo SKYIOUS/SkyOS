@@ -7,9 +7,86 @@ extern crate libsarga;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use libsarga::errno::Error;
-use libsarga::io::{self, close, open, read};
+use libsarga::io::{self, close, ioctls, open, read};
 use libsarga::process::geteuid;
 use libsarga::sarga_main;
+
+/// ECHO flag bit in termios `c_lflag` (POSIX).
+const ECHO: u32 = 0x8;
+
+/// Termios layout mirrored from the kernel's `sys_ioctl` and from
+/// `login/src/main.rs` (repr(C), 4 u32 fields + `c_cc: [u8; 19]`), so the
+/// future kernel TCSETS store copies exactly the same span from both
+/// consumers.
+#[repr(C)]
+struct Termios {
+    c_iflag: u32,
+    c_oflag: u32,
+    c_cflag: u32,
+    c_lflag: u32,
+    c_cc: [u8; 19],
+}
+
+/// Disable input echo on `fd` (TCSETS clear ECHO) so the new password typed
+/// at the console is not echoed back onto the wire/log. Best-effort: the
+/// kernel's TCSETS is currently a no-op returning 0, so this is
+/// forward-compatible with a real termios implementation.
+///
+/// Returns the previous `c_lflag` on success (`Some`) so the caller can
+/// restore it; `None` on any ioctl failure (e.g. non-tty fd) — the caller
+/// must then skip the restore so a bogus 0 cannot clobber real termios once
+/// the kernel implements TCSETS.
+fn echo_off(fd: i64) -> Option<u32> {
+    let mut t = Termios {
+        c_iflag: 0,
+        c_oflag: 0,
+        c_cflag: 0,
+        c_lflag: 0,
+        c_cc: [0; 19],
+    };
+    // TCGETS first so the other fields (iflag/oflag/cflag) are preserved
+    // when we write back — a TCSETS of a zeroed struct would clobber flow
+    // control / canonical flags once the kernel implements it.
+    if libsarga::io::ioctl(fd, ioctls::TCGETS, &mut t as *mut _ as *mut u8).is_err() {
+        return None;
+    }
+    let saved = t.c_lflag;
+    t.c_lflag &= !ECHO;
+    if libsarga::io::ioctl(fd, ioctls::TCSETS, &mut t as *mut _ as *mut u8).is_err() {
+        return None;
+    }
+    Some(saved)
+}
+
+/// Restore input echo on `fd` to `lflag` (TCSETS). Best-effort; reads the
+/// current termios first so untouched fields are preserved.
+fn echo_on(fd: i64, lflag: u32) {
+    let mut t = Termios {
+        c_iflag: 0,
+        c_oflag: 0,
+        c_cflag: 0,
+        c_lflag: 0,
+        c_cc: [0; 19],
+    };
+    if libsarga::io::ioctl(fd, ioctls::TCGETS, &mut t as *mut _ as *mut u8).is_err() {
+        return;
+    }
+    t.c_lflag = lflag;
+    let _ = libsarga::io::ioctl(fd, ioctls::TCSETS, &mut t as *mut _ as *mut u8);
+}
+
+/// Read a password with echo off, restoring the previous `c_lflag` on EVERY
+/// read_line outcome (line / EOF / Err) — but only if `echo_off` succeeded,
+/// mirroring `login::read_password`. EOF returns whatever was read (passwd's
+/// read_line has no Option: it breaks on zero bytes).
+fn read_password(fd: i64) -> Result<Vec<u8>, Error> {
+    let saved = echo_off(fd);
+    let r = read_line(fd);
+    if let Some(lflag) = saved {
+        echo_on(fd, lflag);
+    }
+    r
+}
 
 fn read_line(fd: i64) -> Result<Vec<u8>, Error> {
     let mut buf = Vec::new();
@@ -138,12 +215,12 @@ fn user_main() -> i32 {
     }
 
     io::print_str("New password: ");
-    let pw1 = match read_line(0) {
+    let pw1 = match read_password(0) {
         Ok(b) => core::str::from_utf8(&b).unwrap_or("").to_string(),
         Err(_) => libsarga::process::exit(1),
     };
     io::print_str("Retype new password: ");
-    let pw2 = match read_line(0) {
+    let pw2 = match read_password(0) {
         Ok(b) => core::str::from_utf8(&b).unwrap_or("").to_string(),
         Err(_) => libsarga::process::exit(1),
     };

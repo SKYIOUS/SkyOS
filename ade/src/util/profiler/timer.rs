@@ -27,8 +27,4 @@ impl ProfilerTimer {
             0
         }
     }
-    pub fn reset(&mut self) {
-        self.accumulated = 0;
-        self.count = 0;
-    }
 }

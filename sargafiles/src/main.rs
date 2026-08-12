@@ -373,6 +373,7 @@ fn user_main() -> i32 {
 
         // Keyboard shortcuts
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'r' | b'R' => fm.refresh(),

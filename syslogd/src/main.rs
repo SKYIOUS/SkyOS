@@ -11,19 +11,6 @@ use libsarga::sarga_main;
 const LOG_FIFO: &str = "/var/run/syslog.fifo";
 const LOG_FILE: &str = "/var/log/syslog";
 
-// allow: mknod-based FIFO setup not yet wired up; currently poll-opens the FIFO path
-#[allow(dead_code)]
-fn ensure_fifo() -> Result<i64, ()> {
-    match open(LOG_FIFO, 0) {
-        Ok(fd) => Ok(fd),
-        Err(_) => {
-            // Create FIFO via mknod — libsarga doesn't have mknod wrapper
-            // ponytail: fallback to temp log mode
-            Err(())
-        }
-    }
-}
-
 fn append_log(msg: &str) {
     let ts = get_timestamp();
     let line = alloc::format!("[{}] {}\n", ts, msg.trim_end_matches('\n'));

@@ -3,21 +3,18 @@
 use crate::service::clipboard::ClipboardManager;
 use crate::service::notification::NotificationManager;
 use crate::service::power::PowerManager;
-use crate::service::session::SessionManager;
 
 pub(crate) struct ServiceManager {
     pub(crate) notifications: NotificationManager,
     pub(crate) clipboard: ClipboardManager,
-    pub(crate) session: SessionManager,
     pub(crate) power: PowerManager,
 }
 
 impl ServiceManager {
-    pub fn new(boot_tick: u64) -> Self {
+    pub fn new() -> Self {
         ServiceManager {
             notifications: NotificationManager::new(),
             clipboard: ClipboardManager::new(),
-            session: SessionManager::new(boot_tick),
             power: PowerManager::new(),
         }
     }
@@ -36,26 +33,6 @@ impl ServiceManager {
         current_tick: u64,
     ) -> u64 {
         self.notifications
-            .notify_with_icon_at_tick(title, body, 0, urgency, timeout, current_tick)
-    }
-
-    #[allow(dead_code)] // icon variant of notify, callers use plain notify() today
-    pub fn notify_with_icon(
-        &mut self,
-        title: &str,
-        body: &str,
-        icon_id: u8,
-        urgency: u8,
-        timeout: u32,
-        current_tick: u64,
-    ) -> u64 {
-        self.notifications.notify_with_icon_at_tick(
-            title,
-            body,
-            icon_id,
-            urgency,
-            timeout,
-            current_tick,
-        )
+            .notify_at_tick(title, body, urgency, timeout, current_tick)
     }
 }

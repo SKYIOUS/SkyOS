@@ -1,77 +1,103 @@
 //! Desktop coordinator — event dispatch, window management, layout logic.
 
-use crate::core::constants::*;
 use crate::core::damage::DamageTracker;
 use crate::core::desktop_icons::DesktopIcons;
 use crate::core::event::Event;
-use crate::core::geometry::{Point, Rect};
+use crate::core::geometry::{ContextMenu, MenuItem, Point, Rect};
 use crate::core::start_menu::StartMenuState;
 use crate::core::tray::SystemTray;
-use crate::core::window::{VisualFlags, WindowId, WindowState};
-use crate::util::app_registry::AppId;
-use crate::util::crash_diagnostics::CrashDiagnostics;
+use crate::core::window::{WindowButton, WindowId, WindowState};
+use crate::util::app_catalog::AppId;
 use crate::util::log::Logger;
 use crate::util::profiler::Profiler;
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
-use libsarga::io;
-use libsarga::process;
 
 pub(crate) enum Cursor {
     Default,
-    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
-    Arrow,
     ResizeH,
     ResizeV,
     ResizeDiagonal,
     Move,
-    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
-    Busy,
-    #[allow(dead_code)] // cursor palette; not all shapes wired to input yet
-    Text,
     Hand,
 }
 
-const DESKTOP_MENU: &[(&str, &str)] = &[
-    ("Refresh", "refresh"),
-    ("---", ""),
-    ("Settings", "settings"),
-    ("Terminal", "terminal"),
-    ("---", ""),
-    ("Paste", "paste"),
-    ("Create Folder", "new_folder"),
-    ("Create File", "new_file"),
-    ("---", ""),
-    ("Properties", "properties"),
+const DESKTOP_MENU: &[MenuItem] = &[
+    MenuItem {
+        label: "Refresh",
+        action: "refresh",
+    },
+    MenuItem {
+        label: "---",
+        action: "",
+    },
+    MenuItem {
+        label: "Settings",
+        action: "settings",
+    },
+    MenuItem {
+        label: "Terminal",
+        action: "terminal",
+    },
 ];
 
-const ICON_MENU: &[(&str, &str)] = &[
-    ("Open", "open"),
-    ("Delete", "delete"),
-    ("Rename", "rename"),
-    ("---", ""),
-    ("Properties", "properties"),
+const ICON_MENU: &[MenuItem] = &[
+    MenuItem {
+        label: "Open",
+        action: "open",
+    },
+    MenuItem {
+        label: "Delete",
+        action: "delete",
+    },
+    MenuItem {
+        label: "Rename",
+        action: "rename",
+    },
 ];
 
 // Window system menu for right-click on titlebar
-const SYSTEM_MENU: &[(&str, &str)] = &[
-    ("Restore", "restore"),
-    ("Move", "move"),
-    ("Size", "size"),
-    ("Minimize", "minimize"),
-    ("Maximize", "maximize"),
-    ("---", ""),
-    ("Close", "close"),
+const SYSTEM_MENU: &[MenuItem] = &[
+    MenuItem {
+        label: "Restore",
+        action: "restore",
+    },
+    MenuItem {
+        label: "Move",
+        action: "move",
+    },
+    MenuItem {
+        label: "Size",
+        action: "size",
+    },
+    MenuItem {
+        label: "Minimize",
+        action: "minimize",
+    },
+    MenuItem {
+        label: "Maximize",
+        action: "maximize",
+    },
+    MenuItem {
+        label: "---",
+        action: "",
+    },
+    MenuItem {
+        label: "Close",
+        action: "close",
+    },
 ];
-use crate::core::window_manager::{SnapRegion, WindowManager};
+use crate::core::window_manager::WindowManager;
 
 pub(crate) enum TilingMode {
     Floating,
     Tile,
     Monocle,
 }
-use crate::core::shortcut::{ShortcutAction, ShortcutManager};
+use crate::input::keys;
+use crate::input::{is_desktop_shortcut, resolve, KeyAction, KeyEvent};
+use crate::layout::{self, WindowHit};
 use crate::render::snapshot::RenderSnapshot;
 
 pub struct Desktop {
@@ -79,9 +105,7 @@ pub struct Desktop {
     pub(crate) screen_h: u32,
     pub(crate) wm: WindowManager,
     pub(crate) start_menu: StartMenuState,
-    // menu items are (label, action) pairs; ad-hoc tuple kept for brevity
-    #[allow(clippy::type_complexity)]
-    pub(crate) context_menu: Option<(i32, i32, &'static [(&'static str, &'static str)])>,
+    pub(crate) context_menu: Option<ContextMenu>,
     pub(crate) clock_ticks: u64,
     pub(crate) mouse_x: i32,
     pub(crate) mouse_y: i32,
@@ -94,7 +118,7 @@ pub struct Desktop {
     cursor_blink_tick: u8,
     resize_win: Option<WindowId>,
     resize_edges: u8,
-    resize_rect: (i32, i32, u32, u32),
+    resize_rect: Rect,
     last_click_time: u64,
     last_click_pos: Point,
     pub(crate) double_click: bool,
@@ -102,34 +126,20 @@ pub struct Desktop {
     pub(crate) theme_svc: crate::core::theme_service::ThemeService,
     pub(crate) damage: DamageTracker,
     pub(crate) clock_cache: crate::render::clock::ClockCache,
-    shortcuts: ShortcutManager,
     tiling_mode: TilingMode,
-    prev_tiling_geos: alloc::vec::Vec<(i32, i32, u32, u32)>,
+    prev_tiling_geos: alloc::vec::Vec<Rect>,
     focus_history: VecDeque<u64>,
-    switcher_active: bool,
-    switcher_idx: usize,
-    pub(crate) app_reg: crate::util::app_registry::AppRegistry,
-    pub(crate) lifecycle: crate::sys::lifecycle::LifecycleManager,
+    pub(crate) switcher_active: bool,
+    pub(crate) switcher_idx: usize,
+    pub(crate) app_reg: crate::util::app_catalog::AppCatalog,
+    pub(crate) session: crate::service::session::SessionManager,
     pub(crate) services: crate::service::service_manager::ServiceManager,
     pub(crate) tray: SystemTray,
     pub(crate) settings: crate::core::settings::SettingsState,
-    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
-    pub(crate) config_store: crate::apps::config_store::ConfigStore,
-    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
-    pub(crate) terminal_state: crate::apps::terminal::TerminalState,
-    #[allow(dead_code)] // Desktop-owned app state, read by apps/desktop_api
-    pub(crate) file_manager: crate::apps::files::FileManagerState,
     pub(crate) task_manager: crate::apps::task_manager::TaskManagerState,
     pub(crate) about_state: crate::apps::about::AboutState,
     pub(crate) settings_app: crate::apps::settings::SettingsAppState,
-    #[allow(dead_code)]
-    pub(crate) file_assoc: crate::util::file_assoc::FileAssociationEngine,
-    #[allow(dead_code)]
-    pub(crate) vfs: crate::sys::vfs::VfsContext,
-    pub(crate) watcher: crate::sys::watcher::FileWatcher,
     pub(crate) explorers: alloc::vec::Vec<crate::util::explorer::ExplorerState>,
-    #[allow(dead_code)]
-    pub(crate) recovery: crate::util::recovery::RecoverySystem,
     pub(crate) a11y_tree: crate::sec::a11y::A11yTree,
     pub(crate) focus: crate::sec::a11y::FocusManager,
     pub(crate) tooltips: crate::apps::tooltip::TooltipManager,
@@ -140,14 +150,9 @@ pub struct Desktop {
     pub(crate) ipc_server: crate::ipc::IpcServer,
     pub(crate) ipc_transport: crate::ipc::transport::IpcTransport,
     pub(crate) service_registry: crate::ipc::ServiceRegistry,
-    #[allow(dead_code)] // crash reporting integration point
-    pub(crate) crash_manager: crate::util::crash_manager::CrashManager,
-    #[allow(dead_code)] // parsed .desktop entries, populated by service layer
-    pub(crate) desktop_entries: alloc::vec::Vec<crate::util::desktop_entry::DesktopEntry>,
     pub(crate) permissions: crate::sec::perms::PermissionManager,
     pub(crate) profiler: Profiler,
     pub(crate) logger: Logger,
-    pub(crate) crash_diag: CrashDiagnostics,
     pub(crate) debug_overlay: bool,
 }
 
@@ -171,7 +176,7 @@ impl Desktop {
             cursor_blink_tick: 0,
             resize_win: None,
             resize_edges: 0,
-            resize_rect: (0, 0, 0, 0),
+            resize_rect: Rect::new(0, 0, 0, 0),
             last_click_time: 0,
             last_click_pos: Point::new(0, 0),
             double_click: false,
@@ -179,28 +184,20 @@ impl Desktop {
             theme_svc: crate::core::theme_service::ThemeService::new(),
             damage: DamageTracker::new(),
             clock_cache: crate::render::clock::ClockCache::new(),
-            shortcuts: ShortcutManager::new(),
             tiling_mode: TilingMode::Floating,
             prev_tiling_geos: alloc::vec::Vec::new(),
             focus_history: VecDeque::new(),
             switcher_active: false,
             switcher_idx: 0,
-            app_reg: crate::util::app_registry::AppRegistry::new(),
-            lifecycle: crate::sys::lifecycle::LifecycleManager::new(),
-            services: crate::service::service_manager::ServiceManager::new(64),
+            app_reg: crate::util::app_catalog::AppCatalog::new(),
+            session: crate::service::session::SessionManager::new(64),
+            services: crate::service::service_manager::ServiceManager::new(),
             tray: SystemTray::new(),
             settings: crate::core::settings::SettingsState::new(),
-            config_store: crate::apps::config_store::ConfigStore::new(),
-            terminal_state: crate::apps::terminal::TerminalState::new(),
-            file_manager: crate::apps::files::FileManagerState::new(),
             task_manager: crate::apps::task_manager::TaskManagerState::new(),
             about_state: crate::apps::about::AboutState::new(),
             settings_app: crate::apps::settings::SettingsAppState::new(),
-            file_assoc: crate::util::file_assoc::FileAssociationEngine::new(),
-            vfs: crate::sys::vfs::VfsContext::new(),
-            watcher: crate::sys::watcher::FileWatcher::new(),
             explorers: alloc::vec::Vec::new(),
-            recovery: crate::util::recovery::RecoverySystem::new(),
             a11y_tree: crate::sec::a11y::A11yTree::new(),
             focus: crate::sec::a11y::FocusManager::new(),
             tooltips: crate::apps::tooltip::TooltipManager::new(),
@@ -215,56 +212,18 @@ impl Desktop {
                 reg.register_defaults();
                 reg
             },
-            crash_manager: crate::util::crash_manager::CrashManager::new(),
-            desktop_entries: alloc::vec::Vec::new(),
             permissions: crate::sec::perms::PermissionManager::new(),
             profiler: Profiler::new(),
             logger: Logger::new(),
-            crash_diag: CrashDiagnostics::new(),
             debug_overlay: false,
         }
     }
     pub fn taskbar_y(&self) -> u32 {
-        self.screen_h - TASKBAR_H
+        self.screen_h - layout::TASKBAR_H
     }
 
     pub fn advance_clock(&mut self) {
         self.clock_ticks += 1;
-    }
-
-    pub fn reap_children(&mut self) {
-        loop {
-            match process::waitpid(-1, 1) {
-                Ok((pid, status)) if pid > 0 => {
-                    use crate::sys::lifecycle::ExitClass;
-                    match crate::sys::lifecycle::exit_class(status) {
-                        ExitClass::Clean => self.lifecycle.mark_terminated(pid),
-                        cls => {
-                            self.lifecycle.mark_crashed(pid);
-                            let reason = match cls {
-                                ExitClass::Killed => alloc::string::String::from("killed"),
-                                ExitClass::Signal(sig) => alloc::format!("signal {}", sig),
-                                ExitClass::Error(code) => alloc::format!("exit {}", code),
-                                ExitClass::Clean => unreachable!(),
-                            };
-                            self.services.notify(
-                                "Application Crashed",
-                                &reason,
-                                2,
-                                8000,
-                                self.clock_ticks,
-                            );
-                        }
-                    }
-                    self.lifecycle.remove(pid);
-                    self.permissions.unregister(pid);
-                    self.ipc_transport.unregister(pid);
-                    self.wm.close_by_pid(pid);
-                    self.damage.mark_full();
-                }
-                _ => break,
-            }
-        }
     }
 
     pub fn tick(&mut self) {
@@ -284,7 +243,15 @@ impl Desktop {
             self.cursor_visible = true;
             self.damage.mark_full();
         }
-        self.reap_children();
+        if self.session.reap(
+            &mut self.wm,
+            &mut self.services,
+            &mut self.permissions,
+            &mut self.ipc_transport,
+            self.clock_ticks,
+        ) {
+            self.damage.mark_full();
+        }
         let reqs = self.ipc_transport.ingest();
         for req in reqs {
             self.ipc_server.submit_request(req);
@@ -312,10 +279,13 @@ impl Desktop {
             self.damage.mark_full();
         }
         self.services.tick(self.clock_ticks);
-        self.watcher.poll();
-        self.build_a11y_tree();
-        self.tooltips.tick();
-        self.tick_tooltip_hover();
+        self.a11y_tree = crate::sec::a11y::build_tree(self);
+        // Tooltip fades (in/out) animate frame by frame: the manager and the
+        // hover path report every visual change so the damage-gated render
+        // loop repaints during the fade instead of snapping at the end.
+        if self.tooltips.tick() || self.tick_tooltip_hover() {
+            self.damage.mark_full();
+        }
         self.pump_terminals();
         self.profiler.frame_timer.stop(self.clock_ticks);
         if self.clock_ticks.is_multiple_of(1000) {
@@ -323,15 +293,16 @@ impl Desktop {
         }
     }
 
-    /// Pump pty output from terminal windows into their content lines.
-    /// Stateless ANSI filter: ESC sequences and control chars are dropped,
-    /// `\r` ignored, `\n` starts a new line, printable text appended.
-    /// ponytail: no persistent ANSI state machine — a CSI split across reads
-    /// can drop one escape; upgrade if sash output ever looks garbled.
+    /// Pump pty output from terminal windows into their text surfaces.
+    /// Parsing/cursor state lives in the window's `TextSurface`
+    /// (`consume_pty_bytes`), so escape sequences split across reads are
+    /// handled correctly.
     fn pump_terminals(&mut self) {
         for i in 0..self.wm.len() {
             let Some(id) = self.wm.id_at(i) else { continue };
-            let Some(fd) = self.wm.lookup(id).and_then(|w| w.pty_fd) else { continue };
+            let Some(fd) = self.wm.lookup(id).and_then(|w| w.pty_fd()) else {
+                continue;
+            };
             let mut pfds = [libsarga::net::PollFd {
                 fd,
                 events: libsarga::net::POLLIN,
@@ -351,222 +322,119 @@ impl Desktop {
             if n == 0 {
                 continue;
             }
-            let mut text = alloc::string::String::new();
-            let mut in_esc = false;
-            for &b in &buf[..n] {
-                if in_esc {
-                    if (0x40..=0x7E).contains(&b) || b < 0x20 {
-                        in_esc = false; // CSI/OSC final byte (or control end)
-                    }
-                    continue;
-                }
-                match b {
-                    0x1B => in_esc = true,
-                    b'\r' => {}
-                    b'\n' => text.push('\n'),
-                    b'\t' => text.push_str("    "),
-                    0x20..=0x7E => text.push(b as char),
-                    _ => {}
-                }
-            }
-            if text.is_empty() {
-                continue;
-            }
             let mut changed = false;
             if let Some(w) = self.wm.lookup_mut(id) {
-                for line in text.split('\n') {
-                    if !line.is_empty() {
-                        if w.content.is_empty() {
-                            w.content.push(alloc::string::String::new());
-                        }
-                        if w.content.last().is_none_or(|l| l.len() > 80) {
-                            w.content.push(alloc::string::String::new());
-                        }
-                        if let Some(l) = w.content.last_mut() {
-                            l.push_str(line);
-                        }
-                        changed = true;
-                    }
-                }
-                if text.ends_with('\n') {
-                    w.content.push(alloc::string::String::new());
-                    changed = true;
-                }
-                if w.content.len() > 500 {
-                    w.content.drain(0..w.content.len() - 500);
-                }
+                changed = w.surface_mut().consume_pty_bytes(&buf[..n]);
+                w.surface_mut().truncate(500);
             }
             if changed {
                 self.damage.mark_full();
             }
         }
     }
-
-    fn tick_tooltip_hover(&mut self) {
+    /// True if the tooltip's visible state changed this frame (show, hide
+    /// started, keep-alive cancelled a fade) so the caller can repaint.
+    fn tick_tooltip_hover(&mut self) -> bool {
+        // A modal overlay swallows the pointer (same set as `hover_target`),
+        // so no tooltips while one is up: with `hover_target()` None the
+        // Close/Minimize/taskbar arms never fire and the owner fallback
+        // would leak a plain title under the overlay. An already-visible
+        // tooltip (shown before the overlay opened) dismisses too. The hide
+        // fires only on the transition (tracked by `tooltip_last_hover` —
+        // Some only while the pointer tracks a node): a per-tick hide would
+        // keep restarting the fade and leave an invisible zombie tooltip.
+        // The START MENU is deliberately NOT in this set: its rows must keep
+        // showing their tooltips (StartApp descriptions), so menu-open
+        // leaves the fallback arm reachable for out-of-menu pointers — a
+        // known, narrower instance of the same leak, scoped out here.
+        if self.overlay_open() {
+            // Copy the owner out first: `hide` needs &mut self.tooltips,
+            // so it cannot run inside the `active.as_ref()` borrow.
+            let changed = if self.tooltip_last_hover.is_some() {
+                match self.tooltips.active.as_ref().map(|t| t.owner) {
+                    Some(owner) => self.tooltips.hide(owner),
+                    None => false,
+                }
+            } else {
+                false
+            };
+            self.tooltip_last_hover = None;
+            return changed;
+        }
         let hovered = self.a11y_tree.node_at(self.mouse_x, self.mouse_y);
         let hover_id = hovered.map(|n| n.id);
         if hover_id != self.tooltip_last_hover {
+            // Pointer moved to a different surface (or off a surface): begin
+            // the delayed dismiss of the tooltip owned by the *previous*
+            // node. The fade-out is a few ticks long, so a quick return to
+            // the same node cancels it (see keep_alive below).
+            let changed = if let Some(prev) = self.tooltip_last_hover {
+                self.tooltips
+                    .hide(crate::apps::tooltip::TooltipOwner::Pointer(prev))
+            } else {
+                false
+            };
             self.tooltip_hover_ticks = 0;
             self.tooltip_last_hover = hover_id;
-            self.tooltips.hide();
-            return;
+            return changed;
+        }
+        // Same node as last frame: refresh its tooltip so it never expires
+        // mid-hover (kills the old show→timeout→re-show flicker every ~2s),
+        // and cancel any fade-out started by a one-frame gap in the pointer
+        // tracking. A foreign owner is ignored by both calls.
+        if let Some(id) = hover_id {
+            if self
+                .tooltips
+                .keep_alive(crate::apps::tooltip::TooltipOwner::Pointer(id))
+            {
+                return true;
+            }
         }
         if self.tooltips.active.is_some() {
-            return;
+            return false;
         }
         if let Some(id) = hover_id {
             self.tooltip_hover_ticks = self.tooltip_hover_ticks.saturating_add(1);
             if self.tooltip_hover_ticks >= 30 {
                 if let Some(n) = self.a11y_tree.nodes.iter().find(|n| n.id == id) {
-                    let label = if n.label.is_empty() {
-                        match n.role {
-                            crate::sec::a11y::A11yRole::Taskbar => "Taskbar",
-                            crate::sec::a11y::A11yRole::StartMenu => "Start Menu",
-                            crate::sec::a11y::A11yRole::Desktop => "Desktop",
-                            _ => "",
-                        }
-                    } else {
-                        &n.label
-                    };
-                    if !label.is_empty() {
+                    // All hover text comes from the single formatter in the
+                    // a11y tree builder (`tooltip_label`): it resolves the
+                    // unified hover target (Close/Minimize distinction,
+                    // taskbar buttons, start-menu rows) and the owner/label
+                    // fallback, so no label logic lives in the coordinator.
+                    let text = crate::sec::a11y::tooltip_label(self, n, self.hover_target());
+                    if !text.is_empty() {
                         let tx = self.mouse_x + 12;
                         let ty = self.mouse_y;
-                        self.tooltips.show(label, tx, ty, 120);
+                        return self.tooltips.show(
+                            crate::apps::tooltip::TooltipOwner::Pointer(id),
+                            &text,
+                            tx,
+                            ty,
+                            120,
+                        );
                     }
                 }
             }
         }
-    }
-
-    fn build_a11y_tree(&mut self) {
-        self.a11y_tree.clear();
-        let ty = self.taskbar_y();
-
-        // root: Desktop
-        let desktop_id = self.a11y_tree.add_node(
-            crate::sec::a11y::A11yRole::Desktop,
-            "Desktop",
-            (0, 0, self.screen_w, ty),
-            false,
-        );
-
-        // Taskbar
-        let taskbar_id = self.a11y_tree.add_node(
-            crate::sec::a11y::A11yRole::Taskbar,
-            "Taskbar",
-            (
-                0,
-                ty as i32,
-                self.screen_w,
-                crate::core::constants::TASKBAR_H,
-            ),
-            true,
-        );
-        self.a11y_tree.add_child(desktop_id, taskbar_id);
-
-        // Start button
-        let sb_id = self.a11y_tree.add_node(
-            crate::sec::a11y::A11yRole::Button,
-            "Start",
-            (5, ty as i32 + 4, 58, crate::core::constants::TASKBAR_H - 8),
-            true,
-        );
-        self.a11y_tree.add_child(taskbar_id, sb_id);
-
-        // Window buttons in taskbar
-        for i in 0..self.wm.len() {
-            let aw = &self.wm.iter()[i];
-            let bx = 75 + i as u32 * 125;
-            let btn_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::Button,
-                &aw.title,
-                (
-                    bx as i32,
-                    ty as i32 + 4,
-                    120,
-                    crate::core::constants::TASKBAR_H - 8,
-                ),
-                true,
-            );
-            self.a11y_tree.add_child(taskbar_id, btn_id);
-        }
-
-        // Start Menu
-        if self.start_menu.open {
-            let menu_x = 4i32;
-            let menu_y = ty as i32 - 5 - 460;
-            let start_menu_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::StartMenu,
-                "Start Menu",
-                (menu_x, menu_y, 480, 460),
-                true,
-            );
-            self.a11y_tree.add_child(desktop_id, start_menu_id);
-        }
-
-        // Windows
-        for aw in self.wm.iter().iter() {
-            let win_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::Window,
-                &aw.title,
-                (aw.x, aw.y, aw.w, aw.h),
-                true,
-            );
-            self.a11y_tree.add_child(desktop_id, win_id);
-
-            // close button
-            let close_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::Button,
-                "Close",
-                (aw.x + aw.w as i32 - 28, aw.y + 6, 22, 18),
-                true,
-            );
-            self.a11y_tree.add_child(win_id, close_id);
-        }
-
-        // Desktop Icons
-        for ic in &self.desktop_icons.icons {
-            let icon_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::Icon,
-                &ic.name,
-                (ic.x, ic.y, 48, 56),
-                true,
-            );
-            self.a11y_tree.add_child(desktop_id, icon_id);
-        }
-
-        // Notifications
-        for n in self.services.notifications.visible_notifications() {
-            let notif_id = self.a11y_tree.add_node(
-                crate::sec::a11y::A11yRole::Notification,
-                &n.title,
-                (0, 0, 0, 0),
-                false,
-            );
-            self.a11y_tree.add_child(desktop_id, notif_id);
-        }
-
-        // Sync focus from FocusManager
-        if let Some(fid) = self.focus.focused() {
-            self.a11y_tree.set_focus(fid);
-        }
+        false
     }
 
     fn save_geometries(&mut self) {
         self.prev_tiling_geos.clear();
         for w in self.wm.iter() {
-            self.prev_tiling_geos.push((w.x, w.y, w.w, w.h));
+            self.prev_tiling_geos.push(Rect::new(w.x, w.y, w.w, w.h));
         }
     }
 
     fn restore_geometries(&mut self) {
-        for (i, &(x, y, w, h)) in self.prev_tiling_geos.iter().enumerate() {
+        for (i, &geo) in self.prev_tiling_geos.iter().enumerate() {
             if let Some(wid) = self.wm.id_at(i) {
                 if let Some(aw) = self.wm.lookup_mut(wid) {
-                    aw.x = x;
-                    aw.y = y;
-                    aw.w = w;
-                    aw.h = h;
+                    aw.x = geo.x;
+                    aw.y = geo.y;
+                    aw.w = geo.w;
+                    aw.h = geo.h;
                 }
             }
         }
@@ -683,76 +551,39 @@ impl Desktop {
                     self.handle_key(key);
                 }
             }
-            Event::MouseClick(x, y) => {
+            Event::MouseClick(p) => {
                 self.focus_visible = false;
-                self.handle_click(x, y);
+                self.handle_click(p.x, p.y);
             }
-            Event::MouseMiddle(x, y) => {
+            Event::MouseMiddle(p) => {
                 self.focus_visible = false;
-                self.handle_middle_click(x, y);
+                self.handle_middle_click(p.x, p.y);
             }
-            Event::MouseRight(x, y) => {
+            Event::MouseRight(p) => {
                 self.focus_visible = false;
-                self.handle_right_click(x, y);
+                self.handle_right_click(p.x, p.y);
             }
-            Event::MouseDrag(x, y) => self.handle_drag(x, y),
+            Event::MouseDrag(p) => self.handle_drag(p.x, p.y),
             Event::Scroll(delta) => self.handle_scroll(delta),
             Event::MouseRelease => self.release_drag(),
-            Event::NotificationAdded(_id) => {}
-            Event::NotificationRemoved(_id) => {}
-            Event::ClipboardChanged => {}
-            Event::SessionChanged => {}
-            // Session lifecycle: PowerRequest → clean session end
-            Event::PowerRequest(_req) => {
-                io::print_str("[ade] session ending via PowerRequest\n");
-                process::exit(0);
-            }
-            Event::AppStarted(_id) => {}
-            Event::AppClosed(_id) => {}
-            Event::AppFocused(_id) => {}
-            Event::AppCrashed(_id) => {
-                self.crash_diag.record_event("app_crashed");
-                self.services.notify(
-                    "App Crashed",
-                    "An application has crashed",
-                    2,
-                    120,
-                    self.clock_ticks,
-                );
-            }
-            Event::SettingsChanged => {}
-            Event::FocusChanged(_id) => {}
-            Event::ElementActivated(_id) => {}
-            Event::ThemeChanged => {}
-            Event::TooltipOpened => {}
-            Event::TooltipClosed => {}
-            Event::AppInstalled(_id) => {}
-            Event::AppRemoved(_id) => {}
-            Event::PermissionGranted(_id) => {}
-            Event::PermissionDenied(_id) => {}
-            Event::IPCConnected(_id) => {}
-            Event::IPCDisconnected(_id) => {}
-            Event::ServiceRegistered(_name) => {}
-            Event::ServiceUnavailable(_name) => {}
-            Event::FocusNext => {
-                self.wm.focus_next();
-                self.focus_visible = true;
-                self.damage.mark_full();
-            }
-            Event::FocusPrev => {
-                self.wm.focus_prev();
-                self.focus_visible = true;
-                self.damage.mark_full();
-            }
         }
     }
 
-    fn handle_a11y_key(&mut self, key: u8) -> bool {
+    fn handle_a11y_key(&mut self, key: u16) -> bool {
+        // A key carrying modifier bits is not an a11y key: it must fall
+        // through to the keymap routing, or the future Ctrl+Alt+Backspace
+        // chord (0x308) would be swallowed here before `resolve` ever sees
+        // it. Plain keys (Ctrl+letter folds, arrows, Esc, Enter) have zero
+        // high bits and behave exactly as before.
+        if key & 0xFF00 != 0 {
+            return false;
+        }
+        let key = (key & 0xFF) as u8;
         match key {
-            72 | 80 => {
+            keys::SCAN_UP | keys::SCAN_DOWN => {
                 // Up / Down arrows
                 self.focus_visible = true;
-                let dir = if key == 72 {
+                let dir = if key == keys::SCAN_UP {
                     crate::sec::a11y::FocusDirection::Up
                 } else {
                     crate::sec::a11y::FocusDirection::Down
@@ -761,10 +592,10 @@ impl Desktop {
                 self.damage.mark_full();
                 true
             }
-            75 | 77 => {
+            keys::SCAN_LEFT | keys::SCAN_RIGHT => {
                 // Left / Right arrows
                 self.focus_visible = true;
-                let dir = if key == 75 {
+                let dir = if key == keys::SCAN_LEFT {
                     crate::sec::a11y::FocusDirection::Left
                 } else {
                     crate::sec::a11y::FocusDirection::Right
@@ -773,23 +604,103 @@ impl Desktop {
                 self.damage.mark_full();
                 true
             }
-            13 | 28 => {
-                // Enter (ASCII or scan code)
+            keys::KEY_ENTER | keys::SCAN_ENTER => {
+                // Enter (ASCII or scan code). An open overlay consumes the
+                // activation first — mouse-click semantics: `handle_click`
+                // checks the overlays before the taskbar and windows, so a
+                // click on a taskbar button or Close control with a modal up
+                // only dismisses the modal. Keyboard activation mirrors
+                // that: the first Enter closes the overlay, the next Enter
+                // acts on the still-focused node.
+                //
+                // EXCEPT the start menu: Enter launches instead of
+                // dismissing. A row focused under the ring launches that
+                // row's app (`menu_row_app` resolves it by bounds — the
+                // keyboard equivalent of clicking the row); otherwise a
+                // TYPED search launches the highlighted app. Both are the
+                // keyboard equivalents of clicking a menu row, and both
+                // would be swallowed by the `dismiss_overlays` branch
+                // below, making menu launch dead on the real event path
+                // (`handle_key`'s Enter arm is only reachable via
+                // synthetic `handle_key_event`). An EMPTY search with no
+                // row focused keeps the dismiss behavior — Enter on Start
+                // with no search closes the menu, pinned by
+                // `test_a11y_close_button`.
                 self.focus_visible = true;
+                if self.start_menu.open {
+                    let row_app = match self.focus.focused() {
+                        Some(fid) => self.menu_row_app(fid),
+                        None => None,
+                    };
+                    if let Some(app_id) = row_app {
+                        self.launch_app(app_id);
+                        self.damage.mark_full();
+                        return true;
+                    }
+                    if !self.start_menu.search.is_empty() {
+                        if let Some(app_id) = self.start_menu.selected_app() {
+                            self.launch_app(app_id);
+                            self.damage.mark_full();
+                            return true;
+                        }
+                    }
+                }
+                if self.dismiss_overlays() {
+                    self.damage.mark_full();
+                    return true;
+                }
                 if let Some(fid) = self.focus.focused() {
                     self.activate_a11y_node(fid);
                 }
                 self.damage.mark_full();
                 true
             }
-            27 | 1 => {
-                // Escape (ASCII or scan code)
+            keys::KEY_ESC | keys::SCAN_ESC => {
+                // Escape (ASCII or scan code): dismiss the focus ring and any
+                // open overlay — the same set `dismiss_overlays` closes for
+                // Enter (start menu, context menu, settings, settings app,
+                // task manager, about). With the ring and overlays clear, a
+                // fullscreen window exits fullscreen — the behavior the
+                // keymap `KeyAction::Escape` grab used to carry, now here
+                // because that grab was unreachable from the real event path
+                // (this arm consumes Esc before `handle_key` ever runs).
+                // When NOTHING is open — no ring, no fullscreen, no windows,
+                // no overlays, no switcher, no drag — Esc is the
+                // byte-deliverable session-end path: 0x1B is the one distinct
+                // control byte the key stream actually carries, so a hardware
+                // Esc on an empty desktop reaches userspace today (the
+                // Ctrl+Alt+Backspace chord stays the other path but is
+                // kernel-gated on Alt delivery — docs/session-lifecycle.md,
+                // Phase C). This arm is the single home of Escape: a keymap
+                // grab would be dead code.
                 self.focus_visible = false;
                 self.focus.blur();
-                if self.start_menu.open {
-                    self.start_menu.open = false;
+                if !self.dismiss_overlays() {
+                    // No overlay was dismissed. A fullscreen window exits
+                    // fullscreen (the session-end check requires an empty
+                    // window list, so the two never conflict); otherwise a
+                    // truly empty desktop — no windows, no switcher, no drag
+                    // in progress — ends the session.
+                    let fullscreen_id = self.wm.active().filter(|&id| {
+                        self.wm
+                            .lookup(id)
+                            .is_some_and(|w| w.state == WindowState::Fullscreen)
+                    });
+                    match fullscreen_id {
+                        Some(id) => {
+                            self.wm.toggle_fullscreen(id, self.screen_w, self.screen_h);
+                        }
+                        None => {
+                            if self.wm.is_empty()
+                                && !self.switcher_active
+                                && !self.drag_active
+                                && self.resize_win.is_none()
+                            {
+                                self.session.request_end();
+                            }
+                        }
+                    }
                 }
-                self.context_menu = None;
                 self.damage.mark_full();
                 true
             }
@@ -797,27 +708,41 @@ impl Desktop {
         }
     }
 
-    fn handle_key_focus(&mut self, key: u8) {
-        match key {
-            0x09 => {
-                self.wm.focus_next();
-                self.focus_visible = true;
-                self.damage.mark_full();
-            }
-            0x1B => {
-                self.focus_visible = false;
-                self.damage.mark_full();
-            }
-            _ => {}
+    /// Dismiss whichever overlay is up — the same overlay set `handle_click`
+    /// checks before the taskbar and windows (start menu, context menu,
+    /// legacy settings panel, settings app, task manager, about). Only one is
+    /// normally open at a time, so the relative order matters only in the
+    /// rare double-overlay case (deliberately not matched arm-for-arm to
+    /// `handle_click`, which checks `settings` first and the context menu
+    /// after the taskbar). Returns true if something was dismissed — the
+    /// caller consumes the activation, exactly like a mouse click that lands
+    /// on the modal instead of the surface beneath it.
+    fn dismiss_overlays(&mut self) -> bool {
+        if self.start_menu.open {
+            self.start_menu.open = false;
+            return true;
         }
-    }
-
-    #[allow(dead_code)] // keyboard a11y nav entry point, invoked from event dispatch in future
-    fn handle_keyboard_nav(&mut self, key: u8) {
-        match key {
-            0x09 | 0x1B => self.handle_key_focus(key),
-            _ => {}
+        if self.context_menu.is_some() {
+            self.context_menu = None;
+            return true;
         }
+        if self.settings.open {
+            self.settings.open = false;
+            return true;
+        }
+        if self.settings_app.open {
+            self.settings_app.open = false;
+            return true;
+        }
+        if self.task_manager.open {
+            self.task_manager.open = false;
+            return true;
+        }
+        if self.about_state.open {
+            self.about_state.open = false;
+            return true;
+        }
+        false
     }
 
     fn activate_a11y_node(&mut self, id: u32) {
@@ -827,9 +752,102 @@ impl Desktop {
         };
         match node.role {
             crate::sec::a11y::A11yRole::Window => {
-                // bring window to front
-                let win_idx = node.label.parse::<usize>().unwrap_or(usize::MAX);
-                if let Some(wid) = self.wm.id_at(win_idx) {
+                // bring window to front (the owner stamp replaces the old
+                // title-as-index parse, which always no-oped on real titles)
+                if let Some(wid) = node.owner {
+                    self.wm.bring_to_front(wid);
+                }
+            }
+            crate::sec::a11y::A11yRole::Button => {
+                // Button semantics come from the tree structure, not the
+                // label: the Start button (sentinel owner) toggles the start
+                // menu; a Button child of a Window node is that window's
+                // chrome control (Close or Minimize — discriminated by the
+                // stamped label, since parent role alone cannot tell the
+                // pair apart); a Button child of the Taskbar node is a
+                // taskbar window button (bring the owner to front, restoring
+                // it first if minimized — mirroring a taskbar mouse click).
+                // The parent-role guard keeps chrome and taskbar buttons
+                // distinct even if a window title is literally "Close" or
+                // "Minimize".
+                if node.owner == Some(crate::core::window::START_BUTTON_OWNER) {
+                    // Keyboard users open the menu the way the mouse does.
+                    // Closing is handled by `dismiss_overlays` — an Enter
+                    // with the menu open is consumed before this arm runs —
+                    // so activation only ever opens it here.
+                    self.start_menu.toggle(&self.app_reg);
+                    return;
+                }
+                let parent_role = node.parent.and_then(|p| {
+                    self.a11y_tree
+                        .nodes
+                        .iter()
+                        .find(|n| n.id == p)
+                        .map(|n| n.role)
+                });
+                if parent_role == Some(crate::sec::a11y::A11yRole::StartMenu) {
+                    // Start-menu app row: launch the app the row maps to
+                    // (`menu_row_app` resolves it by bounds), exactly like a
+                    // mouse click on the row — `launch_app` closes the menu.
+                    // Only reachable via direct activation; the Enter arm
+                    // intercepts the row case before `dismiss_overlays`, so
+                    // this arm is the semantic home of "a StartMenu-child
+                    // Button launches its row".
+                    if let Some(app_id) = self.menu_row_app(node.id) {
+                        self.launch_app(app_id);
+                    }
+                    return;
+                }
+                if parent_role == Some(crate::sec::a11y::A11yRole::Window) {
+                    if let Some(wid) = node.owner {
+                        // Chrome controls are discriminated by the stamped
+                        // label (via the shared `window_button_from_label`
+                        // — the same reverse map the render snapshot's
+                        // focused-control resolution uses, so a label
+                        // rename can't drift between activation and the
+                        // focus light). Explicit match, NOT a label check
+                        // with a close fall-through: an unknown chrome
+                        // button (a future Maximize node) must no-op,
+                        // never destructively close its window.
+                        match crate::core::window::window_button_from_label(node.label.as_str()) {
+                            Some(crate::core::window::WindowButton::Minimize) => {
+                                // Mirror a mouse click on the min button. A
+                                // minimized window's chrome stays in the
+                                // tree, so re-activation is gated: re-minim-
+                                // izing would re-run the slide animation.
+                                // The window stays in the wm, so the focused
+                                // node stays valid — no re-sync (and none
+                                // wanted: the ring should stay on the control
+                                // the user just used).
+                                if !self
+                                    .wm
+                                    .lookup(wid)
+                                    .is_some_and(|w| w.state == WindowState::Minimized)
+                                {
+                                    self.wm.minimize(wid, self.screen_w, self.taskbar_y());
+                                }
+                            }
+                            Some(crate::core::window::WindowButton::Close) => {
+                                self.wm.close(wid);
+                                // The close is animated: the window's nodes
+                                // stay in the tree until `process_closing`
+                                // removes it, so a focused Close id would go
+                                // stale mid-settle. Re-sync focus to the next
+                                // visible focusable node not owned by the
+                                // closing window.
+                                self.focus.resync_after_close(&self.a11y_tree, wid);
+                            }
+                            None => {}
+                        }
+                    }
+                } else if let Some(wid) = node.owner {
+                    if self
+                        .wm
+                        .lookup(wid)
+                        .is_some_and(|w| w.state == WindowState::Minimized)
+                    {
+                        self.wm.restore(wid);
+                    }
                     self.wm.bring_to_front(wid);
                 }
             }
@@ -844,36 +862,118 @@ impl Desktop {
                 }
             }
             crate::sec::a11y::A11yRole::Taskbar => {
-                // click start button
-                if self.mouse_y as u32 >= self.taskbar_y() {
-                    self.start_menu.open_with(&self.app_reg);
-                }
+                // The taskbar's one interactive action is the start menu —
+                // same toggle as the Start button (the old mouse-position
+                // gate was arbitrary for a keyboard activation).
+                self.start_menu.toggle(&self.app_reg);
             }
             _ => {}
         }
+    }
+
+    /// Resolve the app id a focused start-menu row node maps to. A row node
+    /// is a Button child of the StartMenu node whose bounds equal the shared
+    /// `layout::menu_item_rect` for its row index — resolved by geometry, not
+    /// label, so renamed apps and duplicate names stay correct. Returns None
+    /// for non-row nodes (the Enter arm then falls through to dismiss).
+    fn menu_row_app(&self, fid: u32) -> Option<AppId> {
+        self.menu_row_index(fid)
+            .map(|i| self.start_menu.filtered[i])
+    }
+
+    /// The `HoverTarget` of the focused a11y node, if it is an interactive
+    /// surface — the single focus-resolution every draw site shares through
+    /// the render snapshot's `focused` field (the same payloads each surface
+    /// already compares for its `hover` light, so the draws just union
+    /// `hover || focused`). A focused Button resolves by parent role: a
+    /// Taskbar child to the Start button (sentinel owner) or a taskbar
+    /// window button (owner); a StartMenu child to its app row (the same
+    /// bounds equality `menu_row_app` uses); a Window child to its
+    /// Close/Minimize control (chrome label). Anything else — Window nodes,
+    /// the StartMenu container, icons, the tray — resolves to None: focus
+    /// may rest there (the ring still draws) but no surface light applies.
+    pub(crate) fn focused_target(&self, fid: u32) -> Option<crate::core::window::HoverTarget> {
+        let node = self.a11y_tree.nodes.iter().find(|n| n.id == fid)?;
+        if node.role != crate::sec::a11y::A11yRole::Button {
+            return None;
+        }
+        match node.parent.and_then(|pid| {
+            self.a11y_tree
+                .nodes
+                .iter()
+                .find(|p| p.id == pid)
+                .map(|p| p.role)
+        }) {
+            Some(crate::sec::a11y::A11yRole::Taskbar) => match node.owner {
+                Some(crate::core::window::START_BUTTON_OWNER) => {
+                    Some(crate::core::window::HoverTarget::StartButton)
+                }
+                Some(wid) => Some(crate::core::window::HoverTarget::TaskbarButton(wid)),
+                None => None,
+            },
+            Some(crate::sec::a11y::A11yRole::StartMenu) => self
+                .menu_row_index(fid)
+                .map(crate::core::window::HoverTarget::StartApp),
+            Some(crate::sec::a11y::A11yRole::Window) => {
+                let btn = crate::core::window::window_button_from_label(node.label.as_str())?;
+                Some(crate::core::window::HoverTarget::Window {
+                    win: node.owner?,
+                    btn,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The filtered row index of a focused start-menu row node: the same
+    /// bounds-equality resolution `menu_row_app` uses to launch, exposed
+    /// separately so the render snapshot can light the focused row exactly
+    /// like its hover target (`HoverTarget::StartApp(i)`) — one geometry
+    /// resolution, two consumers (Enter-launch and focus feedback).
+    pub(crate) fn menu_row_index(&self, fid: u32) -> Option<usize> {
+        if !self.start_menu.open {
+            return None;
+        }
+        let node = self.a11y_tree.nodes.iter().find(|n| n.id == fid)?;
+        if node.role != crate::sec::a11y::A11yRole::Button {
+            return None;
+        }
+        let parent_is_start_menu = node
+            .parent
+            .and_then(|p| self.a11y_tree.nodes.iter().find(|m| m.id == p))
+            .is_some_and(|p| p.role == crate::sec::a11y::A11yRole::StartMenu);
+        if !parent_is_start_menu {
+            return None;
+        }
+        let menu_r = layout::menu_rect(self.taskbar_y());
+        let list_r = layout::menu_list_rect(menu_r);
+        let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
+        let start = self.start_menu.scroll as usize;
+        let end = (start + avail).min(self.start_menu.filtered.len());
+        (start..end).find(|&i| layout::menu_item_rect(menu_r, i, start) == node.bounds)
     }
 
     fn exec_context_action(&mut self, action: &str) {
         match action {
             "terminal" => self.spawn_app("/bin/sash", "Terminal"),
             "arrange" => {
-                let positions: &[(i32, i32)] =
-                    &[(30, 80), (30, 180), (30, 280), (30, 380), (30, 480)];
+                let positions: &[Point] = &[
+                    Point::new(30, 80),
+                    Point::new(30, 180),
+                    Point::new(30, 280),
+                    Point::new(30, 380),
+                    Point::new(30, 480),
+                ];
                 for (i, ic) in self.desktop_icons.icons.iter_mut().enumerate() {
                     if i < positions.len() {
-                        ic.x = positions[i].0;
-                        ic.y = positions[i].1;
+                        ic.x = positions[i].x;
+                        ic.y = positions[i].y;
                     }
                 }
             }
-            "paste" => {}
-            "wallpaper" => {}
             "refresh" => {
                 self.damage.mark_full();
             }
-            "new_folder" => {}
-            "new_file" => {}
-            "properties" => {}
             "settings" => {
                 self.settings.toggle();
                 self.context_menu = None;
@@ -922,7 +1022,7 @@ impl Desktop {
                     if let Some(w) = self.wm.lookup(wi) {
                         self.resize_win = Some(wi);
                         self.resize_edges = 4;
-                        self.resize_rect = (w.x, w.y, w.w, w.h);
+                        self.resize_rect = Rect::new(w.x, w.y, w.w, w.h);
                     }
                 }
                 self.system_menu_for = None;
@@ -949,14 +1049,6 @@ impl Desktop {
         }
     }
 
-    #[allow(dead_code)] // public close API, kept for hotkey/shortcut wiring
-    pub fn close_focused_window(&mut self) {
-        if let Some(active) = self.wm.active() {
-            self.wm.close(active);
-            self.damage.mark_full();
-        }
-    }
-
     fn launch_app(&mut self, app_id: AppId) {
         self.start_menu.open = false;
         let app = match self.app_reg.get(app_id) {
@@ -966,19 +1058,12 @@ impl Desktop {
                 return;
             }
         };
-        match app.startup_mode {
-            crate::util::app_registry::StartupMode::Singleton => {
-                if app.name == "Settings" {
-                    self.settings_app.open = true;
-                }
-                self.damage.mark_full();
-                return;
+        if let crate::util::app_catalog::StartupMode::Singleton = app.startup_mode {
+            if app.name == "Settings" {
+                self.settings_app.open = true;
             }
-            crate::util::app_registry::StartupMode::Background => {
-                self.damage.mark_full();
-                return;
-            }
-            _ => {}
+            self.damage.mark_full();
+            return;
         }
         if app.executable.is_empty() || app.name == "About SARGA" || app.name == "About SARGA OS" {
             self.about_state.open = true;
@@ -990,77 +1075,102 @@ impl Desktop {
             return;
         }
         crate::core::launcher::spawn_app_from_registry(self, &app);
+        // Positive serial confirmation that a window launch actually
+        // happened — the QEMU harness (qemu_gui_login.exp) waits for
+        // `[ade] launched <name>` after the keyboard chain (Tab → Enter →
+        // type → Enter) so the window-open leg is provable on real input,
+        // not just inferred from silence.
+        libsarga::io::print_str(&alloc::format!("[ade] launched {}\n", app.name));
         self.damage.mark_full();
     }
 
-    fn handle_key(&mut self, key: u8) {
-        if key == 88 || key == 0x57 {
-            self.debug_overlay = !self.debug_overlay;
-            self.damage.mark_full();
-            return;
-        }
-        if key == 0x1B {
-            self.context_menu = None;
-            self.start_menu.open = false;
-            self.settings.open = false;
-            self.settings_app.open = false;
-            if let Some(id) = self.wm.active() {
-                if let Some(w) = self.wm.lookup(id) {
-                    if w.state == WindowState::Fullscreen {
-                        self.wm.toggle_fullscreen(id, self.screen_w, self.screen_h);
-                    }
-                }
+    /// Keyboard routing — decode the raw byte into a `KeyEvent` and apply
+    /// the keymap routing table (`crate::input`). Contextual states (start
+    /// menu, window switcher, terminal focus) are routing rules here, not
+    /// magic constants; the old `DESKTOP_KEYS` list now lives in the table
+    /// as the `desktop` binding flag.
+    fn handle_key(&mut self, key: u16) {
+        // Decode the packed kernel value (low byte = char, bits 8..10 =
+        // alt/ctrl/shift). The pty write path keeps the plain low byte, so
+        // Ctrl+C still reaches the shell as 0x03.
+        let ev = KeyEvent::from_raw(key);
+        self.handle_key_event_raw(ev, (key & 0xFF) as u8);
+    }
+
+    /// Direct `KeyEvent` entry — for tests and future structured input
+    /// producers that can express chords (Ctrl+Alt+Backspace) the byte
+    /// stream cannot. The raw byte defaults to the canonical code, which is
+    /// only wrong for forwarded control bytes; a chord never reaches the
+    /// terminal-forward path (it is a desktop grab).
+    pub(crate) fn handle_key_event(&mut self, ev: KeyEvent) {
+        self.handle_key_event_raw(ev, ev.code);
+    }
+
+    fn handle_key_event_raw(&mut self, ev: KeyEvent, raw: u8) {
+        let terminal_focused = self.focused_has_pty();
+
+        // Global grabs fire before any contextual state (historical
+        // precedence), but yield to a focused terminal.
+        if !terminal_focused {
+            // NOTE: no `KeyAction::Escape` grab here — it would be
+            // unreachable. `handle_a11y_key` consumes Esc (ASCII or scan
+            // code) before `handle_key` ever runs, so Escape's dismiss +
+            // fullscreen-exit + empty-desktop session-end behavior lives
+            // entirely in that arm. The binding row in `input::BINDINGS`
+            // stays (the keymap contract pins it), but it can never fire
+            // from the byte path.
+            if let Some(KeyAction::ToggleDebugOverlay) = resolve(ev) {
+                self.debug_overlay = !self.debug_overlay;
+                self.damage.mark_full();
+                return;
             }
-            self.damage.mark_full();
-            return;
         }
+
         if self.start_menu.open {
-            match key {
-                0x1B => {
-                    // Esc
+            match resolve(ev) {
+                Some(KeyAction::Escape) => {
                     self.start_menu.open = false;
                     self.damage.mark_full();
                 }
-                0x0D | 0x0A => {
-                    // Enter
+                Some(KeyAction::Enter) => {
                     if let Some(app_id) = self.start_menu.selected_app() {
                         self.launch_app(app_id);
                         self.damage.mark_full();
                     }
                 }
-                0x09 => {
+                Some(KeyAction::FocusNext) => {
                     // Tab → next category
                     self.start_menu.cat_idx =
-                        (self.start_menu.cat_idx + 1) % crate::util::app_db::CATEGORIES.len();
+                        (self.start_menu.cat_idx + 1) % crate::util::app_catalog::CATEGORIES.len();
                     self.start_menu.selected = 0;
                     self.start_menu.scroll = 0;
                     self.start_menu.rebuild_filter(&self.app_reg);
                     self.damage.mark_full();
                 }
-                0x7F | 0x08 => {
-                    // Backspace
+                Some(KeyAction::Backspace) => {
                     self.start_menu.search.pop();
-                    self.start_menu.rebuild_filter(&self.app_reg);
-                    self.damage.mark_full();
-                }
-                ch if (0x20..=0x7E).contains(&ch) => {
-                    // printable ASCII → search
-                    self.start_menu.search.push(ch);
                     self.start_menu.rebuild_filter(&self.app_reg);
                     self.damage.mark_full();
                 }
                 _ => {}
             }
+            if let Some(ch) = ev.text() {
+                // printable ASCII → search
+                self.start_menu.search.push(ch as u8);
+                self.start_menu.rebuild_filter(&self.app_reg);
+                self.damage.mark_full();
+            }
             return;
         }
+
         if self.switcher_active {
-            match key {
-                0x09 => {
+            match resolve(ev) {
+                Some(KeyAction::FocusNext) => {
                     // Tab → next window
                     self.switcher_idx = (self.switcher_idx + 1) % self.wm.len();
                     self.damage.mark_full();
                 }
-                0x0D | 0x0A | 0x1B => {
+                Some(KeyAction::Enter) | Some(KeyAction::Escape) => {
                     // Enter / Escape → confirm selection
                     if let Some(wid) = self.wm.id_at(self.switcher_idx) {
                         self.wm.bring_to_front(wid);
@@ -1072,44 +1182,77 @@ impl Desktop {
             }
             return;
         }
-        // Terminal window focused: every key goes to the pty master, not the
-        // desktop (Ctrl+C to the shell, backspace to readline, etc.).
-        // ponytail: no Alt+Tab/global shortcuts while a terminal is focused;
-        // close via the window button. Refine when key routing gets modifiers.
-        if let Some(last) = self.wm.focused_mut() {
-            if let Some(fd) = last.pty_fd {
-                let byte = if key == 0x0A || key == 0x0D { 0x0D } else { key };
-                let _ = libsarga::io::write(fd, &[byte]);
-                return;
+
+        // Terminal window focused: keys go to the pty master, not the desktop
+        // (Ctrl+C to the shell, Tab for completion). The keymap decides what
+        // stays desktop-side: Ctrl+W closes the terminal (killing the shell),
+        // Ctrl+T/Ctrl+E/etc. keep their desktop meaning, and the
+        // Ctrl+Alt+Backspace logout chord stays a grab so it works from a
+        // terminal too. NOTE: Esc does NOT reach the shell from the real byte
+        // path — `handle_a11y_key` consumes it first (dismiss + fullscreen
+        // exit + empty-desktop session end), so this block's raw-byte Esc
+        // write only fires via the synthetic `handle_key_event` path used by
+        // tests. A terminal guard in the a11y arm would be the unblock if
+        // sash needs hardware Esc (docs/session-lifecycle.md, Phase C).
+        if terminal_focused && !is_desktop_shortcut(ev) {
+            if let Some(last) = self.wm.focused_mut() {
+                if let Some(fd) = last.pty_fd() {
+                    let byte = if raw == keys::KEY_LF || raw == keys::KEY_ENTER {
+                        keys::KEY_ENTER
+                    } else {
+                        raw
+                    };
+                    let _ = libsarga::io::write(fd, &[byte]);
+                    return;
+                }
             }
         }
-        if let Some(action) = self.shortcuts.handle(key) {
+
+        if let Some(action) = resolve(ev) {
             match action {
-                ShortcutAction::Quit => {
+                KeyAction::Quit => {
+                    // Session end — the Ctrl+Alt+Backspace chord, only with no
+                    // windows open (with any window open it is a deliberate
+                    // no-op, so it can't trip the logout loop mid-work). Esc
+                    // on an empty desktop is the second session-end path,
+                    // handled in the a11y Esc arm before this router runs.
+                    // `request_end()` (not `process::exit`) lets the main
+                    // loop unwind and print the `[ade] session ended` marker
+                    // before returning the exit code.
                     if self.wm.is_empty() {
-                        process::exit(0);
+                        self.session.request_end();
                     }
+                    return;
                 }
-                ShortcutAction::CloseFocused => {
+                KeyAction::CloseFocused => {
                     if let Some(id) = self.wm.active() {
                         self.wm.close(id);
                         self.damage.mark_full();
                     }
+                    return;
                 }
-                ShortcutAction::CycleTiling => self.cycle_tiling(),
-                ShortcutAction::CycleWindow => self.cycle_window(),
-                ShortcutAction::ClipboardPanel => {
+                KeyAction::CycleTiling => {
+                    self.cycle_tiling();
+                    return;
+                }
+                KeyAction::CycleWindow => {
+                    self.cycle_window();
+                    return;
+                }
+                KeyAction::ClipboardPanel => {
                     self.damage.mark_full();
+                    return;
                 }
-                ShortcutAction::ToggleAot => {
+                KeyAction::ToggleAot => {
                     if let Some(id) = self.wm.active() {
                         if let Some(w) = self.wm.lookup_mut(id) {
                             w.always_on_top = !w.always_on_top;
                         }
                         self.damage.mark_full();
                     }
+                    return;
                 }
-                ShortcutAction::DemoNotification => {
+                KeyAction::DemoNotification => {
                     self.services.notify(
                         "Demo",
                         "This is a test notification",
@@ -1118,82 +1261,100 @@ impl Desktop {
                         self.clock_ticks,
                     );
                     self.damage.mark_full();
+                    return;
                 }
-                ShortcutAction::DismissNotification => {
+                KeyAction::DismissNotification => {
                     let visible = self.services.notifications.visible_notifications();
                     if let Some(last) = visible.last() {
                         self.services.notifications.dismiss(last.id);
                         self.damage.mark_full();
                     }
+                    return;
                 }
-                ShortcutAction::ClearNotifications => {
+                KeyAction::ClearNotifications => {
                     self.services.notifications.dismiss_all();
                     self.damage.mark_full();
+                    return;
                 }
-                ShortcutAction::OpenSettings => {
+                KeyAction::OpenSettings => {
                     self.settings_app.open = !self.settings_app.open;
                     if self.settings_app.open {
                         self.settings_app.current_page =
                             crate::apps::settings::SettingsPage::Appearance;
                     }
                     self.damage.mark_full();
+                    return;
                 }
-                ShortcutAction::OpenTaskManager => {
+                KeyAction::OpenTaskManager => {
                     self.task_manager.open = !self.task_manager.open;
                     self.damage.mark_full();
+                    return;
                 }
-            }
-            return;
-        }
-        if key == 0x0C {
-            // Ctrl+L = clear terminal
-            if let Some(last) = self.wm.focused_mut() {
-                if last.focused {
-                    last.content.clear();
+                KeyAction::ClearTerminal => {
+                    // Ctrl+L = clear terminal
+                    if let Some(last) = self.wm.focused_mut() {
+                        if last.focused {
+                            last.surface_mut().clear();
+                            self.damage.mark_full();
+                        }
+                    }
+                    return;
+                }
+                KeyAction::Backspace => {
+                    // Delete/Backspace → delete selected icons; if nothing was
+                    // selected, fall through so the typing path pops a char.
+                    let before = self.desktop_icons.icons.len();
+                    self.desktop_icons.icons.retain(|ic| !ic.selected);
+                    if self.desktop_icons.icons.len() < before {
+                        self.damage.mark_full();
+                        return;
+                    }
+                }
+                KeyAction::FocusNext => {
+                    // Tab → a11y focus ring. `wm.focus_next()` cycles window
+                    // focus and returns false on an empty desktop — leaving
+                    // the ring visible but orphaned (no focused node, so a
+                    // following Enter could never activate anything). Fall
+                    // back to First so Tab starts the ring on the first
+                    // focusable node (the Taskbar), the keyboard entry point
+                    // to the start menu. This is what makes the QEMU
+                    // window-open leg driveable on today's kernel: arrows
+                    // (E0-extended) are dropped, so Tab+Enter+type+Enter is
+                    // the only keyboard path that opens a window.
+                    if !self.wm.focus_next() {
+                        self.focus
+                            .move_focus(crate::sec::a11y::FocusDirection::First, &self.a11y_tree);
+                    }
+                    self.focus_visible = true;
                     self.damage.mark_full();
+                    return;
                 }
-            }
-            return;
-        }
-        if key == 0x7F || key == 0x08 {
-            // Delete/Backspace → delete selected icons
-            let before = self.desktop_icons.icons.len();
-            self.desktop_icons.icons.retain(|ic| !ic.selected);
-            if self.desktop_icons.icons.len() < before {
-                self.damage.mark_full();
-                return;
+                // Handled by the global grab / menu / switcher blocks above
+                // (unreachable here: the grabs return first, and a focused
+                // terminal sends them to the pty).
+                KeyAction::Escape | KeyAction::ToggleDebugOverlay => {}
+                // Deliberate fall-through: Enter reaches the typing path so
+                // it can emit a newline into the focused window.
+                KeyAction::Enter => {}
             }
         }
-        if b'q' == key && self.wm.is_empty() {
-            process::exit(0);
-        }
-        if key == 0x09 {
-            self.handle_key_focus(key);
-            return;
-        }
+
+        // No keymap action: Ctrl+Q, plain 'q', Ctrl+Backspace etc. are
+        // deliberately unbound — the ONLY session-end path is the
+        // Ctrl+Alt+Backspace chord (KeyAction::Quit above). Everything
+        // reaching this point is either text or a silent no-op.
+
         self.damage.mark_full();
         if let Some(last) = self.wm.focused_mut() {
             if last.focused && last.x > -100 {
-                let ch = key as char;
-                if ch.is_ascii_graphic() || ch == ' ' {
-                    if last.content.last().is_none_or(|l| l.len() > 80) {
-                        last.content.push(alloc::string::String::new());
-                    }
-                    if let Some(line) = last.content.last_mut() {
-                        line.push(ch);
-                    }
-                } else if key == 0x0A || key == 0x0D {
-                    if let Some(line) = last.content.last_mut() {
-                        let cmd = line.clone();
-                        last.content.push(alloc::format!("$ {}", cmd));
-                    }
-                    if last.content.len() > 500 {
-                        last.content.drain(0..last.content.len() - 500);
-                    }
-                } else if key == 0x7F || key == 0x08 {
-                    if let Some(line) = last.content.last_mut() {
-                        line.pop();
-                    }
+                if let Some(ch) = ev.text() {
+                    last.surface_mut().push_char(ch);
+                } else if ev.code == keys::KEY_ENTER {
+                    let cmd = last.surface().last_line().cloned().unwrap_or_default();
+                    last.surface_mut().push_line(alloc::format!("$ {}", cmd));
+                    last.surface_mut().truncate(500);
+                } else if ev.code == keys::KEY_BACKSPACE {
+                    last.surface_mut().pop_char();
                 }
             }
         }
@@ -1212,78 +1373,11 @@ impl Desktop {
         self.wm
             .active()
             .and_then(|id| self.wm.lookup(id))
-            .is_some_and(|w| w.pty_fd.is_some())
+            .is_some_and(|w| w.pty_fd().is_some())
     }
 
-    #[allow(dead_code)]
-    // path is a fixed literal; guard kept for readability
-    #[allow(clippy::const_is_empty)]
     pub(crate) fn spawn_explorer(&mut self) {
-        let id = self.explorers.len() as u32;
-        let mut explorer = crate::util::explorer::ExplorerState::new(id, "/home");
-        explorer.refresh();
-        self.explorers.push(explorer);
-        let path = "/bin/skyfiles";
-        let mut app_win = crate::core::window::AppWindow {
-            x: 60,
-            y: 40,
-            w: 640,
-            h: 440,
-            prev_x: 60,
-            prev_y: 40,
-            prev_w: 640,
-            prev_h: 440,
-            title: alloc::string::String::from("File Explorer"),
-            content: alloc::vec::Vec::new(),
-            scroll: 0,
-            id: 0,
-            pid: None,
-            focused: true,
-            dragging: false,
-            drag_ox: 0,
-            drag_oy: 0,
-            state: crate::core::window::WindowState::Normal,
-            prev_state: crate::core::window::WindowState::Normal,
-            flags: VisualFlags::new(),
-            selection: None,
-            anim: None,
-            closing: false,
-            anim_opacity: 0,
-            always_on_top: false,
-            explorer_id: Some(id),
-            pty_fd: None,
-        };
-        app_win.content.push(alloc::string::String::new());
-        if !path.is_empty() {
-            match libsarga::process::fork() {
-                Ok(0) => {
-                    let _ = libsarga::process::execve(path, &[path], &[]);
-                    libsarga::process::exit(1);
-                }
-                Ok(pid) => {
-                    app_win.pid = Some(pid);
-                    let app_idx = crate::util::app_db::APPS
-                        .iter()
-                        .position(|a| a.exec == path)
-                        .unwrap_or(0);
-                    self.lifecycle.register(pid, app_idx);
-                }
-                Err(_) => {}
-            }
-        }
-        let wid = self.wm.create(app_win);
-        if let Some(w) = self.wm.lookup_mut(wid) {
-            w.flags.opacity = 0;
-            w.animate_to(w.x, w.y, w.w, w.h);
-        }
-        self.services
-            .notify("App Launched", "File Explorer", 1, 120, self.clock_ticks);
-        self.damage.mark_full();
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn spawn_app_ex(&mut self, path: &str, title: &str, x: i32, y: i32, w: u32, h: u32) {
-        crate::core::launcher::spawn_app_at(self, path, title, x, y, w, h);
+        crate::core::launcher::spawn_explorer(self);
     }
 
     pub fn update_mouse(&mut self, mx: i32, my: i32, btn: bool) -> (bool, bool, bool) {
@@ -1314,31 +1408,35 @@ impl Desktop {
         (just_pressed, just_released, self.drag_active)
     }
 
-    // drop ends the &self borrow from snapshot() before self is mutated
-    #[allow(clippy::drop_non_drop)]
+    /// Apply a theme by darkness — the single code path behind both settings
+    /// UIs' Dark Theme toggles (legacy panel + full settings app).
+    fn toggle_theme(&mut self, dark: bool) {
+        self.theme_svc.set(if dark {
+            libsarga::theme::Theme::dark()
+        } else {
+            libsarga::theme::Theme::light()
+        });
+    }
+
     pub(crate) fn handle_click(&mut self, mx: i32, my: i32) {
         self.damage.mark_full();
         if self.settings.open {
-            if let Some(idx) = self.settings.hit_test(mx, my, &self.snapshot()) {
-                match idx {
-                    0 => self.settings.sound_on = !self.settings.sound_on,
-                    1 => {
-                        self.settings.theme_dark = !self.settings.theme_dark;
-                        if self.settings.theme_dark {
-                            self.theme_svc.set(libsarga::theme::Theme::dark());
-                        } else {
-                            self.theme_svc.set(libsarga::theme::Theme::light());
-                        }
-                    }
-                    _ => {
-                        self.settings.open = false;
-                        self.context_menu = None;
-                    }
+            match self.settings.hit_test_action(mx, my, &self.snapshot()) {
+                Some(crate::apps::AppAction::Close) => {
+                    self.settings.open = false;
+                    self.context_menu = None;
                 }
-                self.damage.mark_full();
-                return;
+                Some(crate::apps::AppAction::SetTheme(dark)) => {
+                    self.settings.theme_dark = dark;
+                    self.toggle_theme(dark);
+                }
+                Some(crate::apps::AppAction::ToggleSound) => {
+                    self.settings.sound_on = !self.settings.sound_on;
+                }
+                // Not produced by this panel's hit_test_action.
+                Some(_) => {}
+                None => self.settings.open = false,
             }
-            self.settings.open = false;
             self.damage.mark_full();
             return;
         }
@@ -1346,12 +1444,10 @@ impl Desktop {
         let taskbar_y = self.taskbar_y() as i32;
 
         if self.start_menu.open {
-            // modern start menu click handling
-            let menu_x = 4i32;
-            let menu_y = taskbar_y - 5 - 460;
-            let menu_w = 480i32;
-            let menu_h = 460i32;
-            let menu_rect = Rect::new(menu_x, menu_y, menu_w as u32, menu_h as u32);
+            // modern start menu click handling — row geometry lives in one
+            // place (`start_menu::menu_hover_at`, shared with the draw and
+            // hover); this block maps the hit row to its click action.
+            let menu_rect = layout::menu_rect(taskbar_y as u32);
 
             if !menu_rect.hit_test(Point::new(mx, my)) {
                 self.start_menu.open = false;
@@ -1359,125 +1455,123 @@ impl Desktop {
             }
 
             // search bar click
-            let search_y = menu_y + 8;
-            if mx >= menu_x + 8 && mx < menu_x + menu_w - 8 && my >= search_y && my < search_y + 36
-            {
+            if layout::menu_search_rect(menu_rect).hit_test(Point::new(mx, my)) {
                 return; // focus search (keyboard will handle input)
             }
 
-            // sidebar categories
-            let sidebar_x = menu_x + 4;
-            let sidebar_y = search_y + 36 + 6;
-            for (i, _) in crate::util::app_db::CATEGORIES.iter().enumerate() {
-                let iy = sidebar_y + 4 + i as i32 * 28;
-                if mx >= sidebar_x + 4 && mx < sidebar_x + 126 && my >= iy && my < iy + 24 {
+            let pt = Point::new(mx, my);
+            match crate::core::start_menu::menu_hover_at(
+                &self.start_menu,
+                &self.app_reg,
+                pt,
+                taskbar_y as u32,
+            ) {
+                // Switch category — the same selection/scroll reset the old
+                // inline loop performed.
+                Some(crate::core::window::HoverTarget::StartCategory(i)) => {
                     self.start_menu.cat_idx = i;
                     self.start_menu.selected = 0;
                     self.start_menu.scroll = 0;
                     self.start_menu.rebuild_filter(&self.app_reg);
-                    return;
                 }
+                // Launch the tapped app-row.
+                Some(crate::core::window::HoverTarget::StartApp(i)) => {
+                    if i < self.start_menu.filtered.len() {
+                        let app_id = self.start_menu.filtered[i];
+                        self.launch_app(app_id);
+                    }
+                }
+                // Launch the tapped recent tile.
+                Some(crate::core::window::HoverTarget::StartRecent(ri)) => {
+                    if ri < self.app_reg.recent.len() {
+                        let idx = self.app_reg.recent[ri];
+                        if idx < self.app_reg.apps.len() {
+                            self.launch_app(AppId(idx));
+                        }
+                    }
+                }
+                // Power buttons have no click action yet (keyboard nav +
+                // hover only) — clicking one is a no-op, like before.
+                Some(crate::core::window::HoverTarget::StartPower(_)) => {}
+                // Not a start-menu row (search bar, empty menu area):
+                // no-op, menu stays open.
+                _ => {}
             }
-
-            // app list
-            let list_x = sidebar_x + 130 + 4;
-            let list_y = search_y + 36 + 6;
-            let list_w = menu_w - 4 - (list_x - menu_x);
-            let list_h = menu_h - (list_y - menu_y) - 44;
-            let avail = (list_h as u32 / 32) as usize;
-            let start = self.start_menu.scroll as usize;
-            let end = (start + avail).min(self.start_menu.filtered.len());
-            for i in start..end {
-                let iy = list_y + 2 + (i - start) as i32 * 32;
-                if mx >= list_x && mx < list_x + list_w && my >= iy && my < iy + 30 {
-                    let app_id = self.start_menu.filtered[i];
-                    self.launch_app(app_id);
-                    return;
-                }
-            }
-
-            // recent strip
-            let bottom_y = menu_y + menu_h - 36;
-            let mut rx = menu_x + 72;
-            for &idx in self.app_reg.db.recent.iter() {
-                if rx > menu_x + menu_w - 20 {
-                    break;
-                }
-                if mx >= rx && mx < rx + 80 && my >= bottom_y + 2 && my < bottom_y + 32 {
-                    self.launch_app(AppId(idx));
-                    return;
-                }
-                rx += 84;
-            }
+            self.damage.mark_full();
             return;
         }
 
         if self.settings_app.open {
-            let snap = self.snapshot();
-            let hit_idx = self.settings_app.hit_test(mx, my, &snap);
-            drop(snap);
-            if let Some(idx) = hit_idx {
-                if idx < 10 {
-                    let pages = [
-                        crate::apps::settings::SettingsPage::Appearance,
-                        crate::apps::settings::SettingsPage::Desktop,
-                        crate::apps::settings::SettingsPage::Keyboard,
-                        crate::apps::settings::SettingsPage::Mouse,
-                        crate::apps::settings::SettingsPage::Display,
-                        crate::apps::settings::SettingsPage::About,
-                        crate::apps::settings::SettingsPage::System,
-                        crate::apps::settings::SettingsPage::Power,
-                        crate::apps::settings::SettingsPage::Notification,
-                        crate::apps::settings::SettingsPage::Theme,
-                    ];
-                    if idx < pages.len() {
-                        self.settings_app.current_page = pages[idx];
-                    }
-                } else if idx == 10 {
-                    self.settings_app.app = !self.settings_app.app;
-                    if self.settings_app.app {
-                        self.theme_svc.set(libsarga::theme::Theme::dark());
-                    } else {
-                        self.theme_svc.set(libsarga::theme::Theme::light());
-                    }
+            match self.settings_app.hit_test_action(mx, my, &self.snapshot()) {
+                Some(crate::apps::AppAction::Close) => self.settings_app.open = false,
+                Some(crate::apps::AppAction::SelectPage(page)) => {
+                    self.settings_app.current_page = page;
                 }
-                self.damage.mark_full();
-                return;
+                Some(crate::apps::AppAction::SetTheme(dark)) => {
+                    self.settings_app.app = dark;
+                    self.toggle_theme(dark);
+                }
+                // Not produced by this app's hit_test_action.
+                Some(_) => {}
+                None => self.settings_app.open = false,
             }
-            self.settings_app.open = false;
             self.damage.mark_full();
             return;
         }
         if self.task_manager.open {
-            let snap = self.snapshot();
-            let hit = self.task_manager.hit_test(mx, my, &snap);
-            drop(snap);
-            if let Some((idx, _action)) = hit {
-                self.task_manager.selected = idx;
-                if let Some(wid) = self.wm.id_at(idx) {
-                    self.wm.bring_to_front(wid);
+            match self.task_manager.hit_test_action(mx, my, &self.snapshot()) {
+                Some(crate::apps::AppAction::FocusWindow(idx)) => {
+                    self.task_manager.selected = idx;
+                    if let Some(wid) = self.wm.id_at(idx) {
+                        self.wm.bring_to_front(wid);
+                    }
                 }
-                self.damage.mark_full();
-                return;
+                // Not produced by the task manager's hit_test_action.
+                Some(_) => {}
+                None => self.task_manager.open = false,
             }
-            self.task_manager.open = false;
             self.damage.mark_full();
             return;
         }
+        // About is dismiss-only (no hit regions), so it closes on any click
+        // without an action round-trip.
         if self.about_state.open {
             self.about_state.open = false;
             self.damage.mark_full();
             return;
         }
+
+        // Context menu — the last of the overlay set, and like the panels
+        // above it owns the pointer: it is checked BEFORE the taskbar and
+        // windows, so a click anywhere outside the menu (taskbar included)
+        // only dismisses it and never acts beneath — the same modal
+        // semantics `dismiss_overlays` gives the keyboard (an a11y Enter on
+        // a taskbar node with the menu up only dismisses it). This block
+        // historically ran AFTER the taskbar, so a taskbar click with the
+        // menu open brought a window to front and left the menu up — mouse
+        // and keyboard disagreed (pinned by
+        // test_a11y_overlay_mouse_keyboard_parity).
+        if let Some(cm) = self.context_menu {
+            let mw = 150u32;
+            let mh = cm.items.len() as u32 * 28 + 10;
+            if Rect::new(cm.x, cm.y, mw, mh).hit_test(Point::new(mx, my)) {
+                let idx = ((my - cm.y - 5) / 28) as usize;
+                if idx < cm.items.len() {
+                    let action = cm.items[idx].action;
+                    self.exec_context_action(action);
+                }
+            }
+            self.context_menu = None;
+            self.damage.mark_full();
+            return;
+        }
         if my >= taskbar_y {
-            if (5..65).contains(&mx) {
+            if layout::start_btn_rect(taskbar_y as u32).hit_test(Point::new(mx, my)) {
                 self.start_menu.open_with(&self.app_reg);
                 return;
             }
-            let btn_x = 75i32;
             for i in 0..self.wm.len() {
-                let bx = btn_x + i as i32 * 120;
-                if mx >= bx && mx < bx + 115 {
+                if layout::taskbar_btn_rect(i, taskbar_y as u32).hit_test(Point::new(mx, my)) {
                     let is_min = {
                         let s = self.wm.iter();
                         s[i].state == WindowState::Minimized
@@ -1496,28 +1590,9 @@ impl Desktop {
 
         let pt = Point::new(mx, my);
 
-        // context menu click
-        if let Some((cmx, cmy, items)) = self.context_menu {
-            let mw = 150u32;
-            let mh = items.len() as u32 * 28 + 10;
-            if Rect::new(cmx, cmy, mw, mh).hit_test(Point::new(mx, my)) {
-                let idx = ((my - cmy - 5) / 28) as usize;
-                if idx < items.len() {
-                    let action = items[idx].1;
-                    self.exec_context_action(action);
-                }
-            }
-            self.context_menu = None;
-            self.damage.mark_full();
-            return;
-        }
-
         // icon click
         if let Some(idx) = self.desktop_icons.icon_at(mx, my) {
-            self.desktop_icons.icons[idx].selected = !self.desktop_icons.icons[idx].selected;
-            if self.desktop_icons.icons[idx].selected {
-                self.desktop_icons.drag_icon = true; // will move on drag
-            }
+            self.desktop_icons.toggle_icon(idx);
             return;
         }
 
@@ -1530,103 +1605,58 @@ impl Desktop {
                 Some(wid) => wid,
                 None => continue,
             };
-            let wr = Rect::new(x, y, w, h);
-            if Rect::new(x, y, w, TITLE_H as u32).hit_test(pt) {
-                if self.double_click {
-                    self.wm
-                        .toggle_maximize(wid, self.screen_w, self.taskbar_y());
+            match layout::hit_window(x, y, w, h, pt) {
+                WindowHit::Titlebar => {
+                    if self.double_click {
+                        self.wm
+                            .toggle_maximize(wid, self.screen_w, self.taskbar_y());
+                        return;
+                    }
+                    self.wm.bring_to_front(wid);
+                    self.wm.begin_drag(wid, mx, my);
                     return;
                 }
-                self.wm.bring_to_front(wid);
-                self.wm.begin_drag(wid, mx, my);
-                return;
-            }
-
-            if Rect::new(
-                x + w as i32 - CLOSE_L,
-                y + BTN_TOP,
-                (CLOSE_L - CLOSE_R) as u32,
-                (BTN_BOT - BTN_TOP) as u32,
-            )
-            .hit_test(pt)
-            {
-                self.wm.close(wid);
-                return;
-            }
-            if Rect::new(
-                x + w as i32 - MAX_L,
-                y + BTN_TOP,
-                (MAX_L - MAX_R) as u32,
-                (BTN_BOT - BTN_TOP) as u32,
-            )
-            .hit_test(pt)
-            {
-                self.wm
-                    .toggle_maximize(wid, self.screen_w, self.taskbar_y());
-                return;
-            }
-            if Rect::new(
-                x + w as i32 - MIN_L,
-                y + BTN_TOP,
-                (MIN_L - MIN_R) as u32,
-                (BTN_BOT - BTN_TOP) as u32,
-            )
-            .hit_test(pt)
-            {
-                self.wm.minimize(wid, self.screen_w, self.taskbar_y());
-                return;
-            }
-
-            let edges = Self::hit_window_edge(x, y, w, h, mx, my);
-            if edges != 0 {
-                self.resize_win = Some(wid);
-                self.resize_edges = edges;
-                self.resize_rect = (x, y, w, h);
-                self.wm.bring_to_front(wid);
-                return;
-            }
-
-            // Explorer content click
-            if wr.hit_test(pt) {
-                let _is_explorer = { self.wm.iter()[i].explorer_id.is_some() };
-                if let Some(exp_id) = self.wm.iter()[i].explorer_id {
-                    if let Some(exp_state) = self.explorers.iter_mut().find(|e| e.id == exp_id) {
-                        let aw_ref = &self.wm.iter()[i];
-                        crate::util::explorer::handle_explorer_click(
-                            exp_state,
-                            mx,
-                            my,
-                            aw_ref,
-                            self.double_click,
-                        );
+                WindowHit::Close => {
+                    self.wm.close(wid);
+                    return;
+                }
+                WindowHit::Minimize => {
+                    self.wm.minimize(wid, self.screen_w, self.taskbar_y());
+                    return;
+                }
+                WindowHit::ResizeEdge(edges) => {
+                    self.resize_win = Some(wid);
+                    self.resize_edges = edges;
+                    self.resize_rect = Rect::new(x, y, w, h);
+                    self.wm.bring_to_front(wid);
+                    return;
+                }
+                WindowHit::Content => {
+                    // Explorer content click
+                    if let Some(exp_id) = self.wm.iter()[i].explorer_id {
+                        if let Some(exp_state) = self.explorers.iter_mut().find(|e| e.id == exp_id)
+                        {
+                            let aw_ref = &self.wm.iter()[i];
+                            crate::util::explorer::handle_explorer_click(
+                                exp_state,
+                                mx,
+                                my,
+                                aw_ref,
+                                self.double_click,
+                            );
+                        }
+                        self.wm.bring_to_front(wid);
+                        return;
                     }
                     self.wm.bring_to_front(wid);
                     return;
                 }
-                self.wm.bring_to_front(wid);
-                return;
+                WindowHit::Outside => {}
             }
         }
 
         // desktop click → deselect icons, start rubber band
-        for ic in &mut self.desktop_icons.icons {
-            ic.selected = false;
-        }
-        self.desktop_icons.begin_select(mx, my);
-    }
-
-    fn hit_window_edge(x: i32, y: i32, w: u32, h: u32, mx: i32, my: i32) -> u8 {
-        let mut edges = 0u8;
-        if mx >= x && mx < x + RESIZE_MARGIN && my >= y && my < y + h as i32 {
-            edges |= 1;
-        }
-        if mx >= x + w as i32 - RESIZE_MARGIN && mx < x + w as i32 && my >= y && my < y + h as i32 {
-            edges |= 2;
-        }
-        if my >= y + h as i32 - RESIZE_MARGIN && my < y + h as i32 {
-            edges |= 4;
-        }
-        edges
+        self.desktop_icons.click_empty(mx, my);
     }
 
     fn handle_right_click(&mut self, mx: i32, my: i32) {
@@ -1641,21 +1671,32 @@ impl Desktop {
 
         // icon right-click
         if let Some(_idx) = self.desktop_icons.icon_at(mx, my) {
-            self.context_menu = Some((mx, my, ICON_MENU));
+            self.context_menu = Some(ContextMenu {
+                x: mx,
+                y: my,
+                items: ICON_MENU,
+            });
             self.damage.mark_full();
             return;
         }
 
-        // window titlebar right-click → system menu
+        // Window titlebar right-click → system menu. Tested directly against
+        // the full strip (not `hit_window`, which now returns Close/Minimize
+        // over the buttons) so a right-click on a control button still opens
+        // the window's system menu.
         for i in (0..self.wm.len()).rev() {
             let (x, y, w, _h) = {
                 let s = self.wm.iter();
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
-            if Rect::new(x, y, w, 22).hit_test(pt) {
+            if layout::titlebar_rect(x, y, w).hit_test(pt) {
                 if let Some(wid) = self.wm.id_at(i) {
                     self.system_menu_for = Some(wid);
-                    self.context_menu = Some((mx, my, SYSTEM_MENU));
+                    self.context_menu = Some(ContextMenu {
+                        x: mx,
+                        y: my,
+                        items: SYSTEM_MENU,
+                    });
                 }
                 self.damage.mark_full();
                 return;
@@ -1663,17 +1704,20 @@ impl Desktop {
         }
 
         // desktop right-click
-        self.context_menu = Some((mx, my, DESKTOP_MENU));
+        self.context_menu = Some(ContextMenu {
+            x: mx,
+            y: my,
+            items: DESKTOP_MENU,
+        });
         self.damage.mark_full();
     }
 
     fn handle_middle_click(&mut self, mx: i32, my: i32) {
         let taskbar_y = self.taskbar_y() as i32;
+        let pt = Point::new(mx, my);
         if my >= taskbar_y {
-            let btn_x = 75i32;
             for i in 0..self.wm.len() {
-                let bx = btn_x + i as i32 * 120;
-                if mx >= bx && mx < bx + 115 {
+                if layout::taskbar_btn_rect(i, taskbar_y as u32).hit_test(pt) {
                     if let Some(wid) = self.wm.id_at(i) {
                         self.wm.close(wid);
                     }
@@ -1682,14 +1726,14 @@ impl Desktop {
                 }
             }
         }
-        // middle-click on titlebar → close window
-        let pt = Point::new(mx, my);
+        // middle-click on the full titlebar strip (control buttons
+        // included) → close window
         for i in (0..self.wm.len()).rev() {
             let (x, y, w, _h) = {
                 let s = self.wm.iter();
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
-            if Rect::new(x, y, w, 22).hit_test(pt) {
+            if layout::titlebar_rect(x, y, w).hit_test(pt) {
                 if let Some(wid) = self.wm.id_at(i) {
                     self.wm.close(wid);
                 }
@@ -1702,10 +1746,200 @@ impl Desktop {
     fn handle_scroll(&mut self, delta: i8) {
         self.damage.mark_full();
         if let Some(w) = self.wm.focused_mut() {
-            let max = w.content.len().saturating_sub(1);
-            let step = delta as i32;
-            w.scroll = (w.scroll as i32 - step).clamp(0, max as i32) as u32;
+            w.surface_mut().scroll_by(delta);
         }
+    }
+
+    /// The interactive surface under the pointer, computed once per frame.
+    /// One hit-test pass replaces the per-surface hit tests that used to run
+    /// in every draw: window control buttons (topmost first, same
+    /// `layout::hit_window` table as `handle_click`), taskbar buttons, tray
+    /// entries, start-menu rows, and clipboard rows. Surfaces take priority
+    /// in the order they are drawn (overlay panels first, then the start
+    /// menu, then the taskbar, then windows), so hover feedback always
+    /// matches what a click at that point would actually hit. Modal overlays
+    /// swallow the pointer exactly like clicks do.
+    /// pub(crate) so `RenderSnapshot::from` can read it.
+    /// Any modal overlay is up (context menu, settings panel, settings app,
+    /// task manager, about). These swallow the pointer — the same set
+    /// `handle_click` checks before the taskbar and windows — so hover
+    /// feedback AND tooltips are suppressed while one is open (visibility
+    /// always matches what a click would actually hit).
+    fn overlay_open(&self) -> bool {
+        self.context_menu.is_some()
+            || self.settings.open
+            || self.settings_app.open
+            || self.task_manager.open
+            || self.about_state.open
+    }
+
+    /// Hover targets for the open modal panels (legacy settings, settings
+    /// app, task manager) — the topmost surfaces while open, so their rows
+    /// report hover before anything beneath (same priority as `handle_click`
+    /// checking the overlays first). Row geometry is the `layout::*_rect`
+    /// the draws share, so hover always matches the lit row. A pointer on
+    /// an open panel's background (or outside it) returns `None`, and the
+    /// `overlay_open()` guard then silences everything beneath — matching
+    /// the click semantics where an empty hit closes the panel. The task
+    /// manager's row count is capped the same way the draw caps it.
+    fn panel_hover(&self) -> Option<crate::core::window::HoverTarget> {
+        let pt = Point::new(self.mouse_x, self.mouse_y);
+        // Drawn order in the Overlay layer is settings, settings_app, task
+        // manager, about — later is topmost, so check in reverse.
+        if self.task_manager.open {
+            let panel = layout::task_manager_panel_rect(self.screen_w, self.screen_h);
+            let n = self.wm.len().min(layout::task_manager_max_visible(panel));
+            for i in 0..n {
+                if layout::task_manager_row_rect(panel, i).hit_test(pt) {
+                    return Some(crate::core::window::HoverTarget::TaskManagerRow(i));
+                }
+            }
+        }
+        if self.settings_app.open {
+            let panel = layout::settings_app_panel_rect(self.screen_w, self.screen_h);
+            // Only the Appearance page draws the toggle; on any other page
+            // the toggle rect is empty space, so no hover there.
+            if self.settings_app.current_page == crate::apps::settings::SettingsPage::Appearance
+                && layout::settings_app_toggle_rect(panel).hit_test(pt)
+            {
+                return Some(crate::core::window::HoverTarget::SettingsAppRow(0));
+            }
+        }
+        if self.settings.open {
+            let panel = layout::settings_panel_rect(self.screen_w, self.screen_h);
+            for i in 0..2 {
+                if layout::settings_row_rect(panel, i).hit_test(pt) {
+                    return Some(crate::core::window::HoverTarget::SettingsRow(i));
+                }
+            }
+            if layout::settings_close_rect(panel).hit_test(pt) {
+                return Some(crate::core::window::HoverTarget::SettingsRow(2));
+            }
+        }
+        None
+    }
+
+    pub(crate) fn hover_target(&self) -> Option<crate::core::window::HoverTarget> {
+        // Same drag guards as handle_click/update_cursor so hover feedback
+        // matches what a click would actually hit.
+        if self.drag_active || self.resize_win.is_some() {
+            return None;
+        }
+        // The open modal panels own the pointer (see `panel_hover`).
+        if let Some(h) = self.panel_hover() {
+            return Some(h);
+        }
+        // Any other open overlay (context menu, about) or a panel whose
+        // pointer is off its rows: hover feedback AND tooltips are
+        // suppressed while one is up (visibility always matches what a
+        // click would actually hit).
+        if self.overlay_open() {
+            return None;
+        }
+        let pt = Point::new(self.mouse_x, self.mouse_y);
+
+        // Notification overlay (top-right) — drawn AFTER the clipboard in
+        // the Overlay layer, so per the "priority in the order they are
+        // drawn" rule its rows are checked first. Same panel geometry the
+        // draw uses.
+        let notifs = self.services.notifications.visible_notifications();
+        for (i, _) in notifs.iter().take(layout::NOTIF_MAX_VISIBLE).enumerate() {
+            if layout::notification_rect(self.screen_w, i).hit_test(pt) {
+                return Some(crate::core::window::HoverTarget::Notification(i));
+            }
+        }
+
+        // Clipboard panel (drawn beneath the notifications in the Overlay
+        // layer) — rows take hover priority over everything below them.
+        let cb = &self.services.clipboard;
+        if !cb.is_empty() {
+            let n = cb.history().len();
+            let panel = layout::clipboard_panel_rect(self.screen_w, self.screen_h, n);
+            for i in 0..n {
+                let row = layout::clipboard_row_rect(panel, i);
+                if row.y + layout::CLIPBOARD_ROW_INNER_H as i32 > panel.y + panel.h as i32 {
+                    break;
+                }
+                if row.hit_test(pt) {
+                    return Some(crate::core::window::HoverTarget::ClipboardRow(i));
+                }
+            }
+        }
+
+        // Start menu (Popups layer, above the taskbar) — when open it owns
+        // the pointer: its rows hover, and everything beneath goes quiet
+        // (clicking anywhere outside a row closes the menu).
+        if self.start_menu.open {
+            return crate::core::start_menu::menu_hover_at(
+                &self.start_menu,
+                &self.app_reg,
+                pt,
+                self.taskbar_y(),
+            );
+        }
+
+        // Taskbar surface: start button, then window buttons, then tray.
+        let ty = self.taskbar_y();
+        if pt.y >= ty as i32 {
+            if layout::start_btn_rect(ty).hit_test(pt) {
+                return Some(crate::core::window::HoverTarget::StartButton);
+            }
+            for i in 0..self.wm.len() {
+                if layout::taskbar_btn_rect(i, ty).hit_test(pt) {
+                    if let Some(wid) = self.wm.id_at(i) {
+                        return Some(crate::core::window::HoverTarget::TaskbarButton(wid));
+                    }
+                }
+            }
+            let tray_len = self.tray.entries.len() as u32;
+            // Same full panel rect the taskbar draws — the pointer must be
+            // inside the tray panel (entries + clock) before any entry can
+            // hover, so hover geometry matches the drawn panel exactly.
+            if layout::tray_panel_rect(ty, self.screen_w, tray_len).hit_test(pt) {
+                for i in 0..self.tray.entries.len() {
+                    if layout::tray_entry_rect(i, ty, self.screen_w, tray_len).hit_test(pt) {
+                        return Some(crate::core::window::HoverTarget::Tray(i));
+                    }
+                }
+            }
+            return None;
+        }
+
+        // Window control buttons, topmost window first (same reverse
+        // iteration and hit table as handle_click).
+        for i in (0..self.wm.len()).rev() {
+            let (x, y, w, h) = {
+                let s = self.wm.iter();
+                (s[i].x, s[i].y, s[i].w, s[i].h)
+            };
+            let wid = match self.wm.id_at(i) {
+                Some(wid) => wid,
+                None => continue,
+            };
+            match layout::hit_window(x, y, w, h, pt) {
+                layout::WindowHit::Close => {
+                    return Some(crate::core::window::HoverTarget::Window {
+                        win: wid,
+                        btn: WindowButton::Close,
+                    });
+                }
+                layout::WindowHit::Minimize => {
+                    return Some(crate::core::window::HoverTarget::Window {
+                        win: wid,
+                        btn: WindowButton::Minimize,
+                    });
+                }
+                // Topmost window owns the pointer: a titlebar/content/edge
+                // hit on it swallows the click, so stop the scan (matches
+                // handle_click stopping at the first hit). Only Outside
+                // keeps looking at lower windows.
+                layout::WindowHit::Titlebar
+                | layout::WindowHit::ResizeEdge(_)
+                | layout::WindowHit::Content => return None,
+                layout::WindowHit::Outside => {}
+            }
+        }
+        None
     }
 
     fn update_cursor(&mut self) {
@@ -1718,7 +1952,7 @@ impl Desktop {
                 let s = self.wm.iter();
                 (s[i].x, s[i].y, s[i].w, s[i].h)
             };
-            let edges = Self::hit_window_edge(x, y, w, h, pt.x, pt.y);
+            let edges = layout::hit_window_edge(x, y, w, h, pt);
             if edges != 0 {
                 self.cursor = match edges {
                     1 | 2 => Cursor::ResizeH,
@@ -1728,7 +1962,7 @@ impl Desktop {
                 };
                 return;
             }
-            if Rect::new(x, y, w, TITLE_H as u32).hit_test(pt) {
+            if layout::titlebar_rect(x, y, w).hit_test(pt) {
                 self.cursor = Cursor::Move;
                 return;
             }
@@ -1754,35 +1988,10 @@ impl Desktop {
             return;
         }
         if let Some(id) = self.resize_win {
-            let (ox, oy, ow, oh) = self.resize_rect;
             let dx = mx - self.last_click_pos.x;
             let dy = my - self.last_click_pos.y;
-            if let Some(w) = self.wm.lookup_mut(id) {
-                let mut nx = ox;
-                let mut nw = ow;
-                let mut nh = oh;
-                if self.resize_edges & 1 != 0 {
-                    nx = ox + dx;
-                    nw = (ow as i32 - dx) as u32;
-                }
-                if self.resize_edges & 2 != 0 {
-                    nw = (ow as i32 + dx) as u32;
-                }
-                if self.resize_edges & 4 != 0 {
-                    nh = (oh as i32 + dy) as u32;
-                }
-                if nw < MIN_WIN_W {
-                    nw = MIN_WIN_W;
-                    nx = ox + ow as i32 - MIN_WIN_W as i32;
-                }
-                if nh < MIN_WIN_H {
-                    nh = MIN_WIN_H;
-                }
-                w.x = nx;
-                w.y = oy;
-                w.w = nw;
-                w.h = nh;
-            }
+            self.wm
+                .resize_drag(id, self.resize_rect, self.resize_edges, dx, dy);
         } else {
             self.wm.update_drag(mx, my);
             self.wm
@@ -1814,70 +2023,11 @@ impl Desktop {
         if let Some(id) = id {
             let mx = self.mouse_x;
             let my = self.mouse_y;
-            let sw = self.screen_w as i32;
-            let ty = self.taskbar_y() as i32;
-            let edge_left = mx < SNAP_MARGIN;
-            let edge_right = mx > sw - SNAP_MARGIN;
-            let edge_top = my < SNAP_MARGIN;
-            let edge_bot = my > ty - SNAP_MARGIN;
-            match (edge_left, edge_right, edge_top, edge_bot) {
-                (true, _, true, _) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::TopLeft,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (true, _, _, true) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::BottomLeft,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (_, true, true, _) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::TopRight,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (_, true, _, true) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::BottomRight,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (true, _, _, _) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::Left,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (_, true, _, _) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::Right,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (_, _, true, _) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::Top,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                (_, _, _, true) => self.wm.snap_to_region(
-                    id,
-                    SnapRegion::Bottom,
-                    self.screen_w,
-                    self.screen_h,
-                    ty as u32,
-                ),
-                _ => {}
+            if let Some(region) =
+                layout::snap_region_at(mx, my, self.screen_w as i32, self.taskbar_y() as i32)
+            {
+                self.wm
+                    .snap_to_region(id, region, self.screen_w, self.screen_h, self.taskbar_y());
             }
         }
         self.resize_win = None;
@@ -1888,12 +2038,19 @@ impl Desktop {
         self.cursor_alpha
     }
 
-    pub fn render_snap_preview(&self) -> Option<(i32, i32, u32, u32)> {
+    /// Whether the primary mouse button is currently held down. Read by the
+    /// render snapshot so surfaces (window control buttons) can show a
+    /// pressed state while the pointer is down on them.
+    pub(crate) fn mouse_btn(&self) -> bool {
+        self.mouse_btn
+    }
+
+    pub fn render_snap_preview(&self) -> Option<Rect> {
         self.wm
             .snap_preview
             .as_ref()
             .filter(|sp| sp.active)
-            .map(|sp| (sp.x, sp.y, sp.w, sp.h))
+            .map(|sp| Rect::new(sp.x, sp.y, sp.w, sp.h))
     }
 
     pub(crate) fn prepare_clock(&mut self) -> alloc::string::String {
@@ -1915,7 +2072,6 @@ impl Desktop {
     /// permissions for the caller, and dispatches allowed ones through the
     /// security portal. Runs once per frame from `tick()`.
     pub fn process_ipc(&mut self) {
-        use crate::ipc::permission::AppPermission;
         // ponytail: soft-real-time ceiling — never stall a frame on a huge
         // queue; leftovers drain next frame. Load-bearing once a real IPC
         // transport lets external processes enqueue requests.
@@ -1930,11 +2086,7 @@ impl Desktop {
             let allowed = self
                 .service_registry
                 .find(req.service)
-                .map(|info| {
-                    granted.is_some_and(|g| {
-                        g.contains(AppPermission::from_bits_truncate(info.required_permissions))
-                    })
-                })
+                .map(|_| granted.is_some_and(|g| g.contains(req.service.required_permission())))
                 .unwrap_or(false);
             let resp = if allowed {
                 crate::sec::portal::dispatch(self, app, &req)
@@ -1950,63 +2102,9 @@ impl Desktop {
         }
     }
 
+    /// Read-only capture of the desktop's renderable state — a one-line
+    /// delegate to `RenderSnapshot::from`, which lives in render/snapshot.rs.
     pub fn snapshot(&self) -> RenderSnapshot<'_> {
-        let fs = self
-            .wm
-            .iter()
-            .iter()
-            .any(|w| w.state == WindowState::Fullscreen);
-
-        let focused_bounds = self.focus.focused().and_then(|id| {
-            self.a11y_tree
-                .nodes
-                .iter()
-                .find(|n| n.id == id)
-                .map(|n| n.bounds)
-        });
-
-        let (tooltip_text, tooltip_x, tooltip_y) = match self.tooltips.active {
-            Some(ref t) if t.visible => (Some(t.text.as_str()), t.x, t.y),
-            _ => (None, 0, 0),
-        };
-
-        RenderSnapshot {
-            screen_w: self.screen_w,
-            screen_h: self.screen_h,
-            theme: self.theme_svc.current(),
-            windows: self.wm.iter(),
-            icons: &self.desktop_icons.icons,
-            mouse: crate::core::geometry::Point::new(self.mouse_x, self.mouse_y),
-            debug_overlay: self.debug_overlay,
-            debug_metrics: self.profiler.snapshot(),
-            window_count: self.wm.len(),
-            notification_count: self.services.notifications.visible_notifications().len(),
-            start_menu: self.start_menu.open,
-            start_menu_state: Some(&self.start_menu),
-            app_db: Some(&self.app_reg.db),
-            app_reg: Some(&self.app_reg),
-            context_menu: self.context_menu,
-            cursor_visible: self.cursor_visible,
-            cursor_alpha: self.cursor_alpha(),
-            fullscreen: fs,
-            switcher_active: self.switcher_active,
-            switcher_idx: self.switcher_idx,
-            rubber: self.desktop_icons.rubber,
-            notifications: self.services.notifications.visible_notifications(),
-            tray: self.tray.entries,
-            clipboard: Some(&self.services.clipboard),
-            settings: Some(&self.settings),
-            explorers: &self.explorers,
-            settings_app: Some(&self.settings_app),
-            task_manager: Some(&self.task_manager),
-            about: Some(&self.about_state),
-            focused_id: self.focus.focused(),
-            focus_visible: self.focus_visible,
-            focused_bounds,
-            tooltip: tooltip_text,
-            tooltip_x,
-            tooltip_y,
-            snap_preview: self.render_snap_preview(),
-        }
+        RenderSnapshot::from(self)
     }
 }

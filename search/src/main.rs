@@ -194,6 +194,7 @@ fn user_main() -> i32 {
 
         // Keyboard input
         while let Some(c) = win.get_key() {
+            let c = c as u8;
             match c {
                 0x7F | 0x08 => {
                     query.pop();

@@ -369,6 +369,7 @@ fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
     let mut prev = 0u8;
     loop {
         while let Some(k) = win.get_key() {
+            let k = k as u8;
             if k == 0x1B {
                 return false;
             }
@@ -427,6 +428,7 @@ fn user_main() -> i32 {
         prev_btn = mouse.buttons;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x09 => search.set_focus(!search.is_focused()),
                 0x2F => search.set_focus(true),

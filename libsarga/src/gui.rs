@@ -461,12 +461,15 @@ impl Window {
         self.buffer
     }
 
-    pub fn get_key(&mut self) -> Option<u8> {
+    /// Low byte = char; bits 8..11 = alt/ctrl/shift/super held (0 until
+    /// the kernel delivers them — additive; high bits arrive as zero
+    /// today). Design A of ade/docs/kernel-gui-modifier-delivery.md.
+    pub fn get_key(&mut self) -> Option<u16> {
         let k = unsafe { syscall1(SYS_GUI_GET_KEY, self.id) };
         if k == 0 {
             None
         } else {
-            Some(k as u8)
+            Some(k as u16)
         }
     }
 

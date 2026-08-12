@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::core::desktop::Desktop;
 use libsarga::io;
 
@@ -42,7 +40,13 @@ pub(crate) fn test_notifications(desktop: &mut Desktop) -> bool {
         .notifications
         .update(id2, "New", "New Body");
     let visible2 = desktop.services.notifications.visible_notifications();
-    let updated = visible2.iter().find(|n| n.id == id2).unwrap();
+    let updated = match visible2.iter().find(|n| n.id == id2) {
+        Some(n) => n,
+        None => {
+            io::print_str("[test] FAIL test_notifications: updated notification not found\n");
+            return false;
+        }
+    };
     if updated.title != "New" || updated.body != "New Body" {
         io::print_str("[test] FAIL test_notifications: update failed\n");
         return false;
@@ -86,7 +90,7 @@ pub(crate) fn test_clipboard(desktop: &mut Desktop) -> bool {
 }
 
 pub(crate) fn test_session(desktop: &mut Desktop) -> bool {
-    let uptime = desktop.services.session.uptime(desktop.clock_ticks);
+    let uptime = desktop.session.uptime(desktop.clock_ticks);
     // clock_ticks is 0 before first tick — uptime may be 0
     if uptime != 0 {
         io::print_str("[test] PASS test_session (uptime > 0)\n");

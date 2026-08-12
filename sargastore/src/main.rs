@@ -321,6 +321,7 @@ fn user_main() -> i32 {
         let clicked = pressed && !prev_pressed;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x1B => {
                     if search_focus {

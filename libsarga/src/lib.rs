@@ -11,9 +11,6 @@ pub mod fs;
 pub mod gpu;
 pub mod gui;
 pub mod hash;
-pub mod init;
-#[allow(dead_code)]
-pub mod init_services;
 pub mod io;
 pub mod ipc;
 pub mod libskyos;

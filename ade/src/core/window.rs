@@ -1,10 +1,29 @@
-//! Window primitives — AppWindow, WindowId, Selection, text cursor input handling.
+//! Window primitives — AppWindow, WindowId, text cursor input handling.
 
+use crate::core::text_surface::TextSurface;
+use crate::layout;
 use libsarga::theme::Theme;
 
 // Window API v1.0 — STABLE
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowId(pub(crate) u64);
+
+/// Sentinel `WindowId` stamping the a11y Start-button node. The a11y owner
+/// field is `Option<WindowId>`; the Start button owns no window, so it gets
+/// this reserved id (the window manager never hands it out) to distinguish it
+/// structurally from taskbar window buttons — whose activation brings a
+/// window to front — and from window Close controls. Activation code matches
+/// this constant to toggle the start menu; tooltip label resolution falls
+/// back to the node label when `wm.lookup` misses (it always will for this
+/// id).
+pub(crate) const START_BUTTON_OWNER: WindowId = WindowId(u64::MAX);
+
+/// Sentinel `WindowId` stamping the a11y tray-panel node. The tray panel
+/// (entries + clock) owns no window, so its tree node gets this reserved id
+/// (never handed out by the window manager, distinct from the Start-button
+/// sentinel) so tooltip resolution and future activation can identify it
+/// structurally.
+pub(crate) const TRAY_PANEL_OWNER: WindowId = WindowId(u64::MAX - 1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowState {
@@ -14,11 +33,65 @@ pub enum WindowState {
     Fullscreen,
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub(crate) struct Selection {
-    pub start: (u32, u32),
-    pub end: (u32, u32),
+/// Window control buttons — hover feedback target for the titlebar chrome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WindowButton {
+    Close,
+    Minimize,
+}
+
+/// Map a tree chrome-control label back to its `WindowButton`. The a11y
+/// tree stamps Close/Minimize nodes with exactly these labels; both the
+/// activation arm and the render snapshot's focused-control resolution need
+/// the reverse map. One helper keeps the three sites (tree stamping,
+/// activation, focus resolution) in lockstep, so a label rename can't
+/// silently break one path.
+pub(crate) fn window_button_from_label(label: &str) -> Option<WindowButton> {
+    match label {
+        "Close" => Some(WindowButton::Close),
+        "Minimize" => Some(WindowButton::Minimize),
+        _ => None,
+    }
+}
+
+/// A pointer hover target — which interactive surface the mouse is over.
+/// Computed once per frame by `Desktop` (`hover_target()`, the single hit
+/// test) and threaded through the render snapshot, so every surface (window
+/// controls, taskbar, start menu, tray, clipboard) reads one hover state
+/// instead of hit-testing the mouse position in each draw. Payloads carry
+/// exactly what the draw needs to light up the right element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HoverTarget {
+    /// A window's control button (payload: window + which button).
+    Window { win: WindowId, btn: WindowButton },
+    /// A taskbar window button (payload: the window it switches to).
+    TaskbarButton(WindowId),
+    /// The Start button.
+    StartButton,
+    /// A start-menu category row (payload: index into CATEGORIES).
+    StartCategory(usize),
+    /// A start-menu app row (payload: index into the filtered list).
+    StartApp(usize),
+    /// A start-menu recent tile (payload: index into the recent strip).
+    StartRecent(usize),
+    /// A start-menu power button (payload: index into POWER_LABELS).
+    StartPower(usize),
+    /// A system-tray entry (payload: index into the tray entries).
+    Tray(usize),
+    /// A clipboard history row (payload: index into the history).
+    ClipboardRow(usize),
+    /// A notification overlay row (payload: index into the visible
+    /// notifications).
+    Notification(usize),
+    /// A legacy settings-panel row (payload: 0 = Sound, 1 = Dark Theme,
+    /// 2 = Close). Computed by `Desktop::hover_target` — the panels no
+    /// longer hit-test the mouse themselves.
+    SettingsRow(usize),
+    /// A settings-app row (payload: 0 = the Appearance theme toggle; the
+    /// only row the app currently draws a hover state for).
+    SettingsAppRow(usize),
+    /// A task-manager row (payload: index into the visible window list).
+    TaskManagerRow(usize),
 }
 
 // Window API v1.0 — STABLE
@@ -63,6 +136,14 @@ pub(crate) struct AnimState {
     pub duration: u32,
 }
 
+/// Terminal window state: the pty master fd plus the text surface the shell's
+/// output feeds into. A terminal window keeps its surface here rather than on
+/// `AppWindow` itself; plain windows keep theirs on the window.
+pub(crate) struct Terminal {
+    pty_fd: i64,
+    surface: TextSurface,
+}
+
 pub struct AppWindow {
     pub(crate) x: i32,
     pub(crate) y: i32,
@@ -73,8 +154,14 @@ pub struct AppWindow {
     pub(crate) prev_w: u32,
     pub(crate) prev_h: u32,
     pub(crate) title: alloc::string::String,
-    pub(crate) content: alloc::vec::Vec<alloc::string::String>,
-    pub(crate) scroll: u32,
+    /// Text surface for plain (non-terminal) windows — legacy typed input
+    /// and launcher seeds. Terminal windows host their surface inside
+    /// `terminal`; reach both through the `surface()`/`surface_mut()`
+    /// accessors, never the field directly.
+    surface: TextSurface,
+    /// Terminal host (pty master fd + the pty-fed surface), when this window
+    /// runs a shell. Set by `attach_terminal`; cleared by `take_terminal`.
+    terminal: Option<Terminal>,
     pub(crate) id: u64,
     pub(crate) pid: Option<u64>,
     pub(crate) focused: bool,
@@ -84,18 +171,99 @@ pub struct AppWindow {
     pub(crate) state: WindowState,
     pub(crate) prev_state: WindowState,
     pub(crate) flags: VisualFlags,
-    #[allow(dead_code)]
-    pub(crate) selection: Option<Selection>,
     pub(crate) anim: Option<AnimState>,
     pub(crate) closing: bool,
     pub(crate) always_on_top: bool,
     pub(crate) explorer_id: Option<u32>,
-    /// Master fd of a pty when this window hosts a terminal (sash).
-    pub(crate) pty_fd: Option<i64>,
     pub(crate) anim_opacity: u8,
 }
 
 impl AppWindow {
+    /// Construct a plain floating window. Every non-geometry field takes a
+    /// sane default; callers mutate the handful of fields they need after
+    /// the fact: explorer_id (spawn_explorer), pid (launcher after fork),
+    /// terminal (via `attach_terminal`), surface (seeds its first line).
+    /// New fields added to `AppWindow` land here, not at each call site.
+    pub(crate) fn new(x: i32, y: i32, w: u32, h: u32, title: &str) -> Self {
+        AppWindow {
+            x,
+            y,
+            w,
+            h,
+            prev_x: x,
+            prev_y: y,
+            prev_w: w,
+            prev_h: h,
+            title: alloc::string::String::from(title),
+            surface: TextSurface::new(),
+            terminal: None,
+            id: 0,
+            pid: None,
+            focused: true,
+            dragging: false,
+            drag_ox: 0,
+            drag_oy: 0,
+            state: WindowState::Normal,
+            prev_state: WindowState::Normal,
+            flags: VisualFlags::new(),
+            anim: None,
+            closing: false,
+            always_on_top: false,
+            explorer_id: None,
+            anim_opacity: 0,
+        }
+    }
+
+    /// The pty master fd, if this window hosts a terminal (sash).
+    pub(crate) fn pty_fd(&self) -> Option<i64> {
+        self.terminal.as_ref().map(|t| t.pty_fd)
+    }
+
+    /// The text surface this window draws. Terminal windows render from the
+    /// pty-fed surface; plain windows from their own.
+    pub(crate) fn surface(&self) -> &TextSurface {
+        match &self.terminal {
+            Some(t) => &t.surface,
+            None => &self.surface,
+        }
+    }
+
+    /// Mutable access to the surface this window draws (see [`surface`]).
+    pub(crate) fn surface_mut(&mut self) -> &mut TextSurface {
+        match &mut self.terminal {
+            Some(t) => &mut t.surface,
+            None => &mut self.surface,
+        }
+    }
+
+    /// Turn this window into a terminal host: the current surface (with any
+    /// lines seeded so far) moves into the terminal's own surface, which the
+    /// pty then feeds. Replaces any existing terminal on the window.
+    pub(crate) fn attach_terminal(&mut self, pty_fd: i64) {
+        let surface = core::mem::replace(&mut self.surface, TextSurface::new());
+        self.terminal = Some(Terminal { pty_fd, surface });
+    }
+
+    /// Detach the terminal, returning the pty master fd so the caller can
+    /// close it. The surface goes with it — only use when the window itself
+    /// is about to be removed (close animation already finished).
+    pub(crate) fn take_terminal(&mut self) -> Option<i64> {
+        self.terminal.take().map(|t| t.pty_fd)
+    }
+
+    /// Detach just the pty fd (to kill the shell and free the master), but
+    /// keep the terminal's surface on the window so the close animation
+    /// still draws its last text.
+    pub(crate) fn detach_terminal_fd(&mut self) -> Option<i64> {
+        if let Some(t) = self.terminal.take() {
+            let Terminal { pty_fd, surface } = t;
+            self.surface = surface;
+            Some(pty_fd)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn animate_to(&mut self, x: i32, y: i32, w: u32, h: u32) {
         self.anim = Some(AnimState {
             from_x: self.x,
@@ -158,12 +326,26 @@ fn apply_alpha(color: u32, opacity: u8) -> u32 {
     (color & 0x00FFFFFF) | ((opacity as u32) << 24)
 }
 
+/// Per-frame interaction state threaded into the window chrome draw: the
+/// unified hover target, the a11y-focused control (the same `HoverTarget`
+/// payloads the chrome compares for hover, from the snapshot's `focused`
+/// field), and the raw primary-button state. Bundled so the draw signature
+/// stays under clippy's argument ceiling, and a future interaction input
+/// (e.g. a keyboard-pressed flag) lands as a field, not another parameter.
+#[derive(Clone, Copy)]
+pub(crate) struct WinInteraction {
+    pub hover: Option<HoverTarget>,
+    pub focused: Option<HoverTarget>,
+    pub mouse_down: bool,
+}
+
 pub(crate) fn draw(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
     aw: &AppWindow,
     cursor_visible: bool,
     explorers: &[crate::util::explorer::ExplorerState],
+    ix: WinInteraction,
 ) {
     // Don't draw minimized windows (but still draw during animation).
     if aw.state == WindowState::Minimized && aw.anim.is_none() {
@@ -196,13 +378,14 @@ pub(crate) fn draw(
 
     // Focus glow
     if aw.focused {
+        let glow = (theme.accent & 0x00FF_FFFF) | 0x30_000000;
         canvas.draw_rounded_rect_outline(
             aw.x as u32 - 1,
             aw.y as u32 - 1,
             aw.w + 2,
             aw.h + 2,
             theme.border_radius + 1,
-            0x303D5AFE,
+            glow,
         );
     }
 
@@ -232,71 +415,131 @@ pub(crate) fn draw(
         aw.x as u32 + 1,
         aw.y as u32 + 1,
         aw.w - 2,
-        28,
+        layout::TITLE_H as u32,
         apply_alpha(title_c1, aw.flags.opacity),
         apply_alpha(title_c2, aw.flags.opacity),
         false,
     );
 
+    // Title text is on_accent (white in both themes): the titlebar gradient
+    // is accent-derived (theme-invariant), so theme.text (black in light
+    // mode) would be unreadable on it. on_accent is exactly this case —
+    // text on an accent fill — so the chrome uses the field, not a literal.
     canvas.draw_string(
-        aw.x as u32 + 12,
-        aw.y as u32 + 7,
+        aw.x as u32 + layout::TITLE_PAD_X,
+        aw.y as u32 + layout::TITLE_TEXT_Y,
         &aw.title,
-        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+        apply_alpha(theme.on_accent, aw.flags.opacity),
         0,
     );
 
     if aw.always_on_top {
+        // Deliberate contrast exception: orange on the accent gradient is
+        // ~1.6:1 (below AA) in both themes, but the marker must stay
+        // distinct from the white title text next to it; making it on_accent
+        // would make it invisible against the title. Kept orange and flagged
+        // in the 2026-08-08 light-theme audit.
         canvas.draw_string(
-            aw.x as u32 + aw.w - 82,
-            aw.y as u32 + 7,
+            aw.x as u32 + aw.w - layout::TITLE_AOT_OFFSET,
+            aw.y as u32 + layout::TITLE_TEXT_Y,
             "[A]",
             apply_alpha(0xFFFFAA00, aw.flags.opacity),
             0,
         );
     }
 
-    // Close button
-    let close_x = aw.x as u32 + aw.w - 28;
-    let close_y = aw.y as u32 + 6;
+    // Close button — the same rect the hit-testing uses. Hover brightens the
+    // fill to the dedicated WIN_CLOSE_HOVER red (was dead in libsarga);
+    // pressing it while held deepens to WIN_CLOSE_PRESSED.
+    let close = layout::close_btn_rect(aw.x, aw.y, aw.w);
+    let close_x = close.x as u32;
+    let close_y = close.y as u32;
+    let hover_close = ix.hover
+        == Some(HoverTarget::Window {
+            win: WindowId(aw.id),
+            btn: WindowButton::Close,
+        });
+    // The a11y ring on this control lights it exactly like hovering it
+    // (the taskbar focused-button affordance, mirrored here): keyboard
+    // users see where the ring is on the chrome, and the focused control's
+    // Enter action is the control that looks lit. Pressed stays pointer-only
+    // (hover + mouse_down), like the taskbar buttons.
+    let focused_close = ix.focused
+        == Some(HoverTarget::Window {
+            win: WindowId(aw.id),
+            btn: WindowButton::Close,
+        });
+    let close_fill = if hover_close && ix.mouse_down {
+        libsarga::theme::colors::WIN_CLOSE_PRESSED
+    } else if hover_close || focused_close {
+        libsarga::theme::colors::WIN_CLOSE_HOVER
+    } else {
+        theme.error
+    };
 
     canvas.draw_rounded_rect(
         close_x,
         close_y,
-        22,
-        18,
+        close.w,
+        close.h,
         4,
-        apply_alpha(theme.error, aw.flags.opacity),
+        apply_alpha(close_fill, aw.flags.opacity),
     );
+    // Same rationale as the title: the close fill is theme.error / the
+    // WIN_CLOSE reds (theme-invariant), so the glyph stays on_accent for
+    // contrast (4.6+ in both themes).
     canvas.draw_string(
         close_x + 7,
         close_y + 2,
         "x",
-        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+        apply_alpha(theme.on_accent, aw.flags.opacity),
         0,
     );
 
-    // Minimize button
-    let min_x = aw.x as u32 + aw.w - 54;
+    // Minimize button — the same rect the hit-testing uses. Hover lifts the
+    // flat elevated surface with a white wash; pressing darkens it with a
+    // black wash (theme.pressed is a distinct darker navy — the taskbar
+    // surfaces use it as their pressed fill — but the wash here keeps the
+    // rounded glyph surface flat instead of swapping its base color).
+    let min = layout::min_btn_rect(aw.x, aw.y, aw.w);
+    let min_x = min.x as u32;
+    let hover_min = ix.hover
+        == Some(HoverTarget::Window {
+            win: WindowId(aw.id),
+            btn: WindowButton::Minimize,
+        });
+    // Same focused union as Close: the ring lights the minimize control
+    // like hover (white wash over the elevated fill); pressed is
+    // pointer-only.
+    let focused_min = ix.focused
+        == Some(HoverTarget::Window {
+            win: WindowId(aw.id),
+            btn: WindowButton::Minimize,
+        });
     canvas.draw_rounded_rect(
         min_x,
         close_y,
-        22,
-        18,
+        min.w,
+        min.h,
         4,
         apply_alpha(theme.bg_elevated, aw.flags.opacity),
     );
+    if hover_min && ix.mouse_down {
+        canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x50000000);
+    } else if hover_min || focused_min {
+        canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x35FFFFFF);
+    }
     canvas.draw_line_h(
         min_x + 6,
         close_y + 14,
         10,
-        apply_alpha(0xFFFFFFFF, aw.flags.opacity),
+        apply_alpha(theme.text, aw.flags.opacity),
     );
 
     // Separation line
     canvas.draw_line_h(
         aw.x as u32 + 1,
-        aw.y as u32 + 29,
+        aw.y as u32 + layout::TITLE_SEP_Y,
         aw.w - 2,
         apply_alpha(theme.separator, aw.flags.opacity),
     );
@@ -308,26 +551,30 @@ pub(crate) fn draw(
     }
 
     // Window content
-    let line_y = aw.y as u32 + 28;
-    let max_lines = ((aw.h - 34) / 14) as usize;
+    let line_y = aw.y as u32 + layout::TITLE_H as u32;
+    let max_lines =
+        ((aw.h - (layout::TITLE_H as u32 + layout::CONTENT_BOTTOM_PAD)) / layout::LINE_H) as usize;
+    let surface = aw.surface();
+    let lines = surface.lines();
+    let scroll = surface.scroll();
 
-    let start = if aw.content.len() > max_lines {
-        aw.content.len() - max_lines + aw.scroll as usize
+    let start = if lines.len() > max_lines {
+        lines.len() - max_lines + scroll as usize
     } else {
         0
     };
 
-    for (i, line) in aw.content.iter().skip(start).take(max_lines).enumerate() {
-        let ly = line_y + i as u32 * 14;
+    for (i, line) in lines.iter().skip(start).take(max_lines).enumerate() {
+        let ly = line_y + i as u32 * layout::LINE_H;
 
-        if ly + 14 > aw.y as u32 + aw.h {
+        if ly + layout::LINE_H > aw.y as u32 + aw.h {
             break;
         }
 
-        let display = if line.len() > 55 { &line[..55] } else { line };
+        let display = layout::trunc(line, layout::LINE_TRUNCATE_MAX);
 
         canvas.draw_string(
-            aw.x as u32 + 8,
+            aw.x as u32 + layout::CONTENT_PAD_X,
             ly,
             display,
             apply_alpha(theme.text_secondary, aw.flags.opacity),
@@ -335,12 +582,12 @@ pub(crate) fn draw(
         );
     }
 
-    if cursor_visible && aw.focused && !aw.content.is_empty() {
-        let last = &aw.content[aw.content.len() - 1];
-        let cx = aw.x as u32 + 8 + last.len() as u32 * 8;
+    if cursor_visible && aw.focused && !lines.is_empty() {
+        let last = &lines[lines.len() - 1];
+        let cx = aw.x as u32 + layout::CONTENT_PAD_X + last.len() as u32 * layout::CHAR_W;
         let cy = aw.y as u32
-            + 30
-            + (aw.content.len().saturating_sub(1) as u32 - aw.scroll).saturating_sub(1) * 14;
+            + (layout::TITLE_H as u32 + 2)
+            + (lines.len().saturating_sub(1) as u32 - scroll).saturating_sub(1) * layout::LINE_H;
         if cy < aw.y as u32 + aw.h {
             canvas.draw_char(cx, cy, '_', apply_alpha(theme.accent, aw.flags.opacity), 0);
         }

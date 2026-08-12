@@ -17,6 +17,7 @@ fn user_main() -> i32 {
         let m_pressed = mouse.buttons != 0;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             if step == 2 {
                 if key == 0x08 || key == 0x7F {
                     username.pop();

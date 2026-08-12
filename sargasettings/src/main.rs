@@ -38,9 +38,6 @@ enum UpdateStatus {
     Checking,
     UpToDate,
     UpdateAvailable(String),
-    // never constructed: update flow may report download state in future
-    #[allow(dead_code)]
-    Downloading,
     Downloaded,
     Error(String),
 }
@@ -457,15 +454,6 @@ fn user_main() -> i32 {
                             0,
                         );
                     }
-                    UpdateStatus::Downloading => {
-                        win.draw_string(
-                            SIDEBAR_W + 16,
-                            150,
-                            "Status: Downloading...",
-                            theme.accent,
-                            0,
-                        );
-                    }
                     UpdateStatus::Downloaded => {
                         win.draw_string(
                             SIDEBAR_W + 16,
@@ -561,6 +549,7 @@ fn user_main() -> i32 {
 
         // Keyboard
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'1' => settings.active_tab = 0,

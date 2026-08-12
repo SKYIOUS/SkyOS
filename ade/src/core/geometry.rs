@@ -1,4 +1,4 @@
-//! Geometry primitives — Point, Size, Rect with hit-test and transforms.
+//! Geometry primitives — Point, Rect with hit-test and overlap checks.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point {
@@ -9,20 +9,6 @@ pub struct Point {
 impl Point {
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Size {
-    pub w: u32,
-    pub h: u32,
-}
-
-#[allow(dead_code)]
-impl Size {
-    pub const fn new(w: u32, h: u32) -> Self {
-        Self { w, h }
     }
 }
 
@@ -45,14 +31,6 @@ impl Rect {
         p.x >= self.x && p.x < r && p.y >= self.y && p.y < b
     }
 
-    #[allow(dead_code)]
-    pub fn contains(&self, other: &Rect) -> bool {
-        self.x <= other.x
-            && self.y <= other.y
-            && self.x + self.w as i32 >= other.x + other.w as i32
-            && self.y + self.h as i32 >= other.y + other.h as i32
-    }
-
     pub fn intersects(&self, other: &Rect) -> bool {
         let ar = self.x + self.w as i32;
         let ab = self.y + self.h as i32;
@@ -60,21 +38,58 @@ impl Rect {
         let ob = other.y + other.h as i32;
         self.x < or && ar > other.x && self.y < ob && ab > other.y
     }
+}
 
-    #[allow(dead_code)]
-    pub fn center(&self) -> Point {
-        Point::new(self.x + self.w as i32 / 2, self.y + self.h as i32 / 2)
+/// One entry in a context menu: display label plus the action dispatched when
+/// clicked. A label of `"---"` is a visual separator row (no action).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuItem {
+    pub label: &'static str,
+    pub action: &'static str,
+}
+
+/// An open context menu: anchor position plus its static item list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextMenu {
+    pub x: i32,
+    pub y: i32,
+    pub items: &'static [MenuItem],
+}
+
+/// Rubber-band selection — two dragged corners. The drag rect is derived by
+/// normalizing (min of the two corners, absolute delta as size), so drags up
+/// or left work identically to down/right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RubberBand {
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
+}
+
+impl RubberBand {
+    pub const fn new(x: i32, y: i32) -> Self {
+        Self {
+            x1: x,
+            y1: y,
+            x2: x,
+            y2: y,
+        }
     }
 
-    #[allow(dead_code)]
-    pub fn translate(&self, dx: i32, dy: i32) -> Rect {
-        Rect::new(self.x + dx, self.y + dy, self.w, self.h)
+    /// Move the drag corner to a new pointer position.
+    pub fn drag_to(&mut self, x: i32, y: i32) {
+        self.x2 = x;
+        self.y2 = y;
     }
 
-    #[allow(dead_code)]
-    pub fn inflate(&self, dx: u32, dy: u32) -> Rect {
-        let x = self.x - dx as i32;
-        let y = self.y - dy as i32;
-        Rect::new(x, y, self.w + dx * 2, self.h + dy * 2)
+    /// Normalized selection rect (handles drags up/left).
+    pub fn rect(&self) -> Rect {
+        Rect::new(
+            self.x1.min(self.x2),
+            self.y1.min(self.y2),
+            (self.x1 - self.x2).unsigned_abs(),
+            (self.y1 - self.y2).unsigned_abs(),
+        )
     }
 }

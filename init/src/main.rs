@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use libsarga::errno::Error;
 use libsarga::io;
@@ -74,21 +73,41 @@ fn user_main() -> i32 {
         let _ = io::write_all(1, b"[init] WARN: failed to mount /ctl\n");
     }
 
-    let mut services = Vec::new();
-    services.push(Service {
-        name: "login-manager".to_string(),
-        exec: "/bin/login-manager".to_string(),
-        respawn: true,
-        pid: None,
-        crashes: 0,
-    });
-    services.push(Service {
-        name: "svc".to_string(),
-        exec: "/bin/svc".to_string(),
-        respawn: true,
-        pid: None,
-        crashes: 0,
-    });
+    // vahid first: device manager (PCI scan + /dev node creation) so the
+    // console/tty nodes exist before login-manager and the getty run.
+    // Then login-manager (GUI), svc (service daemon), and the console
+    // getty (/bin/login on the inherited console fds - Phase A of the
+    // session-lifecycle plan, CI drives root/skyos through it).
+    let mut services = alloc::vec![
+        Service {
+            name: "vahid".to_string(),
+            exec: "/bin/vahid".to_string(),
+            respawn: true,
+            pid: None,
+            crashes: 0,
+        },
+        Service {
+            name: "login-manager".to_string(),
+            exec: "/bin/login-manager".to_string(),
+            respawn: true,
+            pid: None,
+            crashes: 0,
+        },
+        Service {
+            name: "svc".to_string(),
+            exec: "/bin/svc".to_string(),
+            respawn: true,
+            pid: None,
+            crashes: 0,
+        },
+        Service {
+            name: "getty".to_string(),
+            exec: "/bin/login".to_string(),
+            respawn: true,
+            pid: None,
+            crashes: 0,
+        },
+    ];
 
     for svc in &mut services {
         let _ = svc.spawn();

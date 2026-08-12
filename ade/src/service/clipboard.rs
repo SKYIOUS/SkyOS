@@ -5,8 +5,6 @@ use alloc::vec::Vec;
 
 pub(crate) struct ClipboardEntry {
     pub text: String,
-    #[allow(dead_code)] // history timestamps, no history UI yet
-    pub timestamp: u64,
 }
 
 pub(crate) struct ClipboardManager {
@@ -33,7 +31,6 @@ impl ClipboardManager {
         self.history.retain(|e| e.text != text);
         self.history.push(ClipboardEntry {
             text: String::from(text),
-            timestamp,
         });
         if self.history.len() > 16 {
             self.history.remove(0);

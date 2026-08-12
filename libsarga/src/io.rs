@@ -853,6 +853,9 @@ pub fn move_window(handle: u64, x: u64, y: u64) {
 /// Reads data from the system clipboard.
 pub fn clipboard_read(buf: &mut [u8]) -> usize {
     // SAFETY: clipboard_read syscall is safe here
+    // The kernel ABI returns the byte count as u64 (never a negative errno for
+    // syscall 125), but syscall3 yields i64, so keep the guard as
+    // defense-in-depth: a hypothetical errno must not wrap into a huge usize.
     let r = unsafe { crate::syscall::syscall3(125, 0, buf.as_mut_ptr() as u64, buf.len() as u64) };
     if r < 0 {
         0
@@ -872,6 +875,7 @@ pub fn clipboard_write(data: &[u8]) {
 /// Retrieves the length of data currently in the clipboard.
 pub fn clipboard_len() -> usize {
     // SAFETY: clipboard_len syscall is safe here
+    // Same ABI note as clipboard_read: guard is defense-in-depth.
     let r = unsafe { crate::syscall::syscall1(125, 2) };
     if r < 0 {
         0
@@ -900,7 +904,8 @@ pub fn openpty() -> Result<(i64, i64), Error> {
     if r < 0 {
         return Err(Error::from_i64(r));
     }
-    Ok(((r >> 32), (r & 0xFFFF_FFFF)))
+    // Kernel packs: master | (slave << 16)
+    Ok(((r & 0xFFFF), ((r >> 16) & 0xFFFF)))
 }
 
 /// Duplicates a file descriptor.
@@ -911,6 +916,32 @@ pub fn dup2(oldfd: i64, newfd: i64) -> Result<(), Error> {
         Err(Error::from_i64(r))
     } else {
         Ok(())
+    }
+}
+
+/// ioctl request numbers (Linux termios values; the kernel's sys_ioctl
+/// implements TIOCGWINSZ/TCGETS/TCSETS/FIONBIO).
+pub mod ioctls {
+    /// Get terminal attributes.
+    pub const TCGETS: u64 = 0x5401;
+    /// Set terminal attributes.
+    pub const TCSETS: u64 = 0x5402;
+}
+
+/// Perform an ioctl on a file descriptor. `argp` is a caller-owned buffer
+/// whose contents are interpreted per-request (e.g. the termios struct the
+/// caller owns for TCGETS/TCSETS — no `Termios` type is defined here; the
+/// layout lives with the consumer, `login/src/main.rs`, mirrored from the
+/// kernel's `sys_ioctl`). Returns the ioctl return value (usually 0 on
+/// success).
+pub fn ioctl(fd: i64, request: u64, argp: *mut u8) -> Result<i64, Error> {
+    // SAFETY: ioctl syscall is safe here; the caller must pass a valid argp
+    // for the request.
+    let r = unsafe { crate::syscall::syscall3(SYS_IOCTL, fd as u64, request, argp as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
     }
 }
 

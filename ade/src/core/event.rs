@@ -1,38 +1,19 @@
 //! Input event types — keyboard, mouse, scroll.
 
-// Most variants are dispatch-only: constructed by producers or matched as no-op placeholders.
-#[allow(dead_code)] // full event surface; several variants await producer wiring
+use crate::core::geometry::Point;
+
+// Constructed by the input producers in main.rs.
 pub enum Event {
-    Key(u8),
-    MouseClick(i32, i32),
-    MouseMiddle(i32, i32),
-    MouseRight(i32, i32),
-    MouseDrag(i32, i32),
+    // A kernel key value: low byte = the character, bits 8..10 = alt/ctrl/
+    // shift held (the Phase C packed-key contract — see
+    // docs/kernel-gui-modifier-delivery.md, Design A). Today the kernel
+    // sends plain bytes, so the high bits are zero; `Desktop::handle_key`
+    // decodes via `input::KeyEvent::from_raw`.
+    Key(u16),
+    MouseClick(Point),
+    MouseMiddle(Point),
+    MouseRight(Point),
+    MouseDrag(Point),
     MouseRelease,
     Scroll(i8),
-    NotificationAdded(u64),
-    NotificationRemoved(u64),
-    ClipboardChanged,
-    SessionChanged,
-    PowerRequest(u8),
-    AppStarted(u64),
-    AppClosed(u64),
-    AppFocused(u64),
-    AppCrashed(u64),
-    SettingsChanged,
-    FocusChanged(u32),
-    ElementActivated(u32),
-    ThemeChanged,
-    TooltipOpened,
-    TooltipClosed,
-    AppInstalled(u64),
-    AppRemoved(u64),
-    PermissionGranted(u64),
-    PermissionDenied(u64),
-    IPCConnected(u64),
-    IPCDisconnected(u64),
-    ServiceRegistered(&'static str),
-    ServiceUnavailable(&'static str),
-    FocusNext,
-    FocusPrev,
 }

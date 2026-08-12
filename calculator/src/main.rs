@@ -12,8 +12,6 @@ struct Calculator {
     operand: f64,
     operator: u8,
     new_number: bool,
-    #[allow(dead_code)]
-    memory: f64,
     error: bool,
 }
 
@@ -25,7 +23,6 @@ impl Calculator {
             operand: 0.0,
             operator: b'=',
             new_number: true,
-            memory: 0.0,
             error: false,
         }
     }
@@ -409,6 +406,7 @@ fn user_main() -> i32 {
 
         // Keyboard input
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'0'..=b'9' => calc.push_digit(key - b'0'),
                 b'.' | b',' => calc.push_dot(),

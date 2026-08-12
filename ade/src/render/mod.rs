@@ -56,6 +56,11 @@ pub(crate) fn render(
                     aw,
                     snap.cursor_visible,
                     snap.explorers,
+                    crate::core::window::WinInteraction {
+                        hover: snap.hover,
+                        focused: snap.focused,
+                        mouse_down: snap.mouse_down,
+                    },
                 );
             }
         }
@@ -70,6 +75,11 @@ pub(crate) fn render(
                     aw,
                     snap.cursor_visible,
                     snap.explorers,
+                    crate::core::window::WinInteraction {
+                        hover: snap.hover,
+                        focused: snap.focused,
+                        mouse_down: snap.mouse_down,
+                    },
                 );
             }
         }
@@ -92,7 +102,7 @@ pub(crate) fn render(
         notification_overlay::draw_notifications(
             &mut cv,
             snap.notifications,
-            snap.mouse,
+            snap.hover,
             snap.theme,
         );
         if let Some(s) = snap.settings {
@@ -102,7 +112,7 @@ pub(crate) fn render(
             sa.draw(&mut cv, snap);
         }
         if let Some(tm) = snap.task_manager {
-            tm.draw(&mut cv, snap.windows, snap.theme);
+            tm.draw(&mut cv, snap);
         }
         if let Some(ab) = snap.about {
             ab.draw(&mut cv, snap);
@@ -112,9 +122,10 @@ pub(crate) fn render(
         }
         // Focus indicator
         if snap.focus_visible {
-            if let Some((fx, fy, fw, fh)) = snap.focused_bounds {
+            if let Some(fb) = snap.focused_bounds {
                 let c = snap.theme.accent;
                 let len = 12u32;
+                let (fx, fy, fw, fh) = (fb.x, fb.y, fb.w, fb.h);
                 // top-left
                 cv.draw_line_h(fx as u32, fy as u32, len, c);
                 cv.draw_line_h(fx as u32, fy as u32 + 1, len, c);
@@ -137,10 +148,15 @@ pub(crate) fn render(
                 cv.draw_line_v(fx as u32 + fw - 2, fy as u32 + fh - len, len, c);
             }
         }
-        // Tooltip
+        // Tooltip — text is truncated with the shared layout helper before
+        // sizing, so a long window title can't push the box off the screen
+        // edge; the alpha byte carries the fade (the compositor blends each
+        // layer onto the output, so a partial-alpha color renders translucent).
         if let Some(tt) = snap.tooltip {
             if !tt.is_empty() {
-                let tw = (tt.len() as u32 * 8 + 16).min(snap.screen_w.saturating_sub(8));
+                let display = crate::layout::trunc(tt, crate::layout::TOOLTIP_TEXT_MAX);
+                let a = snap.tooltip_alpha as u32;
+                let tw = (display.len() as u32 * 8 + 16).min(snap.screen_w.saturating_sub(8));
                 let mut tx = snap.tooltip_x;
                 let mut ty = snap.tooltip_y.saturating_sub(26);
                 if tx + tw as i32 > snap.screen_w as i32 {
@@ -152,19 +168,22 @@ pub(crate) fn render(
                 if ty < 2 {
                     ty = snap.tooltip_y + 20;
                 }
-                cv.draw_rounded_rect(tx as u32, ty as u32, tw, 22, 4, 0xFF2D2D2D);
-                cv.draw_rounded_rect_outline(tx as u32, ty as u32, tw, 22, 4, 0xFF555555);
-                cv.draw_string(tx as u32 + 8, ty as u32 + 5, tt, 0xFFFFFFFF, 0);
+                let bg = (snap.theme.bg_elevated & 0x00FF_FFFF) | (a << 24);
+                let border = (snap.theme.border & 0x00FF_FFFF) | (a << 24);
+                let fg = (snap.theme.text & 0x00FF_FFFF) | (a << 24);
+                cv.draw_rounded_rect(tx as u32, ty as u32, tw, 22, 4, bg);
+                cv.draw_rounded_rect_outline(tx as u32, ty as u32, tw, 22, 4, border);
+                cv.draw_string(tx as u32 + 8, ty as u32 + 5, display, fg, 0);
             }
         }
         // Snap preview (translucent rect showing where window will land)
-        if let Some((sx, sy, sw, sh)) = snap.snap_preview {
+        if let Some(sp) = snap.snap_preview {
             cv.draw_rect_alpha(
-                sx as u32,
-                sy as u32,
-                sw,
-                sh,
-                crate::core::constants::SNAP_PREVIEW_COLOR,
+                sp.x as u32,
+                sp.y as u32,
+                sp.w,
+                sp.h,
+                crate::layout::SNAP_PREVIEW_COLOR,
             );
         }
         // Debug overlay (F12)
