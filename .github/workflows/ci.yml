@@ -45,7 +45,7 @@ jobs:
             target/
           key: clippy-${{ hashFiles('Cargo.lock') }}
           restore-keys: clippy-
-      - run: cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
+      - run: cargo clippy -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json -- -D warnings
 
   dead-code:
     name: No dead-code suppressions
@@ -145,7 +145,7 @@ jobs:
           key: build-${{ matrix.profile }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: build-${{ matrix.profile }}-
       - name: Build (${{ matrix.profile }})
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json ${{ matrix.profile == 'release' && '--release' || '' }}
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json ${{ matrix.profile == 'release' && '--release' || '' }}
 
   deny:
     name: cargo-deny
@@ -185,7 +185,7 @@ jobs:
 
       - name: Build userspace (release)
         working-directory: SkyOS
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
 
       - name: Build initrd
         working-directory: SkyOS
@@ -291,7 +291,7 @@ jobs:
 
       - name: Build userspace (release)
         working-directory: SkyOS
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
 
       - name: Build initrd
         working-directory: SkyOS
@@ -400,7 +400,7 @@ jobs:
 
       - name: Build userspace (release)
         working-directory: SkyOS
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
 
       - name: Build initrd
         working-directory: SkyOS
@@ -551,7 +551,7 @@ jobs:
 
       - name: Build userspace (release)
         working-directory: SkyOS
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
 
       - name: Build initrd
         working-directory: SkyOS

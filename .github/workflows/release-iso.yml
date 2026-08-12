@@ -44,7 +44,7 @@ jobs:
         run: cargo build --release --target x86_64-unknown-none
 
       - name: Build userspace
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
 
       - name: Build initrd
         run: python3 build_initrd.py
