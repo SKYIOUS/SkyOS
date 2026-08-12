@@ -36,9 +36,10 @@ jobs:
 
       - name: Install nightly
         run: |
-          # Pinned: unpinned nightly drifts (rustc-abi rename breaks x86_64-sarga.json).
-          rustup toolchain install nightly-2026-05-28 --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly-2026-05-28
+          # Pinned nightly-2026-01-15 (matches local 1.94 dev; newer rustc renames rustc-abi
+          # x86-softfloat -> softfloat and breaks the sarga target spec).
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
 
       - name: Build kernel
         working-directory: SKYIOUS-KERNEL/kernel
