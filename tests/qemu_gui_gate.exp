@@ -13,6 +13,11 @@
 #   3. "[KBD] IRQ1 fired!"       - sendkey reaches the kernel keyboard
 #                                  handler (one-shot marker, interrupts.rs;
 #                                  step 4 sends sendkey shift).
+#   4. "[login] tab: focus -> password"
+#                                - one sendkey Tab advances the login-manager
+#                                  field (Phase B Tab/Enter routing,
+#                                  kernel-keyboard-gate.md section 3; step 4a
+#                                  sends sendkey tab).
 #
 #   FAIL -> "[login] failed to create window"  (the documented respawn loop,
 #           traced in ade/docs/session-lifecycle.md - add_window cannot fail;
@@ -60,6 +65,21 @@
 #                                            ABSENCE fails the gate (sendkey
 #                                            never reached the keyboard
 #                                            handler).
+#                                            Airtight (Aug 12, 2026):
+#                                            expect -timeout 0 absent-check
+#                                            before the sendkey proves no
+#                                            stale buffered copy can
+#                                            false-PASS (match_max 1000000).
+#   9 tab_routing     \[login\] tab: focus -> password
+#                                            REAL  login-manager/src/main.rs
+#                                            (Tab arm serial announce). Sent
+#                                            via sendkey tab after the IRQ1
+#                                            probe; one Tab moves the active
+#                                            field username -> password and
+#                                            prints the marker. Answers the
+#                                            Phase B Tab/Enter routing
+#                                            question (kernel-keyboard-gate.md
+#                                            section 3) on real input.
 #   9 ls_dev          ls /dev shows all six node names
 #                                            REAL*: vahid's six-node table
 #                                            (vahid/src/main.rs:69-76). The
@@ -218,6 +238,10 @@ while {!$saw_vahid || !$saw_window} {
 #    this gate sends one harmless key (Shift, no side effects) via the
 #    monitor (Ctrl-A C toggle on mon:stdio) and requires the marker - a
 #    fresh one-shot per boot.
+#    Airtight (Aug 12, 2026): an expect -timeout 0 absent-check before the
+#    sendkey proves the marker was not already buffered from early boot
+#    (match_max 1000000 keeps the whole boot) - one-shot means any pre-probe
+#    copy is a stray false-PASS.
 send_user "=== routing probe: \[KBD\] IRQ1 fired! ===\n"
 proc monitor_cmd {cmd} {
     send "\x01c"
@@ -232,6 +256,23 @@ proc monitor_cmd {cmd} {
     }
     send "\x01c"
 }
+# Airtight ordering (Aug 12, 2026): IRQ1 fired! is one-shot per boot, so a
+# stray IRQ1 from early boot (PS/2 controller probe) would linger in the
+# expect buffer (gate.exp raises match_max to 1000000) and false-PASS this
+# probe by matching the STALE byte. Prove the marker is ABSENT right before
+# the probe key - `expect -timeout 0` matches immediately if a stale copy is
+# buffered, otherwise the timeout arm fires instantly - then require it
+# after the sendkey. Buffer position at probe time is the stream's byte
+# offset, so this is the same "appears only after this point" guarantee a
+# log-file offset check would give.
+expect -timeout 0 {
+    {\[KBD\] IRQ1 fired!} {
+        send_user "FAIL: stray IRQ1 marker already present before the probe sendkey - routing claim unproven\n"
+        exit 1
+    }
+    timeout { }
+}
+
 monitor_cmd "sendkey shift"
 expect -timeout 10 {
     {\[KBD\] IRQ1 fired!} {
@@ -242,6 +283,27 @@ expect -timeout 10 {
         exit 1
     }
     eof { send_user "FAIL: QEMU exited during routing probe\n"; exit 1 }
+}
+
+# 4a. Tab/Enter routing probe (Aug 12, 2026): the IRQ1 marker only proves
+#     sendkey scancodes reach the kernel's keyboard handler. The Phase B
+#     Tab/Enter question (kernel-keyboard-gate.md section 3) is whether a
+#     Unicode key from sendkey actually drives the GUI consumer: Tab
+#     arrives as Unicode 0x09 via the compositor's Unicode arm, and
+#     login-manager advances its active field (username -> password) on
+#     0x09 with the serial announce '[login] tab: focus -> password'. One
+#     Tab, require the '-> password' leg.
+send_user "=== Tab routing probe: \[login\] tab: focus -> password ===\n"
+monitor_cmd "sendkey tab"
+expect -timeout 10 {
+    {\[login\] tab: focus -> password} {
+        send_user "PASS: sendkey Tab advanced the login-manager field (Phase B Tab/Enter routing live)\n"
+    }
+    timeout {
+        send_user "FAIL: sendkey Tab never advanced the login field - Tab/Enter routing broken\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during Tab routing probe\n"; exit 1 }
 }
 
 # 5. /dev usability probe (Aug 10, 2026): vahid's O_CREAT fallback must

@@ -19,6 +19,7 @@ Run:  python3 tests/test_overlay_parity.py
 import os
 import re
 import unittest
+from scan_rust import strip_rust
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DESKTOP_RS = os.path.join(REPO_ROOT, "ade", "src", "core", "desktop.rs")
@@ -68,9 +69,9 @@ _GUARD_RE = re.compile(
 
 def _overlay_refs(body):
     """Set of overlay fields whose DISMISSAL GUARD appears in a body."""
-    # Drop // comments first: prose like "if self.settings.open were here"
-    # inside a comment must not count as a guard reference.
-    body = re.sub(r"//[^\n]*", "", body)
+    # Drop comments (and mask string literals) first: prose like
+    # "if self.settings.open were here" inside a comment must not count
+    body = strip_rust(body)
     found = set()
     for m in _GUARD_RE.finditer(body):
         if m.group(1):
@@ -133,3 +134,4 @@ class OverlayParityContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

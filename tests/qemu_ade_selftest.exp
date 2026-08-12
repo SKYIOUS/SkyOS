@@ -455,6 +455,35 @@ expect {
         exit 1
     }
 }
+# 4a13. The byte-stream arrow navigation coverage must have RUN and
+#     PASSED: the a11y ring drives from the E0 second-byte arrow codes
+#     72/75/77/80 (kernel-keyboard-gate.md section 2.1 forward set)
+#     through the real event path, and modified arrows (shift/ctrl/alt
+#     bits) are inert -- the a11y modifier guard swallows them before
+#     the arrow arms. A regression that drops the arms (leaving arrows
+#     to type 'H'/'K'/'M'/'P') would only surface as a missing verdict
+#     without this positive assertion.
+expect {
+    {\[test\] PASS test_a11y_arrows_from_byte_stream} {
+        send_user "PASS: a11y byte-stream arrow navigation coverage passed\n"
+    }
+    {\[test\] FAIL test_a11y_arrows_from_byte_stream} {
+        send_user "FAIL: a11y byte-stream arrow navigation test failed\n"
+        exit 1
+    }
+    "SARGA OS PANIC" {
+        send_user "FAIL: ade panicked before the byte-stream arrow navigation coverage\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: byte-stream arrow navigation coverage never reported\n"
+        exit 1
+    }
+    eof {
+        send_user "FAIL: QEMU exited before the byte-stream arrow navigation coverage\n"
+        exit 1
+    }
+}
 
 # 4b. The verdict is what gates the pipeline. The patterns match the plain
 #     "selftest PASS|FAIL" substring — ade prints "[ade] selftest PASS|FAIL".

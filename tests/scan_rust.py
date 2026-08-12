@@ -24,8 +24,9 @@ def strip_rust(src: str) -> str:
     Order matters: string literals are masked FIRST so that ``//`` and
     ``/*`` inside strings (e.g. ``\"// not a comment\"``) survive the
     comment pass. Line comments are stripped second, then block comments.
-    Returns a string where strings become empty quoted pairs (``\"\"`` /
-    ``''``) and comments become empty; everything else is unchanged.
+    Returns a string where double-quoted string literals become ``\"\"``
+    and comments become empty; everything else is unchanged.  Rust char
+    literals / lifetimes (single-quoted) are intentionally left intact.
     """
     code = re.sub(r'"(?:\\.|[^"\\])*"', '""', src)     # mask string literals
     code = re.sub(r"//[^\n]*", "", code)                  # strip line comments

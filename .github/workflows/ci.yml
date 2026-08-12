@@ -327,17 +327,29 @@ jobs:
           ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
           if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
 
+          # KERNEL_DESIGN_A: CI-visible toggle for the ctrl-alt-backspace
+          # chord probe (qemu_gui_login.exp step 5). 0/absent = current
+          # kernel (chord inert, esc fallback keeps the harness green);
+          # set to 1 when the kernel lands Design A (packed modifier bits,
+          # docs/kernel-gui-modifier-delivery.md A1-A4) so step 5 ASSERTs
+          # the chord ends the session instead of falling back to esc.
+          export KERNEL_DESIGN_A="${KERNEL_DESIGN_A:-0}"
           expect tests/qemu_gui_login.exp "$ISO" 300 | tee qemu_gui_log.txt
 
       - name: Verify GUI login verdict
         working-directory: SkyOS
         run: |
-          # The GUI attempt cap (MAX_FAILED_ATTEMPTS=10 -> 30 s backoff)
-          # must NEVER fire here: the harness submits root/skyos exactly
-          # once, so a 'Too many failed attempts' line means a harness
-          # regression (repeated submissions) or a cap misconfig.
-          if grep -q "Too many failed attempts - pausing 30s" qemu_gui_log.txt; then
-            echo "FAIL: GUI attempt cap fired in gui_login harness (unexpected pause)"
+          # The GUI attempt cap (MAX_FAILED_ATTEMPTS=10 -> 30 s backoff) is
+          # a POSITIVE contract: the harness drives 10 wrong passwords into
+          # login-manager's window, asserts the 'Too many failed attempts -
+          # pausing 30s' announce fires EXACTLY ONCE (on the 10th) with no
+          # login-manager respawn, proves the reset with an 11th wrong
+          # password, then logs in correctly. A count of 0 means the cap
+          # regressed or the probe never ran; a count > 1 means the counter
+          # was not reset after the backoff.
+          cap_count=$(grep -c "Too many failed attempts - pausing 30s" qemu_gui_log.txt || true)
+          if [ "$cap_count" -ne 1 ]; then
+            echo "FAIL: GUI attempt cap marker count = $cap_count (expected exactly 1)"
             grep "Too many failed attempts" qemu_gui_log.txt
             exit 1
           fi
@@ -453,9 +465,9 @@ jobs:
             grep "Too many failed attempts" qemu_ade_log.txt
             exit 1
           fi
-          a11y_passes=$(grep -cE "\[test\] PASS test_(a11y_close_button|a11y_taskbar_button|tooltip_owner_label|a11y_close_resyncs_focus|a11y_resync_exclusion|focus_validate_central|a11y_activation_dismisses_overlays|a11y_taskbar_focus_feedback|tooltip_hardening|tooltip_role_labels|a11y_full_keyboard_loop|a11y_tray_panel|a11y_keyboard_window_open|a11y_start_menu_rows|a11y_overlay_mouse_keyboard_parity|a11y_start_menu_focus_feedback|a11y_window_btn_focus_feedback|a11y_focused_target)" qemu_ade_log.txt || true)
-          if [ "$a11y_passes" -lt 18 ]; then
-            echo "FAIL: a11y coverage incomplete in serial log (found $a11y_passes/18)"
+          a11y_passes=$(grep -cE "\[test\] PASS test_(a11y_close_button|a11y_taskbar_button|tooltip_owner_label|a11y_close_resyncs_focus|a11y_resync_exclusion|focus_validate_central|a11y_activation_dismisses_overlays|a11y_taskbar_focus_feedback|tooltip_hardening|tooltip_role_labels|a11y_full_keyboard_loop|a11y_tray_panel|a11y_keyboard_window_open|a11y_start_menu_rows|a11y_overlay_mouse_keyboard_parity|a11y_start_menu_focus_feedback|a11y_window_btn_focus_feedback|a11y_focused_target|a11y_arrows_from_byte_stream)" qemu_ade_log.txt || true)
+          if [ "$a11y_passes" -lt 19 ]; then
+            echo "FAIL: a11y coverage incomplete in serial log (found $a11y_passes/19)"
             tail -60 qemu_ade_log.txt
             exit 1
           fi
@@ -607,6 +619,16 @@ jobs:
               echo "FAIL: sendkey never reached IRQ1 (kernel keyboard routing)"
               exit 1
             fi
+            # Phase B Tab/Enter routing (kernel-keyboard-gate.md section
+            # 3): one sendkey Tab must advance login-manager's active field.
+            # This greps the exp's PASS line so a silent exp edit that
+            # drops the Tab probe fails the job, same pattern as the vahid
+            # phase verdict above.
+            if ! grep -q "PASS: sendkey Tab advanced the login-manager field" qemu_gui_gate_log.txt; then
+              echo "FAIL: Tab routing probe verdict missing from the gate log"
+              tail -80 qemu_gui_gate_log.txt
+              exit 1
+            fi
             # Memory-pressure marker (boot-time allocator low-water
             # evidence): login-manager prints '[login] mem free=N pages'
             # from ctlFS /ctl/sys/mem/free before Window::create. Its
@@ -618,7 +640,7 @@ jobs:
               tail -80 qemu_gui_gate_log.txt
               exit 1
             fi
-            echo "PASS: GUI reachable (window created), vahid healthy, IRQ1 routing live, mem marker present"
+            echo "PASS: GUI reachable (window created), vahid healthy, IRQ1 + Tab routing live, mem marker present"
           else
             echo "FAIL: GUI or device-manager not reachable (see serial markers)"
             tail -80 qemu_gui_gate_log.txt
@@ -676,6 +698,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: SkyOS
+
+      - name: Scan-rust strip regression gate (runs FIRST)
+        working-directory: SkyOS
+        # Every source-contract test below (login flow, login echo,
+        # clipboard split, overlay parity, mem marker) scans Rust through
+        # scan_rust.strip_rust. A stripping regression must fail HERE with
+        # a focused diagnosis, not as a confusing mismatch in a consumer.
+        run: python3 tests/test_scan_rust.py
 
       - name: Login flow host test
         working-directory: SkyOS

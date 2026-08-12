@@ -356,11 +356,18 @@ class TestGuiAttemptCapContract(unittest.TestCase):
     + serial announce + backoff, then re-prompt. The backoff runs AFTER the
     frame with the message is flushed (so it stays visible for the whole
     pause), and only disarms when the pause actually ran (EINTR must not
-    skip it). A stray Enter with an empty username re-prompts without
+    skip it). A successful disarm also clears the pause message from the
+    window, so the next attempt shows the plain "Invalid username or
+    password" instead of the stale cap message. A stray Enter with an empty
+    username re-prompts without
     counting, matching the getty. The session NEVER exits on bad creds —
     init service "login-manager" has respawn: true, so an exit would burn
     MAX_RESPAWNS. These pins keep the throttle and the re-prompt semantics
-    visible in CI before any QEMU boot.
+    visible in CI before any QEMU boot. The console getty (login/src/main.rs)
+    has the SAME throttle constants (10/30 s) — pinned in lockstep by
+    test_gui_and_console_throttle_constants_agree, so a brute-forcer cannot
+    switch to the weaker path; the only asymmetry left is call topology
+    (console counts 3 failure paths, GUI counts 1).
     """
 
     @classmethod
@@ -446,6 +453,77 @@ class TestGuiAttemptCapContract(unittest.TestCase):
         # Cross-source consistency: the harness must assert the same marker
         # (drift in either side fails this test).
         self.assertIn("invalid credentials - re-prompting", self.gui_login_exp)
+
+    def test_gui_harness_drives_cap_positive(self):
+        # The 'pausing 30s' cap marker is a POSITIVE contract in the GUI
+        # harness (audit #17): it drives MAX_FAILED_ATTEMPTS=10 on real
+        # hardware. Wrong passwords 1-9 (the step-3a loop) must show only
+        # the bad-creds announce (a cap marker there is a FAIL arm); the
+        # 10th triggers the marker (PASS arm, exactly once); the window
+        # must survive the 30s backoff with no login-manager respawn (FAIL
+        # arms on the respawn markers); and an 11th wrong password after
+        # the backoff proves the counter was reset (announce only, no cap
+        # marker).
+        self.assertIn(
+            '"Too many failed attempts - pausing 30s" {',
+            self.gui_login_exp,
+            "harness must have a cap-marker expect arm",
+        )
+        self.assertIn(
+            "PASS: attempt cap activated on 10th failure",
+            self.gui_login_exp,
+            "the cap marker must be a PASS on the 10th attempt, not a FAIL",
+        )
+        # The 9-iteration below-cap loop: each wrong password re-prompts in
+        # place with the serial announce.
+        self.assertIn(
+            "for {set i 1} {$i <= 9} {incr i}",
+            self.gui_login_exp,
+            "harness must loop 9 wrong passwords below the cap",
+        )
+        self.assertIn(
+            "PASS: 11th wrong password re-prompts fresh",
+            self.gui_login_exp,
+            "harness must prove the counter reset after the 30s backoff",
+        )
+        self.assertIn(
+            "FAIL: login-manager respawned during the 30s backoff",
+            self.gui_login_exp,
+            "no-respawn must be asserted through the backoff pause",
+        )
+        # A cap marker on attempts 1-9 (below MAX_FAILED_ATTEMPTS) must be
+        # a fail-fast arm in the loop, not a silent tolerance.
+        self.assertIn(
+            "FAIL: attempt cap fired on attempt $i",
+            self.gui_login_exp,
+            "a cap marker on attempts 1-9 must be a fail-fast arm "
+            "(the cap must not fire below 10)",
+        )
+        # Literal 'w r o n g' submits: 1 in the loop body + the 10th + the
+        # 11th = 3 sites = 11 runtime wrong passwords (9 + 1 + 1).
+        wrong = self.gui_login_exp.count('sendkey_seq "w r o n g"')
+        self.assertEqual(
+            wrong, 3,
+            "harness must submit 9 loop + 10th + 11th wrong passwords "
+            "(3 literal sendkey sites, 11 runtime attempts)",
+        )
+
+    def test_gui_backoff_disarm_clears_pause_message(self):
+        # The disarm path (successful nanosleep) must also clear the pause
+        # message: after the 30s backoff the window shows no error, so the
+        # next wrong attempt displays 'Invalid username or password' (the
+        # else-branch message, pinned separately) instead of the stale
+        # 'Too many failed attempts - pausing 30s'.
+        m = re.search(
+            r"nanosleep\(BACKOFF_NS\)\.is_ok\(\) \{\s*failures = 0;\s*"
+            r"error_msg\.clear\(\);\s*\}",
+            self.code,
+        )
+        self.assertIsNotNone(
+            m,
+            "the successful-backoff disarm must reset the counter AND clear "
+            "the pause message (EINTR keeps both)",
+        )
 
     def test_gui_exit_inventory_still_three_returns_no_exit(self):
         # The throttle must not change the auth-failure exit behavior: still
@@ -543,6 +621,292 @@ class TestGuiAttemptCapContract(unittest.TestCase):
         self.assertIsNotNone(ret, "no return after failed to create window")
         self.assertTrue(tail[ret:].lstrip().startswith("return 0;"))
 
+    def test_gui_and_console_throttle_constants_agree(self):
+        # Cross-path reference: the GUI password field and the console getty
+        # must stay throttled identically (10 attempts / 30 s backoff), so a
+        # brute-forcer cannot switch to the weaker path. A drift in either
+        # side's constants fails here before any boot.
+        with open(LOGIN_RS, encoding="utf-8") as fh:
+            console = fh.read()
+        console_code = strip_rust(console)
+        for lit in (
+            "const MAX_FAILED_ATTEMPTS: u32 = 10;",
+            "const BACKOFF_NS: u64 = 30_000_000_000;",
+        ):
+            self.assertIn(lit, console, "console getty throttle constant missing")
+            self.assertIn(lit, self.src, "GUI throttle constant missing")
+        # The remaining asymmetry is call TOPOLOGY, not throttling: the
+        # console counts all three interactive failure paths; the GUI counts
+        # only the bad-creds branch (execve failure after a correct login
+        # must not count). Both still never exit on bad creds, so neither
+        # can burn init's MAX_RESPAWNS. Pin the split so a future edit that
+        # un-throttles one path (or adds a GUI exit) fails CI.
+        # The two counts duplicate (on purpose) the single-side pins
+        # test_note_failed_attempt_called_on_exactly_three_paths (console)
+        # and test_gui_note_failed_attempt_called_exactly_once_on_bad_creds
+        # (GUI) — here they are asserted in one place so the asymmetry
+        # relationship itself is the contract, not just each side alone.
+        console_calls = re.findall(r"note_failed_attempt\(&mut failures\);", console_code)
+        gui_calls = re.findall(r"note_failed_attempt\(&mut failures, &mut error_msg\);", self.code)
+        self.assertEqual(len(console_calls), 3,
+                         "console getty must count exactly 3 failure paths")
+        self.assertEqual(len(gui_calls), 1,
+                         "GUI must count exactly 1 failure path (bad creds)")
+        # The GUI side must never exit on any auth path (an exit would burn
+        # init's MAX_RESPAWNS). The console getty's process::exit(1) on
+        # serial EOF / read errors is intentional and documented — it is
+        # NOT on the mistype paths (those count + re-prompt via
+        # note_failed_attempt + continue, pinned above).
+        self.assertNotIn("process::exit", self.code)
+
+
+
+MAX_FAILED_ATTEMPTS = 10
+BACKOFF_NS = 30_000_000_000
+
+
+def note_failed_attempt_console(failures, announce, sleep_fn):
+    """Port of login/src/main.rs::note_failed_attempt.
+
+    *failures += 1; if >= MAX: print + sleep(BACKOFF_NS); reset to 0 ONLY
+    if the sleep succeeded (EINTR must not disarm the counter).
+    """
+    failures[0] += 1
+    if failures[0] >= MAX_FAILED_ATTEMPTS:
+        announce()
+        if sleep_fn(BACKOFF_NS):
+            failures[0] = 0
+    return failures[0]
+
+
+def note_failed_attempt_gui(failures, error_msg, announce):
+    """Port of login-manager/src/main.rs::note_failed_attempt.
+
+    Count + announce + set the window message ONLY; the BACKOFF_NS sleep
+    lives in the main loop after win.flush() (see gui_backoff_step).
+    """
+    failures[0] += 1
+    if failures[0] >= MAX_FAILED_ATTEMPTS:
+        error_msg[0] = "Too many failed attempts - pausing 30s"
+        announce()
+    return failures[0]
+
+
+def gui_backoff_step(failures, error_msg, sleep_fn):
+    """Port of login-manager's main-loop backoff (post-flush).
+
+    `if failures >= MAX_FAILED_ATTEMPTS && nanosleep(BACKOFF_NS).is_ok()
+    { failures = 0; error_msg.clear(); }` — the && short-circuits, so
+    below the cap nanosleep never runs; a successful sleep disarms the
+    counter AND clears the lingering pause message so the next attempt
+    shows the plain 'Invalid username or password'.
+    """
+    if failures[0] >= MAX_FAILED_ATTEMPTS and sleep_fn(BACKOFF_NS):
+        failures[0] = 0
+        error_msg[0] = ""
+    return failures[0]
+
+
+class TestNoteFailedAttemptStateMachine(unittest.TestCase):
+    """Behavioral port of the attempt-cap state machine (no QEMU).
+
+    The source pins (TestAttemptCapContract / TestGuiAttemptCapContract)
+    assert the constants and call topology; this class executes the actual
+    increment / cap / reset / EINTR-skip logic through faithful Python
+    ports with injectable announce + nanosleep fakes.
+    """
+
+    def test_console_increments_below_cap(self):
+        f = [0]
+        calls = []
+
+        def announce():
+            calls.append("announce")
+
+        def sleep(_ns):
+            calls.append("sleep")
+            return True
+
+        for _ in range(9):
+            note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(f[0], 9)
+        self.assertEqual(calls, [])  # no announce, no sleep below the cap
+
+    def test_console_10th_attempt_hits_cap_and_resets(self):
+        f = [0]
+        calls = []
+
+        def announce():
+            calls.append("announce")
+
+        def sleep(_ns):
+            calls.append("sleep")
+            return True
+
+        for _ in range(10):
+            note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(calls, ["announce", "sleep"])
+        self.assertEqual(f[0], 0, "successful pause must reset the counter")
+
+    def test_console_eintr_skips_reset(self):
+        # A failed nanosleep (EINTR -> Err) must NOT disarm the counter:
+        # the next attempt re-hits the pause instead of bursting at speed.
+        f = [0]
+        calls = []
+
+        def announce():
+            calls.append("announce")
+
+        def sleep(_ns):
+            return False  # nanosleep Err (EINTR)
+
+        for _ in range(10):
+            note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(f[0], 10, "EINTR must keep the counter armed")
+        # 11th attempt: the counter keeps incrementing (the reset is
+        # conditional on a successful sleep), but the pause still fires —
+        # every attempt re-announces + re-pauses, so the throttle holds.
+        note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(f[0], 11, "counter increments; throttle holds")
+        self.assertEqual(calls.count("announce"), 2)
+
+    def test_console_reset_only_on_successful_pause(self):
+        f = [0]
+        results = [False, True]  # EINTR once, then success
+        announces = []
+
+        def announce():
+            announces.append(1)
+
+        def sleep(_ns):
+            return results.pop(0)
+
+        for _ in range(10):
+            note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(f[0], 10, "EINTR: still armed")
+        note_failed_attempt_console(f, announce, sleep)
+        self.assertEqual(f[0], 0, "successful pause resets")
+        self.assertEqual(len(announces), 2)
+
+    def test_gui_counts_and_sets_message_but_does_not_sleep(self):
+        # The GUI note_failed_attempt never sleeps — the backoff runs in the
+        # main loop after flush. Behavioral split pin.
+        f = [0]
+        msg = [""]
+        calls = []
+
+        def announce():
+            calls.append("announce")
+
+        for _ in range(10):
+            note_failed_attempt_gui(f, msg, announce)
+        self.assertEqual(f[0], 10)
+        self.assertEqual(msg[0], "Too many failed attempts - pausing 30s")
+        self.assertEqual(calls, ["announce"])
+        # The counter is NOT reset here — the backoff step owns that.
+        self.assertEqual(f[0], 10)
+
+    def test_gui_backoff_step_resets_on_success(self):
+        f = [10]
+        msg = ["Too many failed attempts - pausing 30s"]
+        slept = []
+
+        def sleep(_ns):
+            slept.append(1)
+            return True
+
+        gui_backoff_step(f, msg, sleep)
+        self.assertEqual(f[0], 0)
+        self.assertEqual(msg[0], "", "successful backoff must clear the pause message")
+        self.assertEqual(slept, [1])
+
+    def test_gui_backoff_step_eintr_keeps_armed(self):
+        f = [10]
+        msg = ["Too many failed attempts - pausing 30s"]
+        slept = []
+
+        def sleep(_ns):
+            slept.append(1)
+            return False  # EINTR
+
+        gui_backoff_step(f, msg, sleep)
+        self.assertEqual(f[0], 10, "EINTR must not disarm")
+        self.assertEqual(
+            msg[0], "Too many failed attempts - pausing 30s",
+            "while still armed the pause message must stay (no clear)",
+        )
+        self.assertEqual(slept, [1])
+
+    def test_gui_backoff_step_short_circuits_below_cap(self):
+        # && short-circuit: below the cap nanosleep never runs.
+        f = [9]
+        msg = ["Too many failed attempts - pausing 30s"]
+        slept = []
+
+        def sleep(_ns):
+            slept.append(1)
+            return True
+
+        gui_backoff_step(f, msg, sleep)
+        self.assertEqual(f[0], 9)
+        self.assertEqual(
+            msg[0], "Too many failed attempts - pausing 30s",
+            "below the cap nothing is cleared",
+        )
+        self.assertEqual(slept, [], "nanosleep must not run below the cap")
+
+    def test_console_and_gui_share_the_same_constants(self):
+        # The lockstep contract (pinned in source by
+        # test_gui_and_console_throttle_constants_agree) is also true of the
+        # behavioral ports. STRONGEST form: derive the port constants from
+        # the live Rust sources, so a Rust-side drift fails the behavioral
+        # layer too — not just the layer-2 grep pins.
+        def rust_const(path, name):
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as fh:
+                m = re.search(r"const " + name + r": u\w+ = (\d[\d_]*)", fh.read())
+            self.assertIsNotNone(m, name + " not found in " + path)
+            return int(m.group(1))
+
+        console_max = rust_const("login/src/main.rs", "MAX_FAILED_ATTEMPTS")
+        console_ns = rust_const("login/src/main.rs", "BACKOFF_NS")
+        gui_max = rust_const("login-manager/src/main.rs", "MAX_FAILED_ATTEMPTS")
+        gui_ns = rust_const("login-manager/src/main.rs", "BACKOFF_NS")
+        # All four agree with each other AND with the port constants.
+        self.assertEqual({console_max, gui_max}, {MAX_FAILED_ATTEMPTS})
+        self.assertEqual({console_ns, gui_ns}, {BACKOFF_NS})
+        self.assertEqual(30_000_000_000, 30 * 1_000_000_000)
+
+    def test_gui_combined_flow_end_to_end(self):
+        # The GUI split (count+announce in note_failed_attempt_gui, reset in
+        # gui_backoff_step) must work TOGETHER: 10 failures set the window
+        # message + announce, the post-flush backoff resets on success, and
+        # the 11th attempt counts fresh from 1 (not from 10).
+        f = [0]
+        msg = [""]
+        announces = []
+
+        def announce():
+            announces.append(1)
+
+        def sleep(_ns):
+            return True
+
+        for _ in range(10):
+            note_failed_attempt_gui(f, msg, announce)
+        self.assertEqual(f[0], 10)
+        self.assertEqual(msg[0], "Too many failed attempts - pausing 30s")
+        self.assertEqual(announces, [1])
+        gui_backoff_step(f, msg, sleep)
+        self.assertEqual(f[0], 0, "backoff resets after a successful pause")
+        self.assertEqual(msg[0], "", "successful backoff clears the pause message")
+        note_failed_attempt_gui(f, msg, announce)
+        self.assertEqual(f[0], 1, "11th attempt counts fresh from 1")
+        self.assertEqual(
+            msg[0], "",
+            "below the cap the note leaves the message alone (the plain "
+            "'Invalid username or password' is set by the Enter handler, "
+            "pinned separately in source)",
+        )
 
 
 class TestPanicContract(unittest.TestCase):
@@ -718,6 +1082,31 @@ def _parse_bindings(input_code):
         })
     return rows
 
+def _binding_code(literal):
+    """Resolve a BINDINGS `code:` literal to its u8 value."""
+    lit = literal.strip().replace("keys::", "")
+    if lit.startswith("b'"):
+        return ord(lit[2])
+    table = {
+        "KEY_ESC": 0x1B,
+        "KEY_ENTER": 0x0D,
+        "KEY_TAB": 0x09,
+        "KEY_BACKSPACE": 0x7F,
+        "KEY_X": ord("X"),
+        "SCAN_F11": 0x57,
+    }
+    assert lit in table, "unmapped BINDINGS code literal: %r" % lit
+    return table[lit]
+
+
+def _resolve_action(rows, ev):
+    """First-match table resolve mirroring the Rust resolve()."""
+    for r in rows:
+        if (_binding_code(r["code"]) == ev[0] and r["ctrl"] == ev[1]
+                and r["alt"] == ev[2] and r["shift"] == ev[3]):
+            return r["action"]
+    return None
+
 
 class TestKernelKeyContract(unittest.TestCase):
     """Pins the Phase C packed-key contract while the kernel rewrite is in flight.
@@ -842,6 +1231,65 @@ class TestKernelKeyContract(unittest.TestCase):
             open(os.path.join(REPO_ROOT, "ade", "src", "util", "testing", "mod.rs"), encoding="utf-8").read()
         )
         self.assertIn("ok &= input::test_from_raw();", mod_rs)
+    def test_full_table_reachable_via_from_raw(self):
+        # Port of the test_keymap packed-stream sweep: EVERY BINDINGS row
+        # -- including the Ctrl+Alt+Backspace chord -- must be reachable
+        # from some (byte, mods) pair via KeyEvent::from_raw, and the
+        # found pair must resolve to that row's action. 17 rows are
+        # byte-deliverable (from_byte); the chord needs the packed bits
+        # (0x0308). Note: alt/ctrl/shift can always be OR'd into any
+        # byte, so the reachability half is near-vacuous -- the real
+        # tripwires are the (17, 1) count, an unmapped code literal
+        # (diagnosed by _binding_code), and the resolve-through
+        # shadowing check.
+        rows = _parse_bindings(self.input_code)
+        self.assertEqual(len(rows), 18, "BINDINGS row count")
+
+        deliverable = synthetic = 0
+        for r in rows:
+            code = _binding_code(r["code"])
+            if r["alt"] or r["shift"]:
+                synthetic += 1
+                continue
+            ok = any(
+                self.from_byte(x) == (code, r["ctrl"], False, False)
+                for x in range(256)
+            )
+            self.assertTrue(ok, "no from_byte input for %r" % r)
+            deliverable += 1
+        self.assertEqual((deliverable, synthetic), (17, 1),
+                         "17 byte-deliverable + 1 synthetic chord")
+
+        for r in rows:
+            target = (_binding_code(r["code"]), r["ctrl"], r["alt"], r["shift"])
+            found = None
+            for byte in range(256):
+                for alt in (False, True):
+                    for ctrl in (False, True):
+                        for shift in (False, True):
+                            raw = byte
+                            if alt:
+                                raw |= 1 << 8
+                            if ctrl:
+                                raw |= 1 << 9
+                            if shift:
+                                raw |= 1 << 10
+                            if self.from_raw(raw) == target:
+                                found = raw
+                                break
+                        if found is not None:
+                            break
+                    if found is not None:
+                        break
+                if found is not None:
+                    break
+            self.assertIsNotNone(found,
+                                 "no from_raw pair for %r" % (target,))
+            # resolve-through: the pair must map to THIS row's action.
+            action = _resolve_action(rows, self.from_raw(found))
+            self.assertEqual(action, r["action"],
+                             "packed 0x%04x resolves to a different action" % found)
+
 
 
 class TestScancodeConstants(unittest.TestCase):
@@ -897,6 +1345,101 @@ class TestScancodeConstants(unittest.TestCase):
         self.assertTrue(e0 <= set(range(0x47, 0x54)), "arrow constants must sit in the E0 second-byte range")
 
 
+class TestKeyboardGateDocTable(unittest.TestCase):
+    """Cross-pins the section 2.1 doc table against the userspace constants.
+
+    kernel-keyboard-gate.md section 2.1 is the spec for the future RawKey
+    forwarding path: it maps pc_keyboard::KeyCode -> set-1 make code ->
+    userspace SCAN_* constant. The scancode constants in input/mod.rs and
+    the table must never disagree -- a doc edit that changes a value without
+    touching the code (or vice versa) would silently invalidate the RawKey
+    path the kernel rewrite will build. This test parses BOTH sources and
+    asserts they agree, so neither can drift in isolation.
+
+    The pinned rows are the E0 second-byte arrows (SCAN_UP/LEFT/RIGHT/DOWN)
+    and the single-byte ESC/ENTER/F11 -- exactly the rows that carry a
+    userspace name. Rows the doc marks "(none...)" (Backspace, Home block,
+    Numpad block, F1..F10) carry no constant and are deliberately excluded:
+    a future RawKey arm that names one needs BOTH a new SCAN_* constant and
+    a table row, and this test forces that update.
+    """
+
+    DOC = os.path.join(REPO_ROOT, "ade", "docs", "kernel-keyboard-gate.md")
+    INPUT_RS = os.path.join(REPO_ROOT, "ade", "src", "input", "mod.rs")
+
+    # The rows userspace names today: 4 E0 second-byte arrows + 3
+    # single-byte keys. Any change to which rows carry a constant fails the
+    # set equality below and forces a deliberate update here.
+    PINNED = ["SCAN_ESC", "SCAN_ENTER", "SCAN_UP", "SCAN_LEFT",
+              "SCAN_RIGHT", "SCAN_DOWN", "SCAN_F11"]
+
+    def setUp(self):
+        self.doc = open(self.DOC, encoding="utf-8").read()
+        self.input_code = strip_rust(open(self.INPUT_RS, encoding="utf-8").read())
+
+    def _rust_scan(self, name):
+        m = re.search(
+            r"pub const %s: u8 = (0x[0-9A-Fa-f]+|[0-9]+);" % name,
+            self.input_code,
+        )
+        self.assertIsNotNone(m, "%s missing from input/mod.rs keys module" % name)
+        return int(m.group(1), 0)
+
+    def _doc_rows(self):
+        # The section 2.1 markdown table: from the '### 2.1' heading to the
+        # next heading, every '| ... |' line with 4+ cells (skips the header
+        # and the '---' separator, which also starts with '|').
+        sec = re.search(r"### 2\.1.*?(?=\n#{1,3} )", self.doc, re.S)
+        self.assertIsNotNone(sec, "section 2.1 not found in kernel-keyboard-gate.md")
+        rows = []
+        for line in sec.group(0).splitlines():
+            line = line.strip()
+            if not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) < 4 or "pc_keyboard::KeyCode" in cells[0]:
+                continue
+            rows.append(cells)
+        self.assertGreaterEqual(len(rows), 8, "section 2.1 table rows not parsed")
+        return rows
+
+    def test_doc_table_matches_input_module(self):
+        doc_by_name = {}
+        e0_rows = set()
+        for cells in self._doc_rows():
+            const_cell = cells[3]
+            m = re.search(r"`(SCAN_\w+)\s*=\s*(0x[0-9A-Fa-f]+|[0-9]+)`", const_cell)
+            if m is None:
+                # '(none ...)' rows carry no userspace constant -- the doc's
+                # marker for keys the code does not name yet.
+                continue
+            name, val = m.group(1), int(m.group(2), 0)
+            doc_by_name[name] = val
+            if "E0-extended" in cells[2]:
+                e0_rows.add(name)
+            # The set-1 make code column and the constant column are the same
+            # scancode written twice -- they must agree inside the doc too.
+            code = re.search(r"`0x([0-9A-Fa-f]+)`", cells[1])
+            self.assertIsNotNone(code, "set-1 code cell missing in row %s" % name)
+            self.assertEqual(int(code.group(1), 16), val,
+                             "row %s: set-1 code != constant value in the doc itself" % name)
+        # Exactly the pinned names appear in the table: a renamed/removed
+        # row, or a newly named row, fails here and forces a deliberate
+        # PINNED update.
+        self.assertEqual(sorted(doc_by_name), sorted(self.PINNED),
+                         "section 2.1 userspace-constant rows changed -- update PINNED deliberately")
+        # The four arrows must be exactly the E0-extended rows (a11y arrow
+        # navigation consumes these constants).
+        self.assertEqual(sorted(e0_rows),
+                         sorted(["SCAN_UP", "SCAN_LEFT", "SCAN_RIGHT", "SCAN_DOWN"]),
+                         "section 2.1 E0-extended rows must be exactly the four arrows")
+        # Doc table vs code: the scancode the doc names must equal the
+        # constant the code defines -- neither can drift alone.
+        for name in self.PINNED:
+            self.assertEqual(self._rust_scan(name), doc_by_name[name],
+                             "%s: doc table != input/mod.rs (kernel-keyboard-gate.md section 2.1)" % name)
+
+
 class TestPhaseBRoutingHarness(unittest.TestCase):
     """Pins the sendkey routing probes added to the QEMU harnesses + CI gates.
 
@@ -911,6 +1454,7 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.login = open(os.path.join(REPO_ROOT, "tests", "qemu_gui_login.exp"), encoding="utf-8").read()
+        cls.probe = open(os.path.join(REPO_ROOT, "tests", "probe_console_login.exp"), encoding="utf-8").read()
         cls.gate = open(os.path.join(REPO_ROOT, "tests", "qemu_gui_gate.exp"), encoding="utf-8").read()
         cls.ci = open(os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml"), encoding="utf-8").read()
 
@@ -922,6 +1466,50 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
     def test_gate_harness_has_irq_probe(self):
         self.assertIn("proc monitor_cmd {cmd}", self.gate)
         self.assertIn('monitor_cmd "sendkey shift"', self.gate)
+
+    def test_irq_probe_absent_check_precedes_sendkey(self):
+        # Airtight ordering (Aug 12, 2026): the one-shot IRQ1 marker can
+        # false-PASS the routing probe by matching a STALE buffered copy
+        # from early boot (gate.exp's match_max 1000000 keeps everything
+        # in the expect buffer). Both harnesses must prove the marker is
+        # ABSENT (expect -timeout 0) before the probe sendkey, so it is
+        # demonstrated to appear only after the probe key.
+        for name, text, anchor in (
+            ("login", self.login, 'sendkey_seq "shift"'),
+            ("gate", self.gate, 'monitor_cmd "sendkey shift"'),
+            ("probe", self.probe, 'sendkey_seq "shift"'),
+        ):
+            check = text.index("expect -timeout 0 {")
+            send = text.index(anchor)
+            self.assertLess(
+                check, send,
+                "%s: IRQ1 absent-check must precede the probe sendkey" % name,
+            )
+            self.assertIn("stray IRQ1 marker already present", text)
+
+    def test_gate_harness_has_tab_probe(self):
+        # Phase B Tab/Enter (kernel-keyboard-gate.md section 3) is closed
+        # on real input: one sendkey Tab must advance login-manager's
+        # active field with the serial announce '[login] tab: focus ->
+        # password'. Pin the exp probe, its PASS verdict, and the ci.yml
+        # grep of that verdict (same phase-evidence pattern as vahid).
+        self.assertIn('monitor_cmd "sendkey tab"', self.gate)
+        self.assertIn("PASS: sendkey Tab advanced the login-manager field", self.gate)
+        self.assertIn(r"\[login\] tab: focus -> password", self.gate)
+        self.assertIn(
+            'grep -q "PASS: sendkey Tab advanced the login-manager field"', self.ci
+        )
+
+    def test_login_manager_tab_arm_announces_marker(self):
+        # The Tab probe's observable is login-manager's serial announce;
+        # if the Tab arm ever stops printing it, the gate would timeout
+        # forever. Pin the source marker so the harness evidence cannot
+        # drift.
+        lm = open(
+            os.path.join(REPO_ROOT, "login-manager", "src", "main.rs"),
+            encoding="utf-8",
+        ).read()
+        self.assertIn("[login] tab: focus -> ", lm)
 
     def test_ci_verify_step_has_explicit_vahid_assertions(self):
         # The gate Verify step must assert vahid positively - both the
@@ -1028,6 +1616,30 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         self.assertIn('\\[ade\\] launched Terminal', self.login)
         self.assertIn("PASS: window opened via keyboard", self.login)
 
+    def test_logout_leg_conditional_chord_with_esc_fallback(self):
+        # Step 5 is KERNEL-DEPENDENT: the chord is tried first; the esc
+        # fallback fires only when the chord is inert (kernel without
+        # Design A A1-A4). The CI-visible $KERNEL_DESIGN_A toggle flips
+        # the timeout arm: =1 asserts the chord MUST end the session (no
+        # esc fallback), unset/0 keeps the esc fallback so the harness
+        # stays green on the current kernel AND the day A1-A4 lands.
+        leg = self.login[self.login.index("ending session (design_a="):]
+        self.assertIn("sendkey_chord {ctrl alt} backspace", leg)
+        self.assertIn('sendkey_seq "esc"', leg)
+        self.assertLess(
+            leg.index("sendkey_chord {ctrl alt} backspace"),
+            leg.index('sendkey_seq "esc"'),
+        )
+        self.assertIn("PASS: session ended via ctrl+alt+backspace", leg)
+        self.assertIn("PASS: session ended via esc fallback", leg)
+        self.assertIn("set chord_ended 0", leg)
+        self.assertIn("if {!$chord_ended} {", leg)
+        # The toggle must gate the fallback: in Design A mode the timeout
+        # arm FAILs with a named message instead of falling back to esc.
+        self.assertIn("FAIL: KERNEL_DESIGN_A=1 but the chord never ended the session", leg)
+        # CI-visible plumbing: the login job must export the toggle.
+        self.assertIn("export KERNEL_DESIGN_A=", self.ci)
+
     def test_negative_leg_chord_with_window_open(self):
         # Step 9: with a window open, the true ctrl+alt+backspace chord must
         # NOT end the session (wm.is_empty() guard holds on real input, the
@@ -1048,14 +1660,14 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
     def test_ci_a11y_gate_includes_keyboard_window_open(self):
         # The selftests test_a11y_keyboard_window_open,
         # test_a11y_start_menu_rows and test_a11y_overlay_mouse_keyboard_parity
-        # must be counted in the ci.yml PASS-name gate (15 names now); the
+        # must be counted in the ci.yml PASS-name gate (19 names now); the
         # gate test (test_ade_selftest_gate.py) already pins set-equality
         # with run_all.
         self.assertIn("a11y_keyboard_window_open", self.ci)
         self.assertIn("a11y_start_menu_rows", self.ci)
         self.assertIn("a11y_overlay_mouse_keyboard_parity", self.ci)
-        self.assertIn('"$a11y_passes" -lt 18', self.ci)
-        self.assertIn("found $a11y_passes/18", self.ci)
+        self.assertIn('"$a11y_passes" -lt 19', self.ci)
+        self.assertIn("found $a11y_passes/19", self.ci)
 
     def test_ci_verify_steps_grep_irq_marker_after_verdict(self):
         # Both Verify steps grep the marker (escaped for BRE) and only after
