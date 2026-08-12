@@ -36,8 +36,9 @@ jobs:
 
       - name: Install nightly
         run: |
-          # Pinned nightly-2026-01-15 (matches local 1.94 dev; newer rustc renames rustc-abi
-          # x86-softfloat -> softfloat and breaks the sarga target spec).
+          # Pinned nightly-2026-01-15 (matches local 1.94 dev; the pinned cargo is the last that
+          # accepts .json target specs without -Zjson-target-spec, and its rustc still has the
+          # x86-softfloat rustc-abi value - both renamed on newer nightlies).
           rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
           rustup default nightly-2026-01-15
 
@@ -46,7 +47,7 @@ jobs:
         run: cargo build --release --target x86_64-unknown-none
 
       - name: Build userspace
-        run: cargo build -Zbuild-std=core,alloc -Zjson-target-spec --target x86_64-sarga.json --release
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
 
       - name: Build initrd
         run: python3 build_initrd.py
