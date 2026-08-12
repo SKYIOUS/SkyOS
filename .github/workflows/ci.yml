@@ -23,8 +23,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rustfmt --allow-downgrade
-          rustup default nightly
+          # Pinned: unpinned nightly drifts (rustc-abi rename breaks x86_64-sarga.json).
+          rustup toolchain install nightly-2026-05-28 --component rustfmt --allow-downgrade
+          rustup default nightly-2026-05-28
       - run: cargo fmt --check
 
   clippy:
@@ -34,8 +35,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component clippy --component rust-src --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component clippy --component rust-src --allow-downgrade
+          rustup default nightly-2026-05-28
       - name: Restore cargo cache
         uses: actions/cache@v4
         with:
@@ -133,8 +134,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component rust-src --allow-downgrade
+          rustup default nightly-2026-05-28
       - name: Restore cargo cache
         uses: actions/cache@v4
         with:
@@ -176,8 +177,8 @@ jobs:
 
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-05-28
 
       - name: Build kernel (self_test)
         working-directory: SKYIOUS-KERNEL/kernel
@@ -282,8 +283,8 @@ jobs:
 
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-05-28
 
       - name: Build kernel
         working-directory: SKYIOUS-KERNEL/kernel
@@ -391,8 +392,8 @@ jobs:
 
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-05-28
 
       - name: Build kernel
         working-directory: SKYIOUS-KERNEL/kernel
@@ -542,8 +543,8 @@ jobs:
 
       - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-28 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-05-28
 
       - name: Build kernel
         working-directory: SKYIOUS-KERNEL/kernel
