@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-runnable regression test for the pycdlib ISO builder (no QEMU).
+"""Host-runnable regression test for the ISO builders (no QEMU).
 
 Pins the two pycdlib fixes in scripts/make_iso.py that made the fallback
 ISO path actually produce a UEFI-bootable ISOHybrid:
@@ -22,6 +22,17 @@ entry). A minimal 4-sector ESP is used so the image is tiny — this pins
 the `_patch_hybrid` 1 MiB floor that prevents the backup GPT from
 overwriting the low-LBA boot catalog (a real bug on small images).
 
+BOTH builders share one gate: the same contract mixin (`IsoContractMixin`)
+runs against the pycdlib-produced ISO and — when xorriso is available —
+the xorriso-produced ISO, so a fix to one builder's output cannot silently
+diverge from the other's. The cross-builder invariant is that the GPT ESP
+partition start (512-byte LBA) equals the El Torito initial entry's ESP
+extent (2048-byte LBA) x 4: the catalog and the partition table must point
+at the SAME bytes for both builders (for the pycdlib builder with the
+4-sector fake ESP that resolves to 104). The xorriso leg skips cleanly
+when xorriso is absent (locally or in CI); it goes live the moment it
+exists.
+
 Run:  python3 tests/test_make_iso_pycdlib.py
 """
 
@@ -41,18 +52,22 @@ EFI_ESP_GUID = bytes.fromhex("28732AC11FF8D211BA4B00A0C93EC93B")
 BOOT_SIG = bytes([0xEB, 0x3C])  # first two bytes of the fake ESP BPB
 
 
-def build_iso(esp_size):
+def _write_fake_esp(esp_path, esp_size):
+    """Minimal FAT-ish blob with a boot signature (BPB + 55 AA)."""
+    with open(esp_path, "wb") as f:
+        f.write(bytes([0xEB, 0x3C, 0x90]))
+        f.write(bytes([0x00]) * 509)
+        f.write(bytes([0x55, 0xAA]))
+        f.write(bytes([0x00]) * (esp_size - 512))
+
+
+def build_iso_pycdlib(esp_size):
     """Run the real pycdlib pipeline with a fake ESP; return iso bytes."""
     tmp = tempfile.mkdtemp(prefix="iso_test_")
     try:
         esp_path = os.path.join(tmp, "esp.img")
         iso_path = os.path.join(tmp, "out.iso")
-        with open(esp_path, "wb") as f:
-            # Fake ESP: minimal FAT-ish blob with a boot signature.
-            f.write(bytes([0xEB, 0x3C, 0x90]))
-            f.write(bytes([0x00]) * 509)
-            f.write(bytes([0x55, 0xAA]))
-            f.write(bytes([0x00]) * (esp_size - 512))
+        _write_fake_esp(esp_path, esp_size)
         ok = make_iso.create_iso_pycdlib(esp_path, iso_path, "0.0.0")
         if not ok:
             raise AssertionError("create_iso_pycdlib returned False")
@@ -62,28 +77,60 @@ def build_iso(esp_size):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-class TestPycdlibIso(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        try:
-            import pycdlib  # noqa: F401
-        except ImportError:
-            raise unittest.SkipTest("pycdlib not installed")
-        cls.iso = build_iso(4 * 512)  # minimal ESP exercises the 1 MiB floor
+def build_iso_xorriso(esp_size):
+    """Run the real xorriso pipeline with a fake ESP; return iso bytes.
+
+    The caller must skip first when `make_iso.find_xorriso()` is None —
+    a build failure here is a real failure, not a skip.
+    """
+    tmp = tempfile.mkdtemp(prefix="iso_xor_")
+    try:
+        esp_path = os.path.join(tmp, "esp.img")
+        iso_path = os.path.join(tmp, "out.iso")
+        _write_fake_esp(esp_path, esp_size)
+        ok = make_iso.create_iso_xorriso(esp_path, iso_path, "0.0.0")
+        if not ok:
+            raise AssertionError("create_iso_xorriso returned False")
+        with open(iso_path, "rb") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class IsoContractMixin:
+    """The boot-catalog + hybrid contract shared by BOTH ISO builders.
+
+    Subclasses set `self.iso` in setUpClass (a pycdlib or xorriso product);
+    every assertion here must hold for both builders, so a fix to one
+    builder's output cannot silently diverge from the other's. Both go
+    through the same `_patch_hybrid`, so the MBR/GPT structure is shared;
+    the El Torito catalog is written by each builder (pycdlib's
+    `add_eltorito(bootcatfile=...)` vs xorriso's `-eltorito-alt-boot`),
+    and `_patch_hybrid` rewrites the BRVD catalog pointer from the ISO
+    root-directory record in both cases.
+    """
+
+    iso = None  # set by the concrete class's setUpClass
+
+    def _catalog(self):
+        cat_lba = struct.unpack_from("<I", self.iso, 17 * 2048 + 71)[0]
+        return cat_lba, self.iso[cat_lba * 2048 : cat_lba * 2048 + 64]
 
     def test_iso_has_eltorito_boot_catalog(self):
         # Boot Record Volume Descriptor lives at sector 17 (2048-byte units).
         brvd = self.iso[17 * 2048 : 17 * 2048 + 7]
         self.assertEqual(brvd, bytes([0x00]) + b"CD001" + bytes([0x01]),
                          "BRVD magic/type missing")
-        cat_lba = struct.unpack_from("<I", self.iso, 17 * 2048 + 71)[0]
+        cat_lba, cat = self._catalog()
         self.assertGreater(cat_lba, 0, "boot catalog LBA not recorded")
 
-        # Validation entry: header ID 1, platform 0 (x86), key bytes 55 AA
-        # at offsets 30-31 (byte 28-29 hold the checksum-complement).
-        cat = self.iso[cat_lba * 2048 : cat_lba * 2048 + 64]
+        # Validation entry: header ID 1, platform x86 (0x00, pycdlib) or
+        # EFI (0xEF, xorriso for `-e` boot images -- both valid for OVMF),
+        # key bytes 55 AA at offsets 30-31 (byte 28-29 hold the
+        # checksum-complement).
         self.assertEqual(cat[0], 0x01, "validation entry header ID != 1")
-        self.assertEqual(cat[1], 0x00, "validation platform != x86")
+        self.assertIn(cat[1], (0x00, 0xEF),
+                      "validation platform neither x86 (0x00) nor EFI (0xEF)")
         self.assertEqual(cat[30:32], bytes([0x55, 0xAA]),
                          "validation key bytes missing")
 
@@ -121,7 +168,13 @@ class TestPycdlibIso(unittest.TestCase):
     def test_read_gpt_parts_resolves_esp(self):
         # The hybrid's purpose: the tool's own extraction path must locate
         # the ESP partition in the patched ISO (dd/USB and extract_esp
-        # depend on it). Round-trip through make_iso.read_gpt_parts.
+        # depend on it). Cross-builder invariant: the GPT ESP start LBA
+        # (512-byte units) must equal the El Torito initial entry's ESP
+        # extent (2048-byte units) x4 — the catalog and the partition
+        # table must point at the SAME bytes, for BOTH builders. (For the
+        # pycdlib builder with the 4-sector fake ESP that resolves to 104.)
+        _, cat = self._catalog()
+        init_esp_lba = struct.unpack_from("<I", cat, 32 + 8)[0]
         tmp = tempfile.mkdtemp(prefix="iso_gpt_")
         try:
             p = os.path.join(tmp, "roundtrip.iso")
@@ -132,20 +185,30 @@ class TestPycdlibIso(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
         esp = [pt for pt in parts if pt.get("is_esp")]
         self.assertEqual(len(esp), 1, "read_gpt_parts found no ESP partition")
-        # The ESP must start at the catalog-referenced extent (LBA 104 for
-        # the 4-sector fake ESP = RBA 26 in 2048-byte units, x4).
-        self.assertEqual(esp[0]["start"], 104, "ESP partition start LBA wrong")
+        self.assertEqual(esp[0]["start"], init_esp_lba * 4,
+                         "GPT ESP start != El Torito initial-entry LBA x4")
 
     def test_catalog_survives_backup_gpt(self):
         # The 1 MiB floor regression pin: with a tiny ESP the backup GPT
         # (written across the final 33 sectors) must NOT overwrite the
         # low-LBA boot catalog. Without the floor this reads zeros and the
         # validation entry assertion fails.
-        cat_lba = struct.unpack_from("<I", self.iso, 17 * 2048 + 71)[0]
-        self.assertEqual(self.iso[cat_lba * 2048], 0x01,
+        cat_lba, cat = self._catalog()
+        self.assertEqual(cat[0], 0x01,
                          "catalog clobbered by backup GPT")
-        self.assertEqual(self.iso[cat_lba * 2048 + 30 : cat_lba * 2048 + 32],
-                         bytes([0x55, 0xAA]), "catalog key clobbered by backup GPT")
+        self.assertEqual(cat[30:32], bytes([0x55, 0xAA]),
+                         "catalog key clobbered by backup GPT")
+        self.assertGreater(cat_lba, 0, "boot catalog LBA not recorded")
+
+
+class TestPycdlibIso(IsoContractMixin, unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import pycdlib  # noqa: F401
+        except ImportError:
+            raise unittest.SkipTest("pycdlib not installed")
+        cls.iso = build_iso_pycdlib(4 * 512)  # minimal ESP exercises the floor
 
     def test_pycdlib_can_reopen(self):
         # The strongest validity check: pycdlib's own parser must be able to
@@ -162,6 +225,17 @@ class TestPycdlibIso(unittest.TestCase):
             iso.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestXorrisoIso(IsoContractMixin, unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Same fake ESP, same contract — built by the xorriso pipeline.
+        # Skips cleanly when xorriso is absent (local Windows box, CI
+        # without it); a build failure with xorriso present is a FAIL.
+        if make_iso.find_xorriso() is None:
+            raise unittest.SkipTest("xorriso not available")
+        cls.iso = build_iso_xorriso(4 * 512)
 
 
 if __name__ == "__main__":

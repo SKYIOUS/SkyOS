@@ -112,7 +112,9 @@ def create_iso_xorriso(esp_path, output_path, version):
         str(content),
     ]
     if xor == "wsl":
-        cmd = [cmd[0]] + [_iso_paths(c) for c in cmd[1:]]
+        # wsl needs the command as its first non-option arg, else
+        # wsl.exe swallows `-as` as a wsl option (invalid arg).
+        cmd = [cmd[0], "xorriso"] + [_iso_paths(c) for c in cmd[1:]]
 
     log(f"Running: {' '.join(cmd)}")
     if subprocess.run(cmd).returncode != 0:

@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 
-from expect_consume import ConsumeMatcher
+from expect_consume import ConsumeMatcher, EXITED, TIMEOUT
 
 ISO = sys.argv[1]
 OVMF = sys.argv[2] if len(sys.argv) > 2 else os.path.abspath("kernel/OVMF.fd")
@@ -69,16 +69,22 @@ def wait_for(pattern: str, timeout: float, what: str) -> bool:
     through the end of a match, so each call waits for a FRESH occurrence.
     This is the behavior the old whole-buffer scan broke: a marker
     that appeared once kept satisfying every later wait.
+
+    The deadline/exit/sleep loop is the shared serial driver
+    (ConsumeMatcher.poll_with_timeout), not a local copy.
     """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if MATCHER.search(read_log(), pattern):
-            print(f"PASS: {what}")
-            return True
-        if qemu.poll() is not None:
-            print(f"FAIL: QEMU exited while waiting for {what}")
-            return False
-        time.sleep(0.5)
+    result = MATCHER.poll_with_timeout(
+        lambda text: MATCHER.search(text, pattern),
+        timeout=timeout,
+        read=read_log,
+        poll=lambda: qemu.poll() is not None,
+    )
+    if result is True:
+        print(f"PASS: {what}")
+        return True
+    if result == EXITED:
+        print(f"FAIL: QEMU exited while waiting for {what}")
+        return False
     print(f"FAIL: timeout waiting for {what} (pattern {pattern!r})")
     return False
 

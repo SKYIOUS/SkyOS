@@ -24,13 +24,20 @@ What the real trace proves (and what it cannot):
     — on this ISO the kernel's waitpid does not deliver child exits back
     to init (a kernel-side gap; the kernel is mid-major-change). So the
     real capture only exercises the SPAWN side of the accounting; the exit
-    side is covered by the second trace below, which uses init's exact
-    serial markers (`[init] service X exited`, `[init] giving up on X`).
+    side is covered by SVC_EXIT_BOOT below, a source-faithful trace built
+    from init's exact marker bytes (`[init] service X exited`, `[init]
+    giving up on X`) plus svc's Usage->return-1 path. When the kernel
+    lands a working waitpid and a real boot log is captured, swap the
+    verbatim slice in for SVC_EXIT_BOOT: parser and tests are identical
+    either way.
 
 The parser here reconstructs init's event stream from the interleaved raw
-text — the same reconstruction the expect harnesses' patterns rely on —
-so a future kernel fix that makes init's respawn markers observable can be
-replayed through the SAME machinery.
+text — the same reconstruction the expect harnesses' patterns rely on.
+Every marker kind tolerates the `[TTY0W]`-interleaved newline (the exit
+and give-up regexes need it just as much as the spawn regex), and a
+single-pass alternation preserves the ORIGINAL wire order for mixed
+spawn/exit/give-up traces — so a future kernel fix that makes init's
+respawn markers observable can be replayed through the SAME machinery.
 """
 import os
 import sys
@@ -93,6 +100,114 @@ login: [SIGSEGV] pid=106 addr=0x7ffff0fe6498 (killing process)
 """
 
 # ---------------------------------------------------------------------------
+# The exit side: "[init] service svc exited" + "giving up on svc".
+#
+# SYNTHESIZED, not captured: on this machine the kernel cannot boot to
+# userspace (local TCG stalls at [APIC] init_timer -- the documented
+# kernel-apic-boot-hang environment limitation), and init's waitpid reap
+# (kernel sys_wait4 + the "[init] service X exited" marker) is still
+# uncommitted working-tree kernel code. This fixture is therefore built
+# from init's EXACT marker bytes and their fragment lengths:
+#
+#   [init] service  (15 bytes)  |  svc  (3)  |  " exited\n"  (8)
+#   [init] giving up on (20)    |  svc  (3)  |  " after too many crashes\n" (24)
+#
+# interleaved with the kernel's [TTY0W] len=N diag exactly as REAL_BOOT's
+# spawn region is -- i.e. byte-for-byte the wire format a future real
+# capture MUST have. When the kernel lands a working waitpid and a real
+# boot log is captured (e.g. tests/qemu_giveup_boot.exp's serial log),
+# replace this constant with the verbatim slice: the parser and the tests
+# below are format-identical either way, so the swap is mechanical.
+#
+# TODO(kernel-waitpid): the canonical capture source is the CI give-up
+# job's qemu_giveup_log.txt (expect tests/qemu_giveup_boot.exp on the
+# Ubuntu QEMU runner, which boots where local TCG cannot). When the kernel
+# lands a working waitpid, take the '[init] service svc exited' region
+# from that log and paste it in for this constant.
+#
+# The story: the four services spawn; svc (no argv) prints its Usage and
+# returns 1 (svc/src/main.rs), so init's waitpid reaps it and respawns it
+# five times (crashes 1..5 <= MAX_RESPAWNS), then the sixth exit trips
+# "giving up on svc after too many crashes". Exactly the boundedness claim.
+SVC_EXIT_BOOT = """[TTY0W] len=25
+[init] starting service: [TTY0W] len=5
+vahid[TTY0W] len=1
+
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=13
+login-manager[TTY0W] len=1
+
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=5
+getty[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=25
+[init] starting service: [TTY0W] len=3
+svc[TTY0W] len=1
+
+[TTY0W] len=46
+Usage: svc <status|start|stop|restart> [path]
+[TTY0W] len=15
+[init] service [TTY0W] len=3
+svc[TTY0W] len=8
+ exited
+[TTY0W] len=20
+[init] giving up on [TTY0W] len=3
+svc[TTY0W] len=24
+ after too many crashes
+"""
+
+# ---------------------------------------------------------------------------
 # Event-stream parser: raw serial text -> [(kind, service)].
 # ---------------------------------------------------------------------------
 # init prints each message in three write_all fragments with the kernel's
@@ -126,16 +241,27 @@ def extract_event_stream(raw):
     """
     # 1. Remove the kernel TTY0W diagnostics wherever they appear.
     text = TTY0W_RE.sub("", raw)
+    # 2. Single-pass alternation so the events come back in ORIGINAL wire
+    #    order (three sequential finditer loops would group all spawns
+    #    before all exits, wrong for a mixed trace). Every marker kind
+    #    tolerates the interleaved newline (`\n?`): the kernel's [TTY0W]
+    #    diag sits between init's write_all fragments, so after stripping
+    #    the diag a "service svc exited" marker reads as
+    #    "[init] service \nsvc\n exited\n" on the cleaned text.
     events = []
-    for m in re.finditer(r"\[init\] starting service: \n?([^\n]+)\n", text):
-        events.append(("spawn", m.group(1).strip()))
-    for m in re.finditer(r"\[init\] service ([^\n]+) exited\n", text):
-        events.append(("exit", m.group(1)))
-    for m in re.finditer(r"\[init\] giving up on ([^\n]+) after too many crashes\n", text):
-        events.append(("give_up", m.group(1)))
-    # Rebuild in the ORIGINAL wire order of the matching markers.
-    n_markers = len(re.findall(r"\[init\] (?:starting service: |service |giving up on )", text))
-    return events[:n_markers] if len(events) == n_markers else events
+    for m in re.finditer(
+        r"\[init\] starting service: \n?([^\n]+)\n"
+        r"|\[init\] service \n?([^\n]+)\n? exited\n"
+        r"|\[init\] giving up on \n?([^\n]+)\n? after too many crashes\n",
+        text,
+    ):
+        if m.group(1) is not None:
+            events.append(("spawn", m.group(1).strip()))
+        elif m.group(2) is not None:
+            events.append(("exit", m.group(2)))
+        else:
+            events.append(("give_up", m.group(3)))
+    return events
 
 
 class InitGoldenTraceTest(unittest.TestCase):
@@ -155,6 +281,58 @@ class InitGoldenTraceTest(unittest.TestCase):
                 ("spawn", "getty"),
             ],
         )
+
+    def test_exit_side_parses_interleaved_service_exited_marker(self):
+        # The exit marker MUST survive the TTY0W interleave: init writes
+        # "[init] service " / "svc" / " exited\n" as three fragments, so a
+        # real capture reads "[init] service \nsvc\n exited\n" after the
+        # diag is stripped. The spawn regex always had the \n? tolerance;
+        # the exit/give-up regexes lacked it -- this is the regression pin.
+        events = extract_event_stream(SVC_EXIT_BOOT)
+        self.assertIn(("exit", "svc"), events)
+        self.assertEqual(events[-1], ("give_up", "svc"))
+        self.assertEqual(
+            [k for k, _ in events].count("exit"), 6,
+            "six svc exits (crash 1..6, give-up on the sixth)",
+        )
+
+    def test_exit_side_preserves_wire_order(self):
+        # Mixed spawn/exit/give_up traces must come back in ORIGINAL wire
+        # order: 4 initial spawns, then per respawn cycle [exit svc, spawn
+        # svc] x5, then the sixth exit, then the give-up. (The old three-
+        # loop implementation grouped all spawns first -- wrong order.)
+        events = extract_event_stream(SVC_EXIT_BOOT)
+        kinds = [k for k, _ in events]
+        self.assertEqual(
+            kinds[:4], ["spawn", "spawn", "spawn", "spawn"],
+            "four initial spawns first, in services-table order",
+        )
+        self.assertEqual(
+            kinds[4:], ["exit", "spawn"] * 5 + ["exit", "give_up"],
+            "respawn cycles interleave exit+spawn; give-up lands last",
+        )
+        self.assertEqual([s for _, s in events], ["vahid", "login-manager", "svc", "getty"]
+                         + ["svc", "svc"] * 5 + ["svc", "svc"])
+
+    def test_svc_exit_stream_replays_to_give_up(self):
+        # Replay the exit-side trace through the port: six non-zero svc
+        # exits (Usage path, status 1 per svc/src/main.rs) must respawn on
+        # the first five and give up on the sixth -- the boundedness claim
+        # the give-up harness asserts on real init, pinned here by the
+        # wire-faithful trace.
+        acct = RespawnAccounting()
+        outcomes = []
+        for kind, name in extract_event_stream(SVC_EXIT_BOOT):
+            if kind == "exit":
+                outcomes.append(acct.on_exit(1))
+        self.assertEqual(
+            outcomes,
+            ["respawn"] * MAX_RESPAWNS + ["gave_up"],
+            "five respawns then give-up on the sixth exit",
+        )
+        self.assertEqual(acct.respawns, MAX_RESPAWNS)
+        self.assertEqual(acct.crashes, MAX_RESPAWNS + 1)
+        self.assertTrue(acct.gave_up)
 
     def test_real_boot_replays_through_accounting_without_give_up(self):
         # Replay the real capture through the port. The trace is spawn-only
@@ -216,6 +394,25 @@ class InitGoldenTraceTest(unittest.TestCase):
         self.assertEqual(acct.on_exit(1), "respawn")  # crashes 2 again
         self.assertEqual(acct.respawns, 4)
         self.assertFalse(acct.gave_up)
+
+    def test_svc_usage_path_returns_one(self):
+        # The replay test feeds on_exit(1) for every svc exit. That status
+        # is not on the wire (init prints the marker, not the code), so pin
+        # it to source: svc's no-argv Usage path must return 1
+        # (svc/src/main.rs) -- a future edit that changes the exit code
+        # fails here before the golden trace silently drifts.
+        svc_rs = _read(os.path.join(REPO_ROOT, "svc", "src", "main.rs"))
+        idx = svc_rs.index("Usage: svc")
+        # Proximity, not mere presence: the Usage path is the argc < 2
+        # block whose return 1; is the FIRST one after the eprint (svc has
+        # four more return 1; calls in later error arms). A count-only pin
+        # would pass even if the Usage path returned 0.
+        ret = svc_rs.index("return 1;", idx)
+        self.assertLess(
+            ret - idx, 80,
+            "the Usage path's return 1; must be the block immediately after "
+            "the eprint (currently %d chars away)" % (ret - idx),
+        )
 
     def test_serial_markers_match_init_source(self):
         # The markers the parser keys on must match init/src/main.rs's

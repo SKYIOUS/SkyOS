@@ -127,6 +127,8 @@ fn user_main() -> i32 {
         }
     };
 
+    io::print_str("[settings] ready\n");
+
     let mut prev_pressed = false;
 
     loop {
@@ -556,6 +558,22 @@ fn user_main() -> i32 {
                 b'2' => settings.active_tab = 1,
                 b'3' => settings.active_tab = 2,
                 b'4' => settings.active_tab = 3,
+                // Keyboard resolution cycle (probe + a11y affordance):
+                // mirrors the mouse-click body exactly - same set_mode
+                // call, same save + notify. The serial print gives the
+                // DRM probe a routing tripmine: seeing it but no
+                // 'DRM: set_mode' means K5 isn't landed, while missing it
+                // after a sendkey 'r' means the key never reached this
+                // window (focus/routing defect).
+                b'r' => {
+                    let n = RESOLUTIONS.len();
+                    settings.resolution_idx = (settings.resolution_idx + 1) % n;
+                    let (_, w, h) = RESOLUTIONS[settings.resolution_idx];
+                    io::print_str(&alloc::format!("[settings] applying {}x{}\n", w, h));
+                    let _ = libsarga::gpu::set_mode(w, h, 32);
+                    settings.save();
+                    notify(&alloc::format!("Resolution: {}x{}", w, h), 2000);
+                }
                 _ => {}
             }
         }

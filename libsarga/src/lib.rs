@@ -31,9 +31,6 @@ pub mod toml;
 pub mod vahiai;
 pub mod version;
 
-// Vahi-Glass hardware compositor API
-pub mod glass;
-
 // Widget toolkit
 pub mod button;
 pub mod checkbox;

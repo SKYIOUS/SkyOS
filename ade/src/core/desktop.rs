@@ -144,6 +144,22 @@ pub struct Desktop {
     pub(crate) focus: crate::sec::a11y::FocusManager,
     pub(crate) tooltips: crate::apps::tooltip::TooltipManager,
     pub(crate) focus_visible: bool,
+    // The start-menu app row the a11y ring intends to be on — durable app-id
+    // identity, not a positional node id. The tree models only the VISIBLE
+    // row window, so scroll and typed-search changes can push the focused
+    // row's node off-window (or renumber it); `build_tree` clamps the scroll
+    // and re-lands the ring on this row every frame, letting arrows reach
+    // rows beyond the visible window and keeping the focused row visible.
+    pub(crate) menu_focus_app: Option<AppId>,
+    // Window-activation intent from the a11y path. `activate_a11y_node`
+    // brings the activated window to front, which REORDERS `wm`; node ids
+    // are positional, so the next rebuild renumbers every window surface
+    // and `validate`'s fingerprint check sees the old id name a different
+    // node — it would re-sync the ring to a sibling taskbar button instead
+    // of the window the user just activated. `build_tree` consumes this
+    // field to re-land the ring on the activated window's OWN node in the
+    // fresh tree (the durable-identity twin of `menu_focus_app`).
+    pub(crate) pending_window_focus: Option<WindowId>,
     tooltip_hover_ticks: u32,
     tooltip_last_hover: Option<u32>,
     system_menu_for: Option<WindowId>,
@@ -202,6 +218,8 @@ impl Desktop {
             focus: crate::sec::a11y::FocusManager::new(),
             tooltips: crate::apps::tooltip::TooltipManager::new(),
             focus_visible: false,
+            menu_focus_app: None,
+            pending_window_focus: None,
             tooltip_hover_ticks: 0,
             tooltip_last_hover: None,
             system_menu_for: None,
@@ -589,6 +607,7 @@ impl Desktop {
                     crate::sec::a11y::FocusDirection::Down
                 };
                 self.focus.move_focus(dir, &self.a11y_tree);
+                self.sync_menu_focus_intent();
                 self.damage.mark_full();
                 true
             }
@@ -601,6 +620,7 @@ impl Desktop {
                     crate::sec::a11y::FocusDirection::Right
                 };
                 self.focus.move_focus(dir, &self.a11y_tree);
+                self.sync_menu_focus_intent();
                 self.damage.mark_full();
                 true
             }
@@ -661,7 +681,7 @@ impl Desktop {
                 // Enter (start menu, context menu, settings, settings app,
                 // task manager, about). With the ring and overlays clear, a
                 // fullscreen window exits fullscreen — the behavior the
-                // keymap `KeyAction::Escape` grab used to carry, now here
+                // keymap Escape grab used to carry, now here
                 // because that grab was unreachable from the real event path
                 // (this arm consumes Esc before `handle_key` ever runs).
                 // When NOTHING is open — no ring, no fullscreen, no windows,
@@ -673,14 +693,29 @@ impl Desktop {
                 // kernel-gated on Alt delivery — docs/session-lifecycle.md,
                 // Phase C). This arm is the single home of Escape: a keymap
                 // grab would be dead code.
+                //
+                // Terminal guard: with NO overlay, NO fullscreen, and the a11y
+                // ring NOT active, a focused terminal window forwards 0x1B to
+                // the shell instead of being swallowed here. This closes the
+                // Phase C gap the keymap router's terminal block documents
+                // (`handle_a11y_key` consumed Esc before `handle_key` could
+                // reach its pty write), so hardware Esc reaches sash (vi,
+                // readline, menus) on the real byte path. The ring-active
+                // check is the modality guard: Esc with the ring up dismisses
+                // the ring — it must NOT leak 0x1B into the shell.
+                let ring_was_active = self.focus_visible;
                 self.focus_visible = false;
                 self.focus.blur();
                 if !self.dismiss_overlays() {
                     // No overlay was dismissed. A fullscreen window exits
                     // fullscreen (the session-end check requires an empty
-                    // window list, so the two never conflict); otherwise a
-                    // truly empty desktop — no windows, no switcher, no drag
-                    // in progress — ends the session.
+                    // window list, so the two never conflict). Otherwise,
+                    // with the ring NOT up (a ring-up press already did its
+                    // dismiss above — the first Esc with the ring active
+                    // must not leak 0x1B into a shell nor end the session):
+                    // a focused terminal forwards Esc to its shell; a truly
+                    // empty desktop — no windows, no switcher, no drag in
+                    // progress — ends the session.
                     let fullscreen_id = self.wm.active().filter(|&id| {
                         self.wm
                             .lookup(id)
@@ -691,12 +726,19 @@ impl Desktop {
                             self.wm.toggle_fullscreen(id, self.screen_w, self.screen_h);
                         }
                         None => {
-                            if self.wm.is_empty()
-                                && !self.switcher_active
-                                && !self.drag_active
-                                && self.resize_win.is_none()
-                            {
-                                self.session.request_end();
+                            if !ring_was_active {
+                                if self.focused_has_pty() {
+                                    if let Some(fd) = self.wm.focused_mut().and_then(|w| w.pty_fd())
+                                    {
+                                        let _ = libsarga::io::write(fd, &[keys::KEY_ESC]);
+                                    }
+                                } else if self.wm.is_empty()
+                                    && !self.switcher_active
+                                    && !self.drag_active
+                                    && self.resize_win.is_none()
+                                {
+                                    self.session.request_end();
+                                }
                             }
                         }
                     }
@@ -753,9 +795,15 @@ impl Desktop {
         match node.role {
             crate::sec::a11y::A11yRole::Window => {
                 // bring window to front (the owner stamp replaces the old
-                // title-as-index parse, which always no-oped on real titles)
+                // title-as-index parse, which always no-oped on real titles).
+                // Record the activation intent: the bring-to-front reorders
+                // `wm`, and on the next rebuild every window-surface node id
+                // shifts (ids are positional) — `build_tree` consumes this
+                // to keep the ring on THIS window instead of letting
+                // `validate` re-sync it to a sibling taskbar button.
                 if let Some(wid) = node.owner {
                     self.wm.bring_to_front(wid);
+                    self.pending_window_focus = Some(wid);
                 }
             }
             crate::sec::a11y::A11yRole::Button => {
@@ -849,6 +897,11 @@ impl Desktop {
                         self.wm.restore(wid);
                     }
                     self.wm.bring_to_front(wid);
+                    // Same activation intent as the Window-node arm: the
+                    // ring follows the window the user just raised, not a
+                    // taskbar sibling the reorder makes `validate` fall
+                    // back to.
+                    self.pending_window_focus = Some(wid);
                 }
             }
             crate::sec::a11y::A11yRole::Icon => {
@@ -889,40 +942,79 @@ impl Desktop {
     /// Taskbar child to the Start button (sentinel owner) or a taskbar
     /// window button (owner); a StartMenu child to its app row (the same
     /// bounds equality `menu_row_app` uses); a Window child to its
-    /// Close/Minimize control (chrome label). Anything else — Window nodes,
-    /// the StartMenu container, icons, the tray — resolves to None: focus
-    /// may rest there (the ring still draws) but no surface light applies.
+    /// Close/Minimize control (chrome label); a TrayPanel child to its
+    /// tray entry; a Desktop child to its notification row. Anything else
+    /// — Window nodes, the StartMenu container, icons, the tray panel —
+    /// resolves to None: focus may rest there (the ring still draws) but
+    /// no surface light applies.
     pub(crate) fn focused_target(&self, fid: u32) -> Option<crate::core::window::HoverTarget> {
-        let node = self.a11y_tree.nodes.iter().find(|n| n.id == fid)?;
-        if node.role != crate::sec::a11y::A11yRole::Button {
-            return None;
-        }
-        match node.parent.and_then(|pid| {
-            self.a11y_tree
-                .nodes
-                .iter()
-                .find(|p| p.id == pid)
-                .map(|p| p.role)
-        }) {
-            Some(crate::sec::a11y::A11yRole::Taskbar) => match node.owner {
+        use crate::sec::a11y::{focused_button_under_role, A11yRole};
+        // The three surface families share one parent-role + focus-id lookup
+        // (`focused_button_under_role`) and differ only in how they resolve
+        // the node: taskbar buttons by owner, start-menu rows by bounds,
+        // window chrome by label. A node has exactly one parent, so at most
+        // one family matches.
+        if let Some(node) = focused_button_under_role(&self.a11y_tree, fid, A11yRole::Taskbar) {
+            return match node.owner {
                 Some(crate::core::window::START_BUTTON_OWNER) => {
                     Some(crate::core::window::HoverTarget::StartButton)
                 }
                 Some(wid) => Some(crate::core::window::HoverTarget::TaskbarButton(wid)),
                 None => None,
-            },
-            Some(crate::sec::a11y::A11yRole::StartMenu) => self
-                .menu_row_index(fid)
-                .map(crate::core::window::HoverTarget::StartApp),
-            Some(crate::sec::a11y::A11yRole::Window) => {
-                let btn = crate::core::window::window_button_from_label(node.label.as_str())?;
-                Some(crate::core::window::HoverTarget::Window {
-                    win: node.owner?,
-                    btn,
-                })
-            }
-            _ => None,
+            };
         }
+        if focused_button_under_role(&self.a11y_tree, fid, A11yRole::StartMenu).is_some() {
+            // StartMenu children are all Buttons, discriminated by geometry
+            // (the shared rect each surface draws): an app row -> StartApp,
+            // a sidebar category -> StartCategory, a recent tile ->
+            // StartRecent. The rects never collide, so order is irrelevant
+            // — and the focused light matches the hover light on every
+            // surface, so the draw just unions `hover || focused`.
+            if let Some(i) = self.menu_row_index(fid) {
+                return Some(crate::core::window::HoverTarget::StartApp(i));
+            }
+            if let Some(i) = self.menu_category_index(fid) {
+                return Some(crate::core::window::HoverTarget::StartCategory(i));
+            }
+            if let Some(ri) = self.menu_recent_index(fid) {
+                return Some(crate::core::window::HoverTarget::StartRecent(ri));
+            }
+        }
+        if let Some(node) = focused_button_under_role(&self.a11y_tree, fid, A11yRole::Window) {
+            let btn = crate::core::window::window_button_from_label(node.label.as_str())?;
+            return Some(crate::core::window::HoverTarget::Window {
+                win: node.owner?,
+                btn,
+            });
+        }
+        if let Some(node) = focused_button_under_role(&self.a11y_tree, fid, A11yRole::TrayPanel) {
+            // Tray entry: resolve the index by the same bounds equality the
+            // draw and hover use (each entry's node carries the drawn
+            // `tray_entry_rect`), so the focused light lands on exactly the
+            // entry under the ring.
+            let ty = self.taskbar_y();
+            let tray_len = self.tray.entries.len() as u32;
+            for i in 0..tray_len as usize {
+                if layout::tray_entry_rect(i, ty, self.screen_w, tray_len) == node.bounds {
+                    return Some(crate::core::window::HoverTarget::Tray(i));
+                }
+            }
+            return None;
+        }
+        if let Some(node) = focused_button_under_role(&self.a11y_tree, fid, A11yRole::Desktop) {
+            // Notification rows are the only Button children of Desktop
+            // (the overlay is a desktop-level surface), so the Desktop
+            // parent role discriminates them; the index resolves by bounds
+            // equality over the drawn `notification_rect`.
+            let notifs = self.services.notifications.visible_notifications();
+            for (i, _) in notifs.iter().take(layout::NOTIF_MAX_VISIBLE).enumerate() {
+                if layout::notification_rect(self.screen_w, i) == node.bounds {
+                    return Some(crate::core::window::HoverTarget::Notification(i));
+                }
+            }
+            return None;
+        }
+        None
     }
 
     /// The filtered row index of a focused start-menu row node: the same
@@ -934,23 +1026,83 @@ impl Desktop {
         if !self.start_menu.open {
             return None;
         }
-        let node = self.a11y_tree.nodes.iter().find(|n| n.id == fid)?;
-        if node.role != crate::sec::a11y::A11yRole::Button {
-            return None;
-        }
-        let parent_is_start_menu = node
-            .parent
-            .and_then(|p| self.a11y_tree.nodes.iter().find(|m| m.id == p))
-            .is_some_and(|p| p.role == crate::sec::a11y::A11yRole::StartMenu);
-        if !parent_is_start_menu {
-            return None;
-        }
+        let node = crate::sec::a11y::focused_button_under_role(
+            &self.a11y_tree,
+            fid,
+            crate::sec::a11y::A11yRole::StartMenu,
+        )?;
         let menu_r = layout::menu_rect(self.taskbar_y());
-        let list_r = layout::menu_list_rect(menu_r);
-        let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
-        let start = self.start_menu.scroll as usize;
-        let end = (start + avail).min(self.start_menu.filtered.len());
+        let (start, end, _) = self.start_menu.visible_range(menu_r);
         (start..end).find(|&i| layout::menu_item_rect(menu_r, i, start) == node.bounds)
+    }
+
+    /// The sidebar-category index of a focused start-menu category node:
+    /// the same bounds-equality resolution `menu_row_index` uses for app
+    /// rows, over the shared `menu_category_rect` geometry (subject to the
+    /// same sidebar-bottom cap the tree, draw, and hover use). Returns None
+    /// for non-category nodes.
+    fn menu_category_index(&self, fid: u32) -> Option<usize> {
+        if !self.start_menu.open {
+            return None;
+        }
+        let node = crate::sec::a11y::focused_button_under_role(
+            &self.a11y_tree,
+            fid,
+            crate::sec::a11y::A11yRole::StartMenu,
+        )?;
+        let menu_r = layout::menu_rect(self.taskbar_y());
+        let sidebar_r = layout::menu_sidebar_rect(menu_r);
+        (0..crate::util::app_catalog::CATEGORIES.len()).find(|&i| {
+            let cat_r = layout::menu_category_rect(menu_r, i);
+            cat_r.y + cat_r.h as i32 <= sidebar_r.y + sidebar_r.h as i32 && cat_r == node.bounds
+        })
+    }
+
+    /// The recent-strip index of a focused start-menu recent node: bounds
+    /// equality over the shared `menu_recent_rect` geometry, with the same
+    /// cap and right-reserve break the tree, draw, and hover use. Returns
+    /// None for non-recent nodes.
+    fn menu_recent_index(&self, fid: u32) -> Option<usize> {
+        if !self.start_menu.open {
+            return None;
+        }
+        let node = crate::sec::a11y::focused_button_under_role(
+            &self.a11y_tree,
+            fid,
+            crate::sec::a11y::A11yRole::StartMenu,
+        )?;
+        let menu_r = layout::menu_rect(self.taskbar_y());
+        let mut rx = layout::menu_recent_x0(menu_r);
+        let recent_n = self.app_reg.recent.len().min(layout::MENU_RECENT_MAX);
+        for ri in 0..recent_n {
+            let idx = self.app_reg.recent[ri];
+            if idx >= self.app_reg.apps.len() {
+                continue;
+            }
+            if rx + layout::MENU_RECENT_PITCH as i32
+                > menu_r.x + layout::MENU_W as i32 - layout::MENU_RECENT_RIGHT_RESERVE as i32
+            {
+                break;
+            }
+            if layout::menu_recent_rect(menu_r, rx) == node.bounds {
+                return Some(ri);
+            }
+            rx += layout::MENU_RECENT_PITCH as i32;
+        }
+        None
+    }
+
+    /// Keep `menu_focus_app` in lockstep with the ring after generic tree
+    /// navigation (arrows and FocusFirst): resolve the focused node to its
+    /// start-menu row and record the durable app id the ring intends to be
+    /// on, so `build_tree` can clamp the scroll window and re-land the ring
+    /// on that row even when a scroll/filter change renumbers its node.
+    pub(crate) fn sync_menu_focus_intent(&mut self) {
+        self.menu_focus_app = self
+            .focus
+            .focused()
+            .and_then(|fid| self.menu_row_index(fid))
+            .and_then(|i| self.start_menu.filtered.get(i).copied());
     }
 
     fn exec_context_action(&mut self, action: &str) {
@@ -1112,13 +1264,14 @@ impl Desktop {
         // Global grabs fire before any contextual state (historical
         // precedence), but yield to a focused terminal.
         if !terminal_focused {
-            // NOTE: no `KeyAction::Escape` grab here — it would be
+            // NOTE: no Escape grab here — it would be
             // unreachable. `handle_a11y_key` consumes Esc (ASCII or scan
             // code) before `handle_key` ever runs, so Escape's dismiss +
             // fullscreen-exit + empty-desktop session-end behavior lives
-            // entirely in that arm. The binding row in `input::BINDINGS`
-            // stays (the keymap contract pins it), but it can never fire
-            // from the byte path.
+            // entirely in that arm. There is deliberately no Escape row in
+            // `input::BINDINGS` (it could never fire from the byte path —
+            // see the NOTE at the table); the contextual arms below are
+            // reachable only through synthetic `handle_key_event`.
             if let Some(KeyAction::ToggleDebugOverlay) = resolve(ev) {
                 self.debug_overlay = !self.debug_overlay;
                 self.damage.mark_full();
@@ -1128,10 +1281,9 @@ impl Desktop {
 
         if self.start_menu.open {
             match resolve(ev) {
-                Some(KeyAction::Escape) => {
-                    self.start_menu.open = false;
-                    self.damage.mark_full();
-                }
+                // NOTE: no Escape arm here — Esc never resolves (there is no
+                // Escape binding row; the a11y arm consumes it first). The
+                // start menu is closed by that arm's `dismiss_overlays`.
                 Some(KeyAction::Enter) => {
                     if let Some(app_id) = self.start_menu.selected_app() {
                         self.launch_app(app_id);
@@ -1170,8 +1322,9 @@ impl Desktop {
                     self.switcher_idx = (self.switcher_idx + 1) % self.wm.len();
                     self.damage.mark_full();
                 }
-                Some(KeyAction::Enter) | Some(KeyAction::Escape) => {
-                    // Enter / Escape → confirm selection
+                Some(KeyAction::Enter) => {
+                    // Enter → confirm selection (Escape is handled by the
+                    // a11y arm; there is no Escape binding to resolve here)
                     if let Some(wid) = self.wm.id_at(self.switcher_idx) {
                         self.wm.bring_to_front(wid);
                     }
@@ -1188,12 +1341,11 @@ impl Desktop {
         // stays desktop-side: Ctrl+W closes the terminal (killing the shell),
         // Ctrl+T/Ctrl+E/etc. keep their desktop meaning, and the
         // Ctrl+Alt+Backspace logout chord stays a grab so it works from a
-        // terminal too. NOTE: Esc does NOT reach the shell from the real byte
-        // path — `handle_a11y_key` consumes it first (dismiss + fullscreen
-        // exit + empty-desktop session end), so this block's raw-byte Esc
-        // write only fires via the synthetic `handle_key_event` path used by
-        // tests. A terminal guard in the a11y arm would be the unblock if
-        // sash needs hardware Esc (docs/session-lifecycle.md, Phase C).
+        // terminal too. Esc reaches the shell via the a11y Esc arm's terminal
+        // guard (no overlay/fullscreen/ring -> 0x1B to the pty); this block's
+        // raw-byte Esc write is the synthetic `handle_key_event` twin of that
+        // guard, so both the real and synthetic paths deliver Esc to sash
+        // (docs/session-lifecycle.md, Phase C).
         if terminal_focused && !is_desktop_shortcut(ev) {
             if let Some(last) = self.wm.focused_mut() {
                 if let Some(fd) = last.pty_fd() {
@@ -1241,6 +1393,27 @@ impl Desktop {
                 }
                 KeyAction::ClipboardPanel => {
                     self.damage.mark_full();
+                    // Cross-world clipboard probe (facility audit F1): the
+                    // kernel store (SYS_CLIPBOARD=125) is the canonical
+                    // clipboard, so printing it here makes a console-sash
+                    // yank observable on serial when the panel opens
+                    // (tests/qemu_clipboard_probe.exp greps this line).
+                    let len = libsarga::io::clipboard_len();
+                    if len > 0 {
+                        let mut buf = alloc::vec![0u8; len];
+                        let n = libsarga::io::clipboard_read(&mut buf);
+                        let text = core::str::from_utf8(&buf[..n]).unwrap_or("(non-utf8)");
+                        libsarga::io::print_str(&alloc::format!(
+                            "[clip] kernel store: {}\n",
+                            if text.is_empty() {
+                                "(empty read)"
+                            } else {
+                                text
+                            },
+                        ));
+                    } else {
+                        libsarga::io::print_str("[clip] kernel store: (empty)\n");
+                    }
                     return;
                 }
                 KeyAction::ToggleAot => {
@@ -1332,7 +1505,7 @@ impl Desktop {
                 // Handled by the global grab / menu / switcher blocks above
                 // (unreachable here: the grabs return first, and a focused
                 // terminal sends them to the pty).
-                KeyAction::Escape | KeyAction::ToggleDebugOverlay => {}
+                KeyAction::ToggleDebugOverlay => {}
                 // Deliberate fall-through: Enter reaches the typing path so
                 // it can emit a newline into the focused window.
                 KeyAction::Enter => {}

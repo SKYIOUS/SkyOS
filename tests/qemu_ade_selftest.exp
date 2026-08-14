@@ -2,7 +2,13 @@
 # ADE selftest integration: boots the SkyOS ISO, logs in on the serial
 # console, runs `ade --selftest`, and requires the "[ade] selftest PASS"
 # verdict. Exits 1 on login failure, a FAIL verdict, a panic, timeout, or
-# early exit. Before the real login it drives the ATTEMPT CAP:
+# early exit. After the verdict it launches `ade` interactively and
+# proves the byte-path session-end contract on REAL input: a QEMU-monitor
+# Esc (`sendkey esc`) on the empty desktop must unwind the session with
+# "[ade] session ended code=0 ending=true" (the a11y Esc arm \u2014 0x1B is the one
+# distinct control byte the key stream carries \u2014 pinned synthetically by
+# test_session_end_gate / test_logout_protocol_from_chord). Before the
+# real login it drives the ATTEMPT CAP:
 # sends 10 wrong passwords to trigger MAX_FAILED_ATTEMPTS, asserts the
 # "Too many failed attempts - pausing 30s" marker appears exactly once,
 # waits for the 30s backoff, then confirms a fresh "login:" re-prompt
@@ -485,6 +491,35 @@ expect {
     }
 }
 
+# 4a14. The full logout protocol must have RUN and PASSED: the
+# chord -> is_ending() -> exit_code()==0 chain pinned by
+# test_logout_protocol_from_chord is asserted in CI, not just by the
+# aggregate verdict. The test's Esc twin drives the SAME protocol through
+# the real byte path (0x1B on the empty desktop), so this grep covers the
+# byte-deliverable session-end contract alongside the synthetic chord -
+# the marker this harness also proves end-to-end in step 5 (sendkey esc).
+expect {
+    {\[test\] PASS test_logout_protocol_from_chord} {
+        send_user "PASS: logout protocol (chord + Esc byte path) coverage passed\n"
+    }
+    {\[test\] FAIL test_logout_protocol_from_chord} {
+        send_user "FAIL: logout protocol test failed\n"
+        exit 1
+    }
+    "SARGA OS PANIC" {
+        send_user "FAIL: ade panicked before the logout protocol coverage\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: logout protocol coverage never reported\n"
+        exit 1
+    }
+    eof {
+        send_user "FAIL: QEMU exited before the logout protocol coverage\n"
+        exit 1
+    }
+}
+
 # 4b. The verdict is what gates the pipeline. The patterns match the plain
 #     "selftest PASS|FAIL" substring — ade prints "[ade] selftest PASS|FAIL".
 #     A panic during the suite exits via the panic handler without a verdict,
@@ -507,6 +542,67 @@ expect {
         send_user "FAIL: QEMU exited before the selftest verdict\n"
         exit 1
     }
+}
+
+# --- 5. Real-hardware Esc session-end probe (byte path) ---
+# `ade --selftest` exited after the verdict; the shell is back. Launch ade
+# interactively from the console, wait for the desktop, then inject a REAL
+# hardware Esc through the QEMU monitor (`sendkey esc` -> i8042 -> IRQ1 ->
+# kernel GUI pipeline -> Unicode 0x1B -> get_key -> a11y Esc arm). On the
+# empty desktop (no windows open) that is the byte-deliverable session-end
+# path: Esc must unwind the session and print the rich marker
+# '[ade] session ended code=0 ending=true' - the same contract
+# test_session_end_gate / test_logout_protocol_from_chord pin synthetically,
+# now proven on real input.
+proc monitor_cmd {cmd} {
+    send "\x01c"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: QEMU monitor not reachable\n"; exit 1 }
+    }
+    send "$cmd\r"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: monitor command '$cmd' not acknowledged\n"; exit 1 }
+    }
+    send "\x01c"
+}
+
+expect {
+    {sash\[} { send_user "PASS: shell returned after selftest verdict\n" }
+    "SARGA OS PANIC" { send_user "FAIL: kernel panicked after selftest verdict\n"; exit 1 }
+    timeout { send_user "FAIL: shell did not return after selftest verdict\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited after selftest verdict\n"; exit 1 }
+}
+send "ade\r"
+expect {
+    {\[ade\] session established} {
+        send_user "PASS: interactive ade desktop established\n"
+    }
+    {\[ade\] failed to create window} {
+        send_user "FAIL: ade could not create its GUI window - the byte-path Esc probe cannot run (GUI gate)\n"
+        exit 1
+    }
+    "SARGA OS PANIC" { send_user "FAIL: kernel panicked starting ade\n"; exit 1 }
+    timeout { send_user "FAIL: ade desktop never established\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited starting ade\n"; exit 1 }
+}
+monitor_cmd "sendkey esc"
+expect {
+    {\[ade\] session ended code=0 ending=true} {
+        send_user "PASS: hardware Esc ended the session on the empty desktop - '\[ade\] session ended code=0 ending=true'\n"
+    }
+    "SARGA OS PANIC" { send_user "FAIL: kernel panicked on hardware Esc\n"; exit 1 }
+    timeout { send_user "FAIL: hardware Esc did not end the session (byte-path contract broken)\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before the session ended\n"; exit 1 }
+}
+# The marker is printed at unwind; the process must then exit and the shell
+# return - proving the session actually ended, not just announced.
+expect {
+    {sash\[} { send_user "PASS: ade exited cleanly, shell returned\n" }
+    "SARGA OS PANIC" { send_user "FAIL: kernel panicked after session ended\n"; exit 1 }
+    timeout { send_user "FAIL: ade did not exit after session ended\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited after session ended\n"; exit 1 }
 }
 
 send_user "\n=== ADE selftest integration: PASS ===\n"

@@ -219,6 +219,23 @@ fn user_main() -> i32 {
         None
     };
 
+    // Boot-time memory-pressure marker (evidence for
+    // kernel-gui-window-fix.md Option 1 vs Option 2): read the kernel
+    // buddy allocator's live free-page count from ctlFS at getty startup,
+    // so the shell-interaction harness (qemu_shell_test.exp) collects the
+    // same OOM evidence the GUI gate's login-manager does. The getty never
+    // exits (mistype re-prompt loop below), so this prints once per boot,
+    // not per respawn. Same ctlFS node and print shape as login-manager
+    // (login-manager/src/main.rs:53-59) - the harnesses grep the same
+    // '[login] mem free=' prefix.
+    match libsarga::fs::read_to_string("/ctl/sys/mem/free") {
+        Ok(free) => {
+            let pages = free.trim().split(' ').next().unwrap_or("?");
+            io::print_str(&alloc::format!("[login] mem free={} pages\n", pages));
+        }
+        Err(_) => io::print_str("[login] mem free=unavailable\n"),
+    }
+
     // Interactive getty path: loop on bad credentials so a mistype
     // re-prompts instead of exiting. Exiting would make init respawn the
     // getty, and five consecutive exits would exhaust MAX_RESPAWNS and kill

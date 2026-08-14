@@ -103,6 +103,7 @@ pub(crate) fn render(
             &mut cv,
             snap.notifications,
             snap.hover,
+            snap.focused,
             snap.theme,
         );
         if let Some(s) = snap.settings {

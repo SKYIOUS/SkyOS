@@ -14,10 +14,11 @@ pub(crate) enum A11yRole {
     Window,
     Button,
     Icon,
-    Notification,
     /// The tray panel (entries + clock) — owner-stamped with the
     /// `TRAY_PANEL_OWNER` sentinel so tooltip resolution can name it, and
-    /// non-focusable (a status surface, not a keyboard control).
+    /// non-focusable (a status surface, not a keyboard control). Tray
+    /// ENTRIES are focusable Button children of this node, so the ring can
+    /// reach them without the container itself joining the ring.
     TrayPanel,
 }
 

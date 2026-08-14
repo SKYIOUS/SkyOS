@@ -153,26 +153,30 @@ the misleading `Err(5)`. This requires the userspace follow-up below to
 actually stop the respawn loop; the kernel patch alone only makes the failure
 real.
 
-`kernel/kernel/src/syscalls/mod.rs` — replace the allocation block in
-`sys_gui_create_window` (lines 4681-4688):
+`kernel/src/syscalls/mod.rs` — `sys_gui_create_window`: replace the
+heap-content fallback with an honest `-ENOMEM` return so `Window::create`
+yields `Err(12)` instead of the misleading `Err(5)`. The hunks below are
+difflib-generated from the live kernel source and verified with
+git apply --check (same treatment as Option 2b, Aug 12, 2026); the `@@`
+line numbers drift with the rewrite — the hunk context is the stable anchor.
 
 ```diff
-     // Try contiguous first, then fall back to content (which needs copy in flush)
-     let phys_addr = BUDDY_ALLOCATOR.lock().allocate_contiguous(order);
-     if let Some(pa) = phys_addr {
-         win.phys_addr = Some(pa.as_u64());
-         let offset = crate::memory::physical_memory_offset();
-         let k_ptr = (offset + pa.as_u64()) as *mut u8;
-         unsafe { core::ptr::write_bytes(k_ptr, 0, (4096 << order) as usize); }
-     } else {
--        win.content = Some(alloc::vec![0; content_len].into_boxed_slice());
-+        // No shared-memory space and no silent fallback: fail loudly with
-+        // -ENOMEM so userspace (libsarga Window::create -> Err(12)) can
-+        // report a real error. (errno::Errno::ENOMEM = -12; the syscall
-+        // return is read back as i64 by libsarga's syscall3, and
-+        // Window::create checks `id < 0` -> Err(-id).)
-+        return errno::Errno::ENOMEM as u64;
-     }
+    --- a/kernel/src/syscalls/mod.rs
+    +++ b/kernel/src/syscalls/mod.rs
+    @@ -4686,7 +4686,12 @@
+             let k_ptr = (offset + pa.as_u64()) as *mut u8;
+             unsafe { core::ptr::write_bytes(k_ptr, 0, (4096 << order) as usize); }
+         } else {
+    -        win.content = Some(alloc::vec![0; content_len].into_boxed_slice());
+    +        // No shared-memory space and no silent fallback: fail loudly with
+    +        // -ENOMEM so userspace (libsarga Window::create -> Err(12)) can
+    +        // report a real error. (errno::Errno::ENOMEM = -12; the syscall
+    +        // return is read back as i64 by libsarga's syscall3, and
+    +        // Window::create checks `id < 0` -> Err(-id).)
+    +        return errno::Errno::ENOMEM as u64;
+         }
+         
+         comp.add_window(win);
 ```
 
 Notes:
@@ -218,29 +222,16 @@ login-manager`) instead of respawning forever while `ade` never runs.
      
      fn verify_password(username: &str, password: &str) -> bool {
          let data = match libsarga::fs::read_to_string(SHADOW_PATH) {
-    @@ -44,9 +49,23 @@
-                 io::print_str("[login] window created\n");
-                 w
-             }
-    -        Err(_) => {
-    -            io::print_str("[login] failed to create window\n");
+    @@ -81,7 +86,12 @@
+                     alloc::format!("[login] failed to create window: errno {}\n", e)
+                 };
+                 io::print_str(&msg);
     -            return 0;
-    +        // Kernel Option 2 (kernel-gui-window-fix.md): create_window now
-    +        // returns -ENOMEM instead of silently falling back to a heap copy,
-    +        // so Window::create yields Err(12) here (libsarga errno ENOMEM).
-    +        // Distinguish it on serial AND exit non-zero: the old `return 0`
-    +        // made the window-failure loop unbounded (clean exit resets init's
-    +        // crash counter, so give-up could never fire).
-    +        Err(e) => {
-    +            if e == libsarga::errno::ENOMEM as i64 {
-    +                io::print_str("[login] window create failed: Out of memory\n");
-    +            } else {
-    +                // Any other create/map failure (e.g. map_buffer NULL ->
-    +                // Err(5)) is equally fatal: report the errno, still exit
-    +                // non-zero. Bounded either way.
-    +                let msg = alloc::format!("[login] window create failed: errno {}\n", e);
-    +                io::print_str(&msg);
-    +            }
+    +            // Non-zero exit (EXIT_WINDOW_CREATE_FAILED): a clean exit 0
+    +            // resets init's crash counter (unbounded respawn); non-zero
+    +            // accumulates toward MAX_RESPAWNS, so the window-failure loop
+    +            // is bounded and init eventually prints `giving up on
+    +            // login-manager` instead of looping forever.
     +            return EXIT_WINDOW_CREATE_FAILED;
              }
          };
@@ -265,6 +256,9 @@ Notes:
   the give-up harness (`qemu_giveup_boot.exp`'s unbounded-absence grep
   becomes a positive `giving up on .*login-manager` requirement; see
   session-lifecycle.md §give-up gate).
+- The kernel-side TAP spec for the `-ENOMEM` return is
+  `kernel-gui-selftest-spec-option2.md` (`gui::option2_*` tests, mutually
+  exclusive with the Option 1 selftest spec's `gui::option1_*` family).
 
 ---
 
@@ -326,6 +320,35 @@ arm (respawn loop) and in the final PASS line; the ci.yml Verify step greps
 `[login] mem free=` as an explicit positive assertion, so the evidence is
 collected on **every** kernel build, not just ad-hoc boots. The source/exp/CI
 contract is pinned host-side by `tests/test_gui_gate_mem_marker.py`.
+
+The give-up harness (`qemu_giveup_boot.exp`) turns this table into a
+CI-asserted contract on the forced-failure boot: login-manager's
+window-failure exit-0 respawn loop re-prints the marker on EVERY respawn,
+so the harness captures the full per-respawn free-page series live into a
+list (`lappend mem_readings`) and classifies first-vs-last - free
+recovering = transient -> Option 1; not recovering = persistent -> Option
+2. The ci.yml Verify steps assert the capture-and-classification ran
+(healthy boot: NOTE or PASS; fail-vahid boot: `PASS: mem series
+captured`). The specific transient/persistent verdict is NOT hard-asserted
+- a genuine OOM boot must be allowed to print persistent without failing
+CI - so the verdict line stays human-readable evidence on every kernel
+build instead of an ad-hoc log read. Pinned host-side by `test_giveup_gate.py`.
+
+The kernel-side forcing mechanism that makes that pressure **deterministic**
+— a test-only `SKYOS_DRAIN_BUDDY=<order>` boot flag that drains the buddy at
+boot and holds the blocks, so login-manager's real 800x600 create runs under
+near-zero free pages and prints `[login] failed to create window` — is
+specced in `kernel-gui-selftest-spec.md` (**Second user-visible path —
+forced-failure boot leg**): the same `drain_order` helper the selftests use,
+one level up the stack, bridging the synthetic drain and the QEMU-gate
+serial evidence.
+
+The console getty (`/bin/login`, login/src/main.rs) prints the same
+`[login] mem free=N pages` ctlFS read at startup (once per boot - the getty
+never exits), so the shell-interaction harness (`qemu_shell_test.exp`) and
+its local ps1 mirror collect the same per-boot OOM snapshot; the integration
+job's Verify step greps it too. Pinned by `test_login_flow.py` (source) and
+`test_vahid_contract.py` (harness).
 
 This replaces the doc's earlier "assumes transient pressure" open question
 with a measurement: after two or three CI gate boots, the marker's magnitude

@@ -1,6 +1,8 @@
 //! Taskbar — bottom bar with start button, window buttons, clock.
 
-use crate::core::window::{HoverTarget, WindowId, WindowState};
+use crate::core::window::{
+    window_button_face, HoverTarget, WindowButtonFace, WindowId, WindowState,
+};
 use crate::layout::{self, TASKBAR_H};
 use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
@@ -166,14 +168,26 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot, clock_str: &str) 
     );
     for (i, entry) in tray_entries.iter().enumerate() {
         let r = layout::tray_entry_rect(i, ty, snap.screen_w, tray_len);
-        // Held-down entries darken like the buttons (hover+pressed only).
-        let tray_bg = if snap.hover == Some(HoverTarget::Tray(i)) && snap.mouse_down {
-            th.pressed
-        } else if snap.hover == Some(HoverTarget::Tray(i)) {
-            th.hover
-        } else {
-            th.bg_surface
+        // The same union as the window chrome controls: pressed (hover
+        // while held) > the hover/focused light > the resting surface.
+        // The focused (keyboard) state lights like hover — pressed stays
+        // pointer-only, exactly like the chrome controls.
+        let tray_bg = match window_button_face(
+            snap.hover == Some(HoverTarget::Tray(i)),
+            snap.focused == Some(HoverTarget::Tray(i)),
+            snap.mouse_down,
+        ) {
+            WindowButtonFace::Pressed => th.pressed,
+            WindowButtonFace::Focused => th.accent_light,
+            WindowButtonFace::Hover => th.hover,
+            WindowButtonFace::Base => th.bg_surface,
         };
+        // The lit fills (hover indigo and focused accent_light blue) carry
+        // the white on_accent icon, exactly like the taskbar buttons — the
+        // secondary gray would vanish on them. Pressed (light gray) keeps
+        // the secondary text.
+        let tray_lit =
+            snap.hover == Some(HoverTarget::Tray(i)) || snap.focused == Some(HoverTarget::Tray(i));
         canvas.draw_rounded_rect(r.x as u32, r.y as u32, r.w, r.h, 4, tray_bg);
         // Icon y derives from the panel rect (ty + 4 + 5), not the raw
         // taskbar top, so per-entry rendering stays anchored to the panel
@@ -182,7 +196,11 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot, clock_str: &str) 
             r.x as u32 + 6,
             panel.y as u32 + 5,
             entry.icon,
-            th.text_secondary,
+            if tray_lit {
+                th.on_accent
+            } else {
+                th.text_secondary
+            },
             0,
         );
     }

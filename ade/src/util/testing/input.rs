@@ -174,9 +174,9 @@ pub(crate) fn test_keymap() -> bool {
     // the chord/Ctrl+Q resolve checks at the Desktop level; this is the
     // table-level pin and runs first — don't collapse the two.)
     let dump = dump_bindings();
-    if dump.count != 18 {
+    if dump.count != 17 {
         io::print_str(&alloc::format!(
-            "[test] FAIL test_keymap: binding count {} != 18 (update pin deliberately)\n",
+            "[test] FAIL test_keymap: binding count {} != 17 (update pin deliberately)\n",
             dump.count
         ));
         return false;
@@ -219,10 +219,11 @@ pub(crate) fn test_keymap() -> bool {
     // (e.g. Alt+Tab) would be unreachable from real hardware until the
     // kernel delivers modifier bits (the Phase C gate); this pin makes that
     // failure explicit instead of adding a row the stream can never fire.
-    // Verified against the source (simulated `from_byte` over the 18-row
-    // table): exactly 17 rows have a delivering byte; the Ctrl+Alt+Backspace
+    // Verified against the source (simulated `from_byte` over the 17-row
+    // table): exactly 16 rows have a delivering byte; the Ctrl+Alt+Backspace
     // Quit chord is the sole synthetic-only row, constructed with
-    // `KeyEvent::new` and asserted below. A table edit that adds an
+    // `KeyEvent::new` and asserted below. (Esc has no row at all — the a11y
+    // arm consumes it before `resolve` ever runs.) A table edit that adds an
     // undeliverable binding, or forgets that a new Alt/Shift row needs a
     // documented synthetic producer, fails here.
     let mut deliverable = 0u32;
@@ -250,9 +251,9 @@ pub(crate) fn test_keymap() -> bool {
         }
         deliverable += 1;
     }
-    if deliverable != 17 {
+    if deliverable != 16 {
         io::print_str(&alloc::format!(
-            "[test] FAIL test_keymap: {} byte-deliverable bindings != 17 (every row except the ctrl+alt+backspace chord; update pin deliberately)\n",
+            "[test] FAIL test_keymap: {} byte-deliverable bindings != 16 (every row except the ctrl+alt+backspace chord; update pin deliberately)\n",
             deliverable
         ));
         return false;
@@ -265,7 +266,7 @@ pub(crate) fn test_keymap() -> bool {
     // (Phase C, Design A — `KeyEvent::from_raw`), EVERY binding row must be
     // reachable from a synthetic (byte, mods) pair — nothing may stay
     // synthetic. The byte stream leaves the chord synthetic (pinned above);
-    // the packed stream delivers it as 0x0308, so the whole 18-row table
+    // the packed stream delivers it as 0x0308, so the whole 17-row table
     // becomes realizable from real input the day the kernel lands. A future
     // Alt/Shift binding (e.g. Alt+Tab) must be reachable HERE even though
     // the byte stream can't fire it — this sweep is the forward contract.
@@ -404,11 +405,11 @@ pub(crate) fn test_from_raw() -> bool {
 /// windows, switcher, or overlay). Esc is otherwise the single dismiss key:
 /// it closes every overlay, exits fullscreen, and only then falls through to
 /// the empty-desktop logout — all in the a11y Esc arm, since that arm
-/// consumes Esc before `handle_key` (and its keymap grab) ever runs. Ctrl+Q
-/// and plain 'q' are deliberately unbound (the old gates are gone), and
-/// Backspace is never a session key — it edits text in plain windows and
-/// reaches the shell inside a terminal — so typing can never trip the logout
-/// loop.
+/// consumes Esc before `handle_key` ever runs (there is deliberately no
+/// Escape row in `BINDINGS` — it would be unreachable). Ctrl+Q and plain
+/// 'q' are deliberately unbound (the old gates are gone), and Backspace is
+/// never a session key — it edits text in plain windows and reaches the
+/// shell inside a terminal — so typing can never trip the logout loop.
 ///
 /// A third leg pins ROUTING, not session end: with a pty window focused,
 /// the packed chord must bypass the terminal-forward path (it is a desktop
@@ -417,8 +418,38 @@ pub(crate) fn test_from_raw() -> bool {
 /// openpty slave read: the chord byte must never reach the pty master, while
 /// a plain key must (proving the observer and the forward path both work).
 ///
+/// A fourth leg pins the TERMINAL GUARD in the Esc arm itself: with a pty
+/// window focused and nothing else up (no ring/fullscreen/overlay), a real
+/// 0x1B is forwarded to the shell — closing the Phase C gap where
+/// `handle_a11y_key` swallowed Esc before `handle_key`'s pty write ran. The
+/// ring-active twin asserts the first Esc with the ring up dismisses only
+/// (no 0x1B leak into the shell), and the second Esc forwards — the
+/// modality guard is the difference between shell-visible and swallowed.
+///
 /// Each sub-case runs on its own fresh `Desktop` so an ending session can't
 /// leak into the shared desktop passed through `run_all`.
+/// Assert the session is in the expected end-state: `is_ending()` matches
+/// `expect_ending` and the exit code is still EXIT_LOGOUT (0). Shared by the
+/// logout tests (test_session_end_gate, test_logout_protocol_from_chord,
+/// test_logout_inert_with_window_open) so "stable" can't drift: none of them
+/// may check only `is_ending()` while another also requires `exit_code() == 0`.
+/// (`exit_code()` is currently the constant EXIT_LOGOUT, so the exit clause is
+/// trivially true today; the check pins the contract if it ever goes stateful.)
+fn assert_session_state(d: &Desktop, test: &str, context: &str, expect_ending: bool) -> bool {
+    if d.session.is_ending() != expect_ending || d.session.exit_code() != 0 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL {}: {} (expected is_ending={}, got is_ending={}, exit_code={})\n",
+            test,
+            context,
+            expect_ending,
+            d.session.is_ending(),
+            d.session.exit_code()
+        ));
+        return false;
+    }
+    true
+}
+
 pub(crate) fn test_session_end_gate() -> bool {
     // Ctrl+Alt+Backspace resolves to Quit; Ctrl+Q (0x11) must resolve to
     // nothing — the chord replaced it as the session-end key.
@@ -485,8 +516,7 @@ pub(crate) fn test_session_end_gate() -> bool {
     let mut d = Desktop::new(800, 600);
     d.wm.create(AppWindow::new(100, 100, 400, 300, "GateWin"));
     d.handle_key_event(chord);
-    if d.session.is_ending() {
-        io::print_str("[test] FAIL test_session_end_gate: chord ended session with window open\n");
+    if !assert_session_state(&d, "test_session_end_gate", "chord with window open", false) {
         return false;
     }
 
@@ -517,8 +547,12 @@ pub(crate) fn test_session_end_gate() -> bool {
     let mut d = Desktop::new(800, 600);
     d.wm.create(AppWindow::new(100, 100, 400, 300, "GateWin2"));
     d.handle_event(Event::Key(0x0308));
-    if d.session.is_ending() {
-        io::print_str("[test] FAIL test_session_end_gate: packed chord 0x0308 ended session with window open\n");
+    if !assert_session_state(
+        &d,
+        "test_session_end_gate",
+        "packed chord 0x0308 with window open",
+        false,
+    ) {
         return false;
     }
     // Partial modifiers must NOT end the session: 0x0108 (alt-only) and
@@ -627,8 +661,98 @@ pub(crate) fn test_session_end_gate() -> bool {
         return false;
     }
 
+    // Terminal guard: with a pty window focused and NOTHING else up (no
+    // ring, no fullscreen, no overlay), a hardware Esc is FORWARDED to the
+    // shell — the Phase C gap this closes (`handle_a11y_key` consumed Esc
+    // before `handle_key`'s terminal write ever ran, so sash's vi/readline/
+    // menus could never see Esc from the real byte path). Same real-openpty
+    // observer as the chord leg: the byte MUST reach the shell, and the
+    // session must NOT end (the terminal is a window).
+    let (master, slave) = match libsarga::io::openpty() {
+        Ok(p) => p,
+        Err(_) => {
+            io::print_str("[test] FAIL test_session_end_gate: esc terminal openpty failed\n");
+            return false;
+        }
+    };
+    let mut d = Desktop::new(800, 600);
+    let wid = d.wm.create(AppWindow::new(100, 100, 400, 300, "EscTerm"));
+    d.wm.lookup_mut(wid).unwrap().attach_terminal(master);
+    if !d.focused_has_pty() {
+        io::print_str("[test] FAIL test_session_end_gate: esc terminal not focused\n");
+        return false;
+    }
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if d.session.is_ending() {
+        io::print_str(
+            "[test] FAIL test_session_end_gate: esc ended session with terminal focused\n",
+        );
+        return false;
+    }
+    let mut buf = [0u8; 8];
+    let n = match libsarga::io::read(slave, &mut buf) {
+        Ok(n) => n,
+        Err(_) => {
+            io::print_str("[test] FAIL test_session_end_gate: esc terminal slave read failed\n");
+            return false;
+        }
+    };
+    if n != 1 || buf[0] != keys::KEY_ESC {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_session_end_gate: esc 0x1B did not reach shell (n={}, b=0x{:02x})\n",
+            n,
+            buf[0]
+        ));
+        return false;
+    }
+    let _ = libsarga::io::close(slave);
+    let _ = libsarga::io::close(master);
+
+    // Ring-active Esc is the modality guard: with the a11y ring up on a
+    // focused terminal, the first Esc only dismisses the ring — 0x1B must
+    // NOT leak into the shell (the ring is a navigation modality, not a
+    // keystroke pass-through), and the session must not end. The SECOND Esc
+    // (ring now down) forwards to the shell, proving the terminal was
+    // reachable all along and only the ring gated it.
+    let (master, slave) = match libsarga::io::openpty() {
+        Ok(p) => p,
+        Err(_) => {
+            io::print_str("[test] FAIL test_session_end_gate: esc ring openpty failed\n");
+            return false;
+        }
+    };
+    let mut d = Desktop::new(800, 600);
+    let wid = d.wm.create(AppWindow::new(100, 100, 400, 300, "RingTerm"));
+    d.wm.lookup_mut(wid).unwrap().attach_terminal(master);
+    d.focus_visible = true;
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if d.session.is_ending() || d.focus_visible {
+        io::print_str(
+            "[test] FAIL test_session_end_gate: esc with ring on terminal ended session or kept ring\n",
+        );
+        return false;
+    }
+    let n = libsarga::io::read(slave, &mut buf).unwrap_or_default();
+    if n != 0 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_session_end_gate: ring-active esc leaked 0x{:02x} into the shell\n",
+            buf[0]
+        ));
+        return false;
+    }
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    let n = libsarga::io::read(slave, &mut buf).unwrap_or_default();
+    if n != 1 || buf[0] != keys::KEY_ESC {
+        io::print_str(
+            "[test] FAIL test_session_end_gate: esc after ring dismiss did not reach shell\n",
+        );
+        return false;
+    }
+    let _ = libsarga::io::close(slave);
+    let _ = libsarga::io::close(master);
+
     // Esc on a fullscreen window EXITS fullscreen — the behavior that lived
-    // in the keymap `KeyAction::Escape` grab, consolidated into the a11y Esc
+    // in the keymap Escape grab, consolidated into the a11y Esc
     // arm because that grab was unreachable from the real event path (this
     // arm consumes Esc before `handle_key` ever runs). A real hardware Esc
     // reaches the exit; the session must NOT end (a fullscreen window is
@@ -716,6 +840,33 @@ pub(crate) fn test_session_end_gate() -> bool {
         );
         return false;
     }
+    // Esc with the switcher up CONFIRMS the selection and closes the
+    // switcher — the real byte path never reaches the contextual Escape
+    // arm in handle_key_event_raw (the a11y arm consumes Esc first), so
+    // the two must stay in lockstep. Without the a11y-arm branch a real
+    // Esc would be consumed as a no-op and the switcher — a keyboard
+    // modal — could never be closed (its only other closer is the
+    // synthetic Enter/Escape arm). Session must NOT end (windows are
+    // open).
+    let mut d = Desktop::new(800, 600);
+    let _sw_a = d.wm.create(AppWindow::new(100, 100, 400, 300, "SwA"));
+    let sw_b = d.wm.create(AppWindow::new(200, 200, 400, 300, "SwB"));
+    d.switcher_active = true;
+    d.switcher_idx = 1; // position of SwB (create order)
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if d.session.is_ending() || d.switcher_active {
+        io::print_str(
+            "[test] FAIL test_session_end_gate: esc with switcher open ended session or kept it\n",
+        );
+        return false;
+    }
+    if d.wm.active() != Some(sw_b) {
+        io::print_str(
+            "[test] FAIL test_session_end_gate: esc with switcher did not bring selection to front\n",
+        );
+        return false;
+    }
+
     // Esc mid-drag must NOT end the session — a drag is activity, not empty.
     let mut d = Desktop::new(800, 600);
     d.drag_active = true;
@@ -754,8 +905,7 @@ pub(crate) fn test_session_end_gate() -> bool {
     for ev in near_misses {
         let mut d = Desktop::new(800, 600);
         d.handle_key_event(ev);
-        if d.session.is_ending() {
-            io::print_str("[test] FAIL test_session_end_gate: near-miss chord ended session\n");
+        if !assert_session_state(&d, "test_session_end_gate", "near-miss chord", false) {
             return false;
         }
     }
@@ -781,7 +931,11 @@ pub(crate) fn test_session_end_gate() -> bool {
 /// The second half of the test re-runs the identical protocol with a real
 /// hardware Esc (0x1B, the one distinct control byte the key stream carries)
 /// through `handle_event`'s byte path, proving the byte-deliverable
-/// session-end path has the same contract as the synthetic chord.
+/// session-end path has the same contract as the synthetic chord. The Esc
+/// twin ends with the window-open guard: with a window present, Esc is
+/// dismiss-only (never session-end), mirroring the chord's guard in
+/// `test_logout_inert_with_window_open` — both keys share the same
+/// empty-desktop precondition.
 /// Coverage boundary: it asserts `exit_code()`, not that `main.rs`'s
 /// `while !is_ending()` loop actually unwinds and returns it — that binary
 /// loop is the QEMU harnesses' `[ade] session ended` grep.
@@ -790,43 +944,38 @@ pub(crate) fn test_logout_protocol_from_chord() -> bool {
 
     // Precondition: a fresh desktop is running with nothing focused.
     let mut d = Desktop::new(800, 600);
-    if d.session.is_ending() {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: fresh desktop already ending\n",
-        );
-        return false;
-    }
-    if d.session.exit_code() != 0 {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: fresh desktop exit code != 0\n",
-        );
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "fresh desktop already ending or bad exit code",
+        false,
+    ) {
         return false;
     }
 
     // The injected chord is the ONLY logout trigger: keymap resolve ->
     // Desktop routing (Quit arm requires an empty window list) -> session.
     d.handle_key_event(chord);
-    if !d.session.is_ending() {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: chord did not flip is_ending\n",
-        );
-        return false;
-    }
-
     // The exit code main.rs returns to init: EXIT_LOGOUT = 0, a clean exit
     // that init's crash accounting treats as graceful (respawn, no count).
-    if d.session.exit_code() != 0 {
-        io::print_str("[test] FAIL test_logout_protocol_from_chord: logout exit code != 0\n");
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "chord did not flip is_ending (or bad exit code)",
+        true,
+    ) {
         return false;
     }
 
     // Idempotent: a second chord (or the main loop re-reading is_ending)
     // keeps the same stable exit code.
     d.handle_key_event(chord);
-    if !d.session.is_ending() || d.session.exit_code() != 0 {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: re-inject changed ending/exit\n",
-        );
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "chord re-inject changed ending/exit",
+        true,
+    ) {
         return false;
     }
 
@@ -840,10 +989,12 @@ pub(crate) fn test_logout_protocol_from_chord() -> bool {
     let plain_bsp = KeyEvent::from_byte(keys::KEY_BACKSPACE_ALT);
     d.handle_key_event(ctrl_q);
     d.handle_key_event(plain_bsp);
-    if !d.session.is_ending() || d.session.exit_code() != 0 {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: near-miss key corrupted the logout\n",
-        );
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "chord near-miss corrupted the logout",
+        true,
+    ) {
         return false;
     }
 
@@ -855,31 +1006,33 @@ pub(crate) fn test_logout_protocol_from_chord() -> bool {
     // ring/overlays (none here) -> empty desktop -> `request_end()`. The
     // full protocol must match the chord exactly.
     let mut d = Desktop::new(800, 600);
-    if d.session.is_ending() {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: esc twin fresh desktop already ending\n",
-        );
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc twin fresh desktop already ending",
+        false,
+    ) {
         return false;
     }
     d.handle_event(Event::Key(keys::KEY_ESC as u16));
-    if !d.session.is_ending() {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: esc twin did not flip is_ending\n",
-        );
-        return false;
-    }
-    if d.session.exit_code() != 0 {
-        io::print_str("[test] FAIL test_logout_protocol_from_chord: esc twin exit code != 0\n");
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc twin did not flip is_ending (or bad exit code)",
+        true,
+    ) {
         return false;
     }
 
     // Idempotent re-inject through the same real path: a second Esc keeps
     // the ending state and exit code stable, exactly like the chord.
     d.handle_event(Event::Key(keys::KEY_ESC as u16));
-    if !d.session.is_ending() || d.session.exit_code() != 0 {
-        io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: esc re-inject changed ending/exit\n",
-        );
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc re-inject changed ending/exit",
+        true,
+    ) {
         return false;
     }
 
@@ -887,13 +1040,166 @@ pub(crate) fn test_logout_protocol_from_chord() -> bool {
     // Backspace must be inert mid-unwind, as with the chord.
     d.handle_event(Event::Key(0x11)); // folds to Ctrl+Q
     d.handle_event(Event::Key(keys::KEY_BACKSPACE_ALT as u16));
-    if !d.session.is_ending() || d.session.exit_code() != 0 {
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc near-miss corrupted the logout",
+        true,
+    ) {
+        return false;
+    }
+
+    // Window-open guard for the Esc twin: with a window present, Esc is
+    // dismiss-only — it must NOT start the session end, exactly like the
+    // chord's window-open guard in test_logout_inert_with_window_open.
+    // This pins that BOTH session-end keys share the same empty-desktop
+    // precondition: the a11y Esc arm's `request_end` fires only on an
+    // empty window list (the `wm.is_empty()` no-op branch, driven here
+    // through the real byte path).
+    let mut d = Desktop::new(800, 600);
+    let esc_win = d.wm.create(AppWindow::new(100, 100, 400, 300, "EscGuard"));
+    d.tick();
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc with window open started the session end",
+        false,
+    ) {
+        return false;
+    }
+    if d.wm.lookup(esc_win).is_none() {
         io::print_str(
-            "[test] FAIL test_logout_protocol_from_chord: esc near-miss corrupted the logout\n",
+            "[test] FAIL test_logout_protocol_from_chord: esc with window open closed the window\n",
+        );
+        return false;
+    }
+
+    // Dismiss-only nuance: with an overlay open the SAME Esc press must
+    // still dismiss it (dismissal is never swallowed by the guard), while
+    // the session stays un-ended and the window survives.
+    d.settings_app.open = true;
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if !assert_session_state(
+        &d,
+        "test_logout_protocol_from_chord",
+        "esc with window + overlay started the session end",
+        false,
+    ) {
+        return false;
+    }
+    if d.settings_app.open {
+        io::print_str(
+            "[test] FAIL test_logout_protocol_from_chord: esc with window open did not dismiss the overlay\n",
+        );
+        return false;
+    }
+    if d.wm.lookup(esc_win).is_none() {
+        io::print_str(
+            "[test] FAIL test_logout_protocol_from_chord: esc dismissed the window with the overlay\n",
         );
         return false;
     }
 
     io::print_str("[test] PASS test_logout_protocol_from_chord\n");
+    true
+}
+
+pub(crate) fn test_logout_inert_with_window_open() -> bool {
+    // Companion to test_logout_protocol_from_chord: the OTHER half of the
+    // session-end contract. The Quit arm ends the session ONLY on an empty
+    // window list (`if self.wm.is_empty()`); with any window open the chord
+    // — and every near-miss key — must be inert, so a stray
+    // Ctrl+Alt+Backspace can't trip the logout loop mid-work. The
+    // empty-desktop path is pinned by the chord test; this pins the
+    // `wm.is_empty()` no-op branch with a real window present, including a
+    // positive control proving the window (not a broken trigger) is what
+    // kept everything inert.
+    let chord = KeyEvent::new(keys::KEY_BACKSPACE, true, true, false);
+
+    let mut d = Desktop::new(800, 600);
+    let id = d.wm.create(AppWindow::new(100, 100, 400, 300, "KeepOpen"));
+    d.tick();
+
+    // Chord with a window open: resolves to Quit, but the empty-desktop
+    // guard turns it into a deliberate no-op.
+    d.handle_key_event(chord);
+    if !assert_session_state(
+        &d,
+        "test_logout_inert_with_window_open",
+        "chord with window open",
+        false,
+    ) {
+        return false;
+    }
+    // The window itself must have survived the chord — inertness means
+    // nothing happened, not just no session end (a chord that closed the
+    // window would otherwise false-pass once the positive control's
+    // no-op close + drain empties the list).
+    if d.wm.lookup(id).is_none() {
+        io::print_str("[test] FAIL test_logout_inert_with_window_open: chord closed the window\n");
+        return false;
+    }
+
+    // Near-miss keys with the window present: Ctrl+Q and plain Backspace
+    // must not start the unwind either — the same keys as the
+    // empty-desktop sweep, now through the no-op branch.
+    d.handle_key_event(KeyEvent::from_byte(0x11)); // folds to Ctrl+Q
+    d.handle_key_event(KeyEvent::from_byte(keys::KEY_BACKSPACE_ALT));
+    if !assert_session_state(
+        &d,
+        "test_logout_inert_with_window_open",
+        "near-miss key with window open",
+        false,
+    ) {
+        return false;
+    }
+    if d.wm.lookup(id).is_none() {
+        io::print_str(
+            "[test] FAIL test_logout_inert_with_window_open: near-miss key closed the window\n",
+        );
+        return false;
+    }
+
+    // Esc through the real event path: the a11y Esc arm's request_end
+    // equally requires an empty window list, so Esc is inert here too.
+    d.handle_event(Event::Key(keys::KEY_ESC as u16));
+    if !assert_session_state(
+        &d,
+        "test_logout_inert_with_window_open",
+        "esc with window open",
+        false,
+    ) {
+        return false;
+    }
+    if d.wm.lookup(id).is_none() {
+        io::print_str("[test] FAIL test_logout_inert_with_window_open: Esc closed the window\n");
+        return false;
+    }
+
+    // Positive control: drain the close animation, then the SAME desktop
+    // ends on the chord — proving the window presence (not a broken
+    // trigger) kept everything inert above.
+    d.wm.close(id);
+    for _ in 0..60 {
+        d.tick();
+    }
+    if !d.wm.is_empty() {
+        io::print_str(
+            "[test] FAIL test_logout_inert_with_window_open: close did not empty the window list\n",
+        );
+        return false;
+    }
+    d.handle_key_event(chord);
+    if !assert_session_state(
+        &d,
+        "test_logout_inert_with_window_open",
+        "chord after wm emptied",
+        true,
+    ) {
+        return false;
+    }
+
+    io::print_str("[test] PASS test_logout_inert_with_window_open\n");
     true
 }

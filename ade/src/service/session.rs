@@ -129,6 +129,16 @@ impl SessionManager {
 
     /// Begin the session-end sequence (logout). The main loop observes
     /// `is_ending()` and unwinds to a clean `process::exit(exit_code())`.
+    ///
+    /// Idempotency is structural, not guarded: the body is a single
+    /// monotonic store to a private bool (`false -> true`, then
+    /// `true -> true` — a no-op). There is no counter, toggle, error path,
+    /// or side effect, so re-entering this — e.g. a second Esc press in the
+    /// a11y arm while the unwind is already in flight — can neither reset
+    /// `ending` nor alter the exit code: `exit_code()` below is a
+    /// compile-time constant that ignores `ending` entirely. The unwind is
+    /// driven only by the main loop's `while !is_ending()`, and any
+    /// `request_end` after the first is observably a no-op.
     pub fn request_end(&mut self) {
         self.ending = true;
     }
@@ -140,6 +150,11 @@ impl SessionManager {
     /// The exit code the session hands to `init` when it ends. Deliberate
     /// logouts are clean (0) so init treats them as graceful; crashes must
     /// exit non-zero (they never route through here).
+    ///
+    /// A constant by construction: it reads no state and takes no input, so
+    /// the number of times the a11y Esc arm (or the main loop) re-enters the
+    /// end path cannot change the value handed to `init` — the unwind value
+    /// is fixed at compile time.
     pub fn exit_code(&self) -> i32 {
         EXIT_LOGOUT
     }

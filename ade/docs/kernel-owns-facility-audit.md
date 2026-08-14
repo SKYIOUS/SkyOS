@@ -85,20 +85,29 @@ where `SYS_CLIPBOARD` (125) was invoked as if it were mknod — and to the
   dead in every boot. If anyone ever does call `sys_notify`, two notification stacks
   would draw over each other in the same corner (kernel overlay + ade overlay).
 
-### F3 — libsarga Glass API is unwired against the kernel (MEDIUM, dead code)
+### F3 — libsarga Glass API is unwired against the kernel (MEDIUM, dead code) — **DONE (Aug 13, 2026): `libsarga/src/glass.rs` deleted; `pub mod glass;` removed from `libsarga/src/lib.rs`**
 
-- libsarga reserves syscall numbers **130–134** privately in `glass.rs`:
+- libsarga reserved syscall numbers **130–134** privately in `glass.rs`:
   `SYS_GLASS_SET_OPACITY=130`, `SET_BLUR=131`, `SET_SHADOW=132`, `FLUSH=133`,
-  `POLL=134` (`libsarga/src/glass.rs:12-16`), all call sites discard results
-  (`let _ =` at `:37,42,55`).
-- The kernel defines **nothing** at 130–134 (`syscalls/numbers.rs` — the range is
+  `POLL=134` (`libsarga/src/glass.rs:12-16`), all call sites discarded results
+  (`let _ =` at `:37,42,55`). No consumer existed anywhere in userspace — the
+  deletion was a clean `rm` + one `pub mod` line.
+- The kernel defined **nothing** at 130–134 (`syscalls/numbers.rs` — the range was
   occupied by 125 CLIPBOARD / 126 NOTIFY / 127 MKFS); the dispatch table
-  (`syscalls/mod.rs:684-715`) has no arms for them, so they fall through to the
+  (`syscalls/mod.rs:684-715`) has no arms for them, so they fell through to the
   default arm, which logs `[SYSCALL] Unknown syscall` and returns `ENOSYS`
   (`syscalls/mod.rs:820-823`).
-- **Verdict:** userspace scaffolding assuming a glass/compositor-effects facility
-  that exists on neither side. It compiles, reserves five syscall numbers, and can
-  never do anything.
+- **Verdict (pre-deletion):** userspace scaffolding assuming a glass/compositor-effects
+  facility that exists on neither side. It compiled, reserved five syscall numbers,
+  and could never do anything.
+- **Numbers status today (kernel mid-rewrite — `numbers.rs` is a moving target):**
+  130, 132, 133, 134 are free; **131 is NOT free — the rewrite's
+  `SYS_SIGALTSTACK = 131` (`numbers.rs:192`) landed after this audit was written**,
+  so the audit's "nothing at 130–134" is stale. Reservation contract for the rewrite:
+  when `numbers.rs` settles, add a `// Reserved (was libsarga glass, F3): 130, 132,
+  133, 134` comment so the freed numbers are not silently reallocated — with the
+  caveat that **133 is the K9 mknod fallback candidate** (§6 queue), so the rewrite
+  should treat the four numbers as separate free slots, not a protected range.
 
 ### F4 — DRMCTL argument-shape contract mismatch (HIGH for GPU consumers)
 
@@ -225,9 +234,10 @@ for 126. API surface exists that nothing in the boot exercises on the read side.
    notifications are desktop *policy*, while the clipboard is shared *state*. (The
    kernel path is also the other `user_access`-bypassing handler — F8:4906 — so
    retiring it removes a security inconsistency for free.)
-3. **Glass (F3): delete `libsarga/src/glass.rs`.** Nothing implements 130–134; it is
-   the canonical "assumed a facility that doesn't exist" case. Freeing the numbers is
-   a kernel-rewrite note, not a blocker.
+3. **Glass (F3): delete `libsarga/src/glass.rs`. — DONE (Aug 13, 2026).** Nothing
+   implemented 130–134; it was the canonical "assumed a facility that doesn't exist"
+   case. `pub mod glass;` removed from `libsarga/src/lib.rs`; the freed numbers are
+   reserved for the rewrite in the F3 section above (131 is now `SYS_SIGALTSTACK`).
 4. **DRMCTL (F4): document the shape contract for the kernel rewrite. — DONE (Aug 10, 2026).**
    Exact function-level fix in `kernel-drmctl-fix.md` (K5): SET_MODE reads a `ModeInfo`
    struct pointer from `arg` via `copy_from_user` (CREATE_DUMB pattern); MAP_DUMB gets a
@@ -271,6 +281,11 @@ This file is the evidence annex for the rebuild plan's architecture section. Add
 cross-reference from `rebuild-plan.md` (Gap 1 note: "GUI reachability is a kernel-side
 gate") stating the ownership rule with its discriminator explicit:
 
+**Queue status (Aug 13, 2026):** the clipboard items (F1 rewire completion + F8
+hardening) and the dev-node/mknod item are kernel-gated — tracked as **K8 / K9** in
+[`session-lifecycle.md`](session-lifecycle.md) §6 with landing conditions (selftest TAP
+lines + host pins) pinned there. The rest of this audit remains read-only context.
+
 > **One owner per facility.** Shared cross-process state (clipboard, pty, devfs,
 > display, hash) is kernel-owned — userspace proxies or gates it, it does not
 > re-implement it. Session policy (notifications, window policy, launcher, settings)
@@ -280,5 +295,5 @@ gate") stating the ownership rule with its discriminator explicit:
 The rule's discriminator is *shared state vs session policy*: F1 (clipboard) is shared
 state → kernel; F2 (notifications) is policy → userspace. F1's rewire and F5's registry
 cleanup are safe to schedule in the next userspace phase; F2/F3/F4/F8 are kernel-rewrite
-items with userspace follow-ups (delete glass.rs, delete the SYS_NOTIFY wrapper, fix the
+items with userspace follow-ups (delete glass.rs — DONE Aug 13, 2026; delete the SYS_NOTIFY wrapper, fix the
 125/126 wrappers' errno handling) that can land immediately without touching the kernel.

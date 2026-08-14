@@ -65,6 +65,11 @@ fn scan_pci() -> Option<usize> {
 ///
 /// This is the system-critical output: without /dev/null, /dev/zero, etc.
 /// the OS cannot function. A failure here is the FATAL condition.
+/// With `--force-fail` (test hook, see force_fail_requested) `all_ok` starts
+/// false and the FATAL exit runs regardless of what open() returns, so the
+/// same fatal marker still prints exactly once. The per-node `created`
+/// marker is suppressed under force-fail, so a fail-vahid log can never
+/// show 'created ... FATAL' - the forced path stays a pure failure story.
 fn create_devices() -> bool {
     let nodes: &[(&str, u32, u32)] = &[
         ("null", 1, 3),
@@ -74,7 +79,7 @@ fn create_devices() -> bool {
         ("tty", 5, 0),
         ("console", 5, 1),
     ];
-    let mut all_ok = true;
+    let mut all_ok = !force_fail_requested();
     for (name, _major, _minor) in nodes {
         let path = alloc::format!("/dev/{}", name);
         // Node creation is the O_CREAT fallback alone (open(path, O_CREAT |
@@ -86,13 +91,32 @@ fn create_devices() -> bool {
         if open(&path, 0x41).is_err() {
             io::print_str(&alloc::format!("[vahid] FAILED to create /dev/{}\n", name));
             all_ok = false;
+        } else if !force_fail_requested() {
+            // Per-node success marker: makes the six names a future kernel
+            // mknod must serve observable in the serial log (the CI gate
+            // greps '[vahid] created /dev/<name>' for each node on the
+            // healthy boot). Mirrors the FAILED marker shape. Gated on
+            // !force_fail_requested so the forced path never prints a
+            // success marker alongside its FATAL.
+            io::print_str(&alloc::format!("[vahid] created /dev/{}\n", name));
         }
     }
     all_ok
 }
 
+/// True when the `--force-fail` test flag is present. CI builds a
+/// fail-vahid initrd whose init spawns vahid with this flag, forcing the
+/// create_devices fatal path so "[init] giving up on vahid" gets a real
+/// QEMU run instead of waiting for a genuine /dev node failure.
+fn force_fail_requested() -> bool {
+    (0..libsarga::args::argc()).any(|i| libsarga::args::get(i as usize) == Some("--force-fail"))
+}
+
 fn user_main() -> i32 {
     io::print_str("[vahid] SkyOS Device Manager\n");
+    if force_fail_requested() {
+        io::print_str("[vahid] FORCED-FAIL: --force-fail set, taking the fatal /dev path\n");
+    }
     let devices = scan_pci();
     if !create_devices() {
         // FATAL: the device nodes the system depends on could not be

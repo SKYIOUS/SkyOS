@@ -88,9 +88,9 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
     // the same `tray_panel_rect` the taskbar draws, so tooltip and hover
     // geometry match the drawn panel exactly. Owner-stamped with the
     // TRAY_PANEL_OWNER sentinel (no window owns the tray); non-focusable:
-    // it is a status surface, not a keyboard control, and keeping it out of
-    // the ring preserves the spatial-navigation geometry the keyboard-loop
-    // selftest pins.
+    // the panel is a container, and keeping IT out of the ring leaves the
+    // spatial-navigation geometry the keyboard-loop selftest pins
+    // otherwise intact — each tray ENTRY below is its own focusable Button.
     let tray_len = d.tray.entries.len() as u32;
     let tray_panel_id = tree.add_node(
         A11yRole::TrayPanel,
@@ -101,6 +101,23 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
     tree.set_owner(tray_panel_id, crate::core::window::TRAY_PANEL_OWNER);
     tree.add_child(taskbar_id, tray_panel_id);
 
+    // Tray entries — one focusable Button per drawn entry, owner-stamped
+    // with the same TRAY_PANEL_OWNER sentinel and bounds equal to the
+    // `tray_entry_rect` the draw and hover share. Mirrors the taskbar
+    // window buttons: the ring can land on an entry and the focused light
+    // resolves it exactly like the hover light (`HoverTarget::Tray(i)`).
+    for i in 0..tray_len as usize {
+        let label = alloc::format!("{}", d.tray.entries[i].icon);
+        let entry_id = tree.add_node(
+            A11yRole::Button,
+            &label,
+            layout::tray_entry_rect(i, ty, d.screen_w, tray_len),
+            true,
+        );
+        tree.set_owner(entry_id, crate::core::window::TRAY_PANEL_OWNER);
+        tree.add_child(tray_panel_id, entry_id);
+    }
+
     // Start Menu — plus one focusable Button child per VISIBLE app row
     // (the same scroll-aware range the draw and `menu_hover_at` use), with
     // the shared `menu_item_rect` bounds, so a keyboard user can
@@ -108,7 +125,40 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
     // semantics). The row's identity is resolved from its bounds by
     // `Desktop::menu_row_app` — the label is display text only, never the
     // row's id, so renamed apps and duplicate names stay correct.
+    //
+    // The intended row (`Desktop::menu_focus_app`, set by the scroll-aware
+    // arrow path) is clamped INTO the visible window BEFORE the rows are
+    // built: the ring can advance past the tree's edge (arrow keys) and the
+    // filter can re-index the focused app (typed search), and this one
+    // clamp — every frame — keeps the focused row reachable and visible.
+    // The matching row node is remembered (`row_focus_id`) and re-focused
+    // in the tail, because node ids are positional: a scroll/filter change
+    // can renumber the node at a given id without changing its
+    // (owner, role, parent-role) fingerprint, which `validate` cannot see.
+    let mut row_focus_id: Option<u32> = None;
     if d.start_menu.open {
+        if let Some(app) = d.menu_focus_app {
+            if let Some(i) = d.start_menu.filtered.iter().position(|&a| a == app) {
+                // Clamp via the shared window rule. `end` is used instead of
+                // `start + avail`: when a row can sit BEYOND the window,
+                // `end == start + avail` by construction (`end` is only
+                // clipped by the list length below `start + avail`), so the
+                // clamp is identical.
+                let menu_r = layout::menu_rect(ty);
+                let (start, end, _) = d.start_menu.visible_range(menu_r);
+                if end > start {
+                    if i < start {
+                        d.start_menu.scroll = i as u32;
+                    } else if i >= end {
+                        d.start_menu.scroll = (i + 1 - (end - start)) as u32;
+                    }
+                }
+            } else {
+                // The focused app was filtered out — the ring falls back to
+                // `validate`'s re-sync instead of floating on a dead row.
+                d.menu_focus_app = None;
+            }
+        }
         let start_menu_id = tree.add_node(
             A11yRole::StartMenu,
             "Start Menu",
@@ -118,12 +168,9 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         tree.add_child(desktop_id, start_menu_id);
 
         let menu_r = layout::menu_rect(ty);
-        let list_r = layout::menu_list_rect(menu_r);
-        let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
-        let start = d.start_menu.scroll as usize;
-        let end = (start + avail).min(d.start_menu.filtered.len());
-        for i in start..end {
-            let app_id = d.start_menu.filtered[i];
+        let (start, _, rows) = d.start_menu.visible_range(menu_r);
+        for (k, &app_id) in rows.iter().enumerate() {
+            let i = start + k;
             let name = d
                 .app_reg
                 .get(app_id)
@@ -136,6 +183,57 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
                 true,
             );
             tree.add_child(start_menu_id, row_id);
+            if d.menu_focus_app == Some(app_id) {
+                row_focus_id = Some(row_id);
+            }
+        }
+
+        // Sidebar categories — one focusable Button per drawn category (the
+        // same sidebar-bottom cap the draw and `menu_hover_at` use), with
+        // the shared `menu_category_rect` bounds, so the ring can reach and
+        // light them like app rows. Labels come straight from CATEGORIES
+        // (display text; identity is resolved by bounds in
+        // `Desktop::menu_category_index`).
+        let sidebar_r = layout::menu_sidebar_rect(menu_r);
+        for (i, &(cat_name, _)) in crate::util::app_catalog::CATEGORIES.iter().enumerate() {
+            let cat_r = layout::menu_category_rect(menu_r, i);
+            if cat_r.y + cat_r.h as i32 > sidebar_r.y + sidebar_r.h as i32 {
+                break;
+            }
+            let cat_id = tree.add_node(A11yRole::Button, cat_name, cat_r, true);
+            tree.add_child(start_menu_id, cat_id);
+        }
+
+        // Recent strip — one focusable Button per drawn tile (capped and
+        // right-reserve-broken exactly like the draw and `menu_hover_at`),
+        // with the shared `menu_recent_rect` bounds, so the ring can reach
+        // and light the recent apps too.
+        let mut rx = layout::menu_recent_x0(menu_r);
+        let recent_n = d.app_reg.recent.len().min(layout::MENU_RECENT_MAX);
+        for ri in 0..recent_n {
+            let idx = d.app_reg.recent[ri];
+            if idx >= d.app_reg.apps.len() {
+                continue;
+            }
+            if rx + layout::MENU_RECENT_PITCH as i32
+                > menu_r.x + layout::MENU_W as i32 - layout::MENU_RECENT_RIGHT_RESERVE as i32
+            {
+                break;
+            }
+            let label = d
+                .app_reg
+                .apps
+                .get(idx)
+                .map(|app| layout::trunc(app.name, layout::MENU_RECENT_NAME_MAX))
+                .unwrap_or("?");
+            let r_id = tree.add_node(
+                A11yRole::Button,
+                label,
+                layout::menu_recent_rect(menu_r, rx),
+                true,
+            );
+            tree.add_child(start_menu_id, r_id);
+            rx += layout::MENU_RECENT_PITCH as i32;
         }
     }
 
@@ -148,6 +246,18 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
             continue;
         };
         let aw = &d.wm.iter()[i];
+        // Mirror `window::draw`'s skip conditions: a minimized window that
+        // is not animating, and a window pushed fully off-screen (x or y
+        // below -100), paint nothing — only their shadow. Their Window/
+        // Close/Minimize nodes must leave the ring for the same reason the
+        // taskbar overflow caps its buttons: the ring must never land on a
+        // surface the draw does not paint, or the focused light silently
+        // misses and the ring floats over empty space. The taskbar button
+        // remains the restore path for a minimized window, and restoring
+        // makes the chrome visible again next frame.
+        let drawn = !(aw.state == WindowState::Minimized && aw.anim.is_none())
+            && aw.x >= -100
+            && aw.y >= -100;
         let win_id = tree.add_node(
             A11yRole::Window,
             &aw.title,
@@ -156,6 +266,9 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         );
         tree.set_owner(win_id, wid);
         tree.add_child(desktop_id, win_id);
+        if !drawn {
+            tree.set_visible(win_id, false);
+        }
 
         // close button
         let close_id = tree.add_node(
@@ -166,6 +279,9 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         );
         tree.set_owner(close_id, wid);
         tree.add_child(win_id, close_id);
+        if !drawn {
+            tree.set_visible(close_id, false);
+        }
 
         // minimize button — same chrome pattern as Close: owner-stamped
         // Window child, so a11y activation can route back to the real
@@ -181,6 +297,9 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         );
         tree.set_owner(min_id, wid);
         tree.add_child(win_id, min_id);
+        if !drawn {
+            tree.set_visible(min_id, false);
+        }
     }
 
     // Desktop Icons
@@ -194,14 +313,23 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         tree.add_child(desktop_id, icon_id);
     }
 
-    // Notifications
-    for n in d.services.notifications.visible_notifications() {
+    // Notification rows — one focusable Button per VISIBLE row, so the
+    // ring can land on a row and the focused light resolves it exactly
+    // like the hover light (`HoverTarget::Notification(i)`). Owner-stamped
+    // with the NOTIFICATION_OWNER sentinel (no window owns a notification)
+    // and bounds equal to the `notification_rect` the overlay draw and
+    // hover share. Parented to the Desktop node like the overlay itself;
+    // rows are the only Button children of Desktop, which is what keeps
+    // the Desktop-parent arm in `focused_target` unambiguous.
+    let notifs = d.services.notifications.visible_notifications();
+    for (i, n) in notifs.iter().take(layout::NOTIF_MAX_VISIBLE).enumerate() {
         let notif_id = tree.add_node(
-            A11yRole::Notification,
+            A11yRole::Button,
             &n.title,
-            Rect::new(0, 0, 0, 0),
-            false,
+            layout::notification_rect(d.screen_w, i),
+            true,
         );
+        tree.set_owner(notif_id, crate::core::window::NOTIFICATION_OWNER);
         tree.add_child(desktop_id, notif_id);
     }
 
@@ -220,10 +348,65 @@ pub(crate) fn build_tree(d: &mut Desktop) -> A11yTree {
         .and_then(|fid| d.a11y_tree.nodes.iter().find(|n| n.id == fid))
         .map(|n| crate::sec::a11y::focus::node_fingerprint(&d.a11y_tree, n));
     d.focus.validate(&tree, prev_fp);
+    // Start-menu row intent: the ring means a specific APP ROW, but node ids
+    // are positional and the row window rebuilds every frame, so a scroll or
+    // filter change can silently rename the node at a given id — `validate`
+    // cannot detect that (the fingerprint is identical for any StartMenu
+    // row). Re-land the ring on the intended row's node now that the tree is
+    // built; clear the intent when the menu is closed so a stale row can't
+    // resurrect on the next open.
+    if d.start_menu.open {
+        if let Some(nid) = row_focus_id {
+            d.focus.focus(nid);
+        }
+    } else {
+        d.menu_focus_app = None;
+    }
+    // Window-activation intent: `activate_a11y_node` brought a window to
+    // front, reordering `wm` and renumbering every window-surface node id
+    // (positional). `validate` above would have re-synced the ring to a
+    // sibling taskbar button (the old id's fingerprint no longer matches).
+    // Re-land the ring on the ACTIVATED window's own node in the fresh
+    // tree — the durable-identity twin of the menu-row re-land above. The
+    // intent is one-shot: consumed (or cleared) here, every rebuild.
+    if let Some(wid) = d.pending_window_focus.take() {
+        if let Some(nid) = tree
+            .nodes
+            .iter()
+            .find(|n| n.owner == Some(wid) && n.role == A11yRole::Window)
+            .map(|n| n.id)
+        {
+            d.focus.focus(nid);
+        }
+    }
     if let Some(fid) = d.focus.focused() {
         tree.set_focus(fid);
     }
     tree
+}
+
+/// The Button node with the given id if its parent node has the given
+/// role — the shared parent-role + focus-id lookup every focus-resolution
+/// computation uses: taskbar buttons resolve by owner, start-menu rows by
+/// bounds, and window chrome controls by label, but all three first need
+/// "is this focused Button under that parent role?", which is this one
+/// function. `fid` is the focused id at every call site (the snapshot's
+/// `focused_target`), but the helper is pure over (tree, id) so callers
+/// and tests can hand it any node id.
+pub(crate) fn focused_button_under_role(
+    tree: &A11yTree,
+    fid: u32,
+    role: A11yRole,
+) -> Option<&A11yNode> {
+    let node = tree.nodes.iter().find(|n| n.id == fid)?;
+    if node.role != A11yRole::Button {
+        return None;
+    }
+    let parent_role = node
+        .parent
+        .and_then(|pid| tree.nodes.iter().find(|p| p.id == pid))
+        .map(|p| p.role)?;
+    (parent_role == role).then_some(node)
 }
 
 /// Pure tooltip label resolution — the single place all hover text is

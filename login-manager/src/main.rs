@@ -62,8 +62,25 @@ fn user_main() -> i32 {
             io::print_str("[login] window created\n");
             w
         }
-        Err(_) => {
-            io::print_str("[login] failed to create window\n");
+        Err(e) => {
+            // WHY marker for the GUI-hang gate: paired with the
+            // "[login] mem free=N pages" line above, this settles whether
+            // the window-failure loop is the known ENOMEM path (errno 12 -
+            // kernel-gui-window-fix.md Option 2: create_window returns
+            // -ENOMEM when the contiguous allocation fails) or something
+            // new (any other errno, e.g. 5 = map_buffer returned NULL).
+            // free~0 + Out of memory = persistent OOM; plenty free + any
+            // errno = a fresh cause, not the documented ENOMEM loop. (The
+            // exit stays 0 here by design - the non-zero Option 2b exit is
+            // kernel-gated and only lands with the kernel change.)
+            let msg = if e == libsarga::errno::ENOMEM as i64 {
+                alloc::string::String::from(
+                    "[login] failed to create window: Out of memory (errno 12)\n",
+                )
+            } else {
+                alloc::format!("[login] failed to create window: errno {}\n", e)
+            };
+            io::print_str(&msg);
             return 0;
         }
     };

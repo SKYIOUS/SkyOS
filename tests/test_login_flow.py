@@ -19,12 +19,15 @@ change.
 Run:  python3 tests/test_login_flow.py
 """
 import hashlib
+import io
 import os
 import re
+import subprocess
 import sys
 import unittest
 
 from scan_rust import strip_rust
+from constants import MAX_RESPAWNS
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -159,6 +162,34 @@ class TestLoginFlow(unittest.TestCase):
         self.assertEqual((parts[2], parts[3]), (b"0", b"0"))  # uid, gid
 
     # --- source-contract pins for login's execve argv[0] change ---
+    def test_getty_prints_memory_pressure_marker(self):
+        # The console getty must print the same boot-time memory-pressure
+        # marker at startup that login-manager prints before Window::create
+        # (login-manager/src/main.rs:53-59): the same ctlFS node
+        # (/ctl/sys/mem/free), the same '[login] mem free={} pages' shape,
+        # and the same unavailable arm. The shell-interaction harness
+        # (qemu_shell_test.exp) greps this marker from the accumulated boot
+        # log, so the shell job collects the same per-boot OOM evidence the
+        # GUI gate does (kernel-gui-window-fix.md Option 1 vs 2). The getty
+        # never exits (mistype re-prompt loop), so it prints once per boot.
+        src = open(LOGIN_RS, encoding="utf-8").read()
+        # 1. The ctlFS read + marker shape (matches login-manager exactly).
+        self.assertIn('libsarga::fs::read_to_string("/ctl/sys/mem/free")', src)
+        self.assertIn('[login] mem free={} pages\\n', src)
+        self.assertIn('"[login] mem free=unavailable\\n"', src)
+        # 2. Placement: at getty startup, BEFORE the interactive login loop
+        #    (so it prints once per boot before the first 'login: ' prompt,
+        #    and is inside the accumulated buffer the harness greps after
+        #    the prompt). The needle is the EXECUTABLE form 'mem free={}
+        #    pages' (only in the print_str call) - the bare 'mem free' is
+        #    also in the marker's own comment block, so it would keep the
+        #    ordering assert satisfied after a move of only the match.
+        self.assertLess(
+            src.index('mem free={} pages'),
+            src.index("let mut failures: u32 = 0;"),
+            "getty mem marker must print before the interactive login loop",
+        )
+
     def test_login_execve_argv0_is_the_shell(self):
         with open(LOGIN_RS, encoding="utf-8") as fh:
             src = fh.read()
@@ -605,7 +636,19 @@ class TestGuiAttemptCapContract(unittest.TestCase):
         # window cannot be created. (Compare vahid's exit(1): crashes
         # accumulates to 6 and eventually gives up.)
         code = strip_rust(self.src)
-        self.assertIn('io::print_str("[login] failed to create window\\n")', self.src)
+        # The WHY marker (paired with the mem free=N line) distinguishes
+        # the known ENOMEM path from a fresh cause: ENOMEM -> Out of
+        # memory, any other errno -> errno {e}. Losing either branch or
+        # the errno comparison means the next GUI-hang boot cannot settle
+        # known-vs-new from the serial log alone.
+        self.assertIn(
+            "[login] failed to create window: Out of memory (errno 12)", self.src,
+            "ENOMEM branch marker lost",
+        )
+        self.assertIn("[login] failed to create window: errno {}", self.src,
+                      "other-errno branch marker lost")
+        self.assertIn("libsarga::errno::ENOMEM as i64", self.src,
+                      "errno distinction mechanism lost")
         # The return 0 follows the failed-to-create print: in stripped code,
         # the Err arm is `Err(_) => { let _ = ...; return 0; }`.
         self.assertIn("return 0", code)
@@ -1235,15 +1278,15 @@ class TestKernelKeyContract(unittest.TestCase):
         # Port of the test_keymap packed-stream sweep: EVERY BINDINGS row
         # -- including the Ctrl+Alt+Backspace chord -- must be reachable
         # from some (byte, mods) pair via KeyEvent::from_raw, and the
-        # found pair must resolve to that row's action. 17 rows are
+        # found pair must resolve to that row's action. 16 rows are
         # byte-deliverable (from_byte); the chord needs the packed bits
         # (0x0308). Note: alt/ctrl/shift can always be OR'd into any
         # byte, so the reachability half is near-vacuous -- the real
-        # tripwires are the (17, 1) count, an unmapped code literal
+        # tripwires are the (16, 1) count, an unmapped code literal
         # (diagnosed by _binding_code), and the resolve-through
         # shadowing check.
         rows = _parse_bindings(self.input_code)
-        self.assertEqual(len(rows), 18, "BINDINGS row count")
+        self.assertEqual(len(rows), 17, "BINDINGS row count")
 
         deliverable = synthetic = 0
         for r in rows:
@@ -1257,8 +1300,8 @@ class TestKernelKeyContract(unittest.TestCase):
             )
             self.assertTrue(ok, "no from_byte input for %r" % r)
             deliverable += 1
-        self.assertEqual((deliverable, synthetic), (17, 1),
-                         "17 byte-deliverable + 1 synthetic chord")
+        self.assertEqual((deliverable, synthetic), (16, 1),
+                         "16 byte-deliverable + 1 synthetic chord")
 
         for r in rows:
             target = (_binding_code(r["code"]), r["ctrl"], r["alt"], r["shift"])
@@ -1456,6 +1499,7 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         cls.login = open(os.path.join(REPO_ROOT, "tests", "qemu_gui_login.exp"), encoding="utf-8").read()
         cls.probe = open(os.path.join(REPO_ROOT, "tests", "probe_console_login.exp"), encoding="utf-8").read()
         cls.gate = open(os.path.join(REPO_ROOT, "tests", "qemu_gui_gate.exp"), encoding="utf-8").read()
+        cls.lm_src = open(os.path.join(REPO_ROOT, "login-manager", "src", "main.rs"), encoding="utf-8").read()
         cls.ci = open(os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml"), encoding="utf-8").read()
 
     def test_login_harness_has_chord_and_irq_probe(self):
@@ -1498,6 +1542,90 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         self.assertIn(r"\[login\] tab: focus -> password", self.gate)
         self.assertIn(
             'grep -q "PASS: sendkey Tab advanced the login-manager field"', self.ci
+        )
+
+    def test_gate_harness_has_dev_probe(self):
+        # The /dev usability probe (Aug 10, 2026) proves the O_CREAT
+        # fallback's six nodes exist AND work on a real boot: console
+        # login (root/skyos), 'ls /dev' with six \\b-anchored regexps over
+        # the accumulated buffer, and 'dd if=/dev/zero of=/dev/null' for
+        # the usable-char-device check. A future edit that silently drops
+        # any part (login, a node regexp, the dd, or the match_max bump
+        # that keeps the whole boot in the buffer) fails here before any
+        # QEMU run.
+        gate = self.gate
+        # \nmatch_max 1000000\n is the EXECUTABLE line: the bare string
+        # also appears in two header comments, so a comment alone could
+        # satisfy a looser needle after the real bump is dropped.
+        self.assertIn(
+            "\nmatch_max 1000000\n",
+            gate,
+            "match_max bump dropped - buffer no longer holds the boot markers",
+        )
+        # Console login flow (same root/skyos path the shell harness proves).
+        self.assertIn('send "root\\r"', gate, "login flow root send dropped")
+        self.assertIn("{Password:}", gate, "Password prompt arm dropped")
+        self.assertIn('send "skyos\\r"', gate, "password send dropped")
+        self.assertIn("{sash\\[}", gate, "sash prompt arm dropped")
+        # Six \\b-anchored regexps over the accumulated buffer (ls /dev).
+        for name in ("null", "zero", "random", "urandom", "tty", "console"):
+            self.assertIn(
+                "{\\b%s\\b}" % name,
+                gate,
+                "ls /dev regexp for %s dropped from the probe" % name,
+            )
+        self.assertIn(
+            "$expect_out(buffer)",
+            gate,
+            "node regexps no longer scan the accumulated buffer",
+        )
+        # The regexps scan $expect_out(buffer) right after 'ls /dev' -
+        # pin the SEND itself so they cannot be left scanning a stale buffer.
+        self.assertIn('send "ls /dev\\r"', gate, "ls /dev send dropped")
+        # Password discipline (credential-leak class): the password send
+        # must sit between log_user 0 and log_user 1 so root's password
+        # never lands in the CI log (same discipline as the shell harness).
+        self.assertIn("log_user 0", gate)
+        self.assertIn("log_user 1", gate)
+        log0 = gate.index("log_user 0")
+        sky = gate.index('send "skyos\\r"')
+        log1 = gate.index("log_user 1")
+        self.assertLess(log0, sky, "log_user 0 must precede the password send")
+        self.assertLess(sky, log1, "log_user 1 must follow the password send")
+        # FAIL arms must keep their exit 1: a probe failure silently
+        # downgraded to PASS would let a broken /dev path through. Each
+        # arm is pinned by its EXACT shape (an arm-scoped window could
+        # reach the next arm's exit 1): login/ls arms are inline
+        # '; exit 1 }', the dd arm is a block with exit 1 on the line
+        # after the message.
+        self.assertIn(
+            'send_user "FAIL: no console login prompt for the /dev probe\\n"; exit 1',
+            gate,
+            "login-prompt FAIL arm lost its exit 1",
+        )
+        self.assertIn(
+            "send_user \"FAIL: 'ls /dev' timed out\\n\"; exit 1",
+            gate,
+            "ls /dev FAIL arm lost its exit 1",
+        )
+        self.assertIn(
+            "send_user \"FAIL: dd on /dev/zero -> /dev/null timed out "
+            "(device not usable)\\n\"\n        exit 1",
+            gate,
+            "dd FAIL arm lost its exit 1",
+        )
+        # dd usability check: reads 16 bytes from /dev/zero into /dev/null.
+        # Pin the SEND line - the bare string also appears in two header
+        # audit comments, so a comment alone could satisfy a looser needle.
+        self.assertIn(
+            'send "dd if=/dev/zero of=/dev/null bs=16 count=1\\r"',
+            gate,
+            "dd zero->null usability probe dropped",
+        )
+        self.assertIn(
+            "PASS: ls /dev shows all six nodes",
+            gate,
+            "six-node PASS verdict dropped",
         )
 
     def test_login_manager_tab_arm_announces_marker(self):
@@ -1546,7 +1674,98 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         self.assertNotIn('send_user "=== routing probe: [KBD]', self.login)
         self.assertNotIn('send_user "=== routing probe: [KBD]', self.gate)
 
+    def test_gate_state_tracked_loop_is_order_tolerant(self):
+        # The GUI gate's boot-verdict phase is ONE order-tolerant loop
+        # (Aug 10, 2026) collecting the vahid-health and login-manager
+        # window markers: saw_vahid/saw_window flags, a single 240s
+        # deadline, and an adaptive per-iteration timeout (min(30, rem)).
+        # FATAL / init-give-up / panic fail immediately at any position.
+        # A future edit that regresses the order-tolerance (back to two
+        # sequential expects, a fixed timeout, or a dropped fail arm) is
+        # caught here host-side, before any QEMU run.
+        g = self.gate
+        # 1. Flags + the order-tolerant loop condition.
+        self.assertIn("set saw_vahid 0", g)
+        self.assertIn("set saw_window 0", g)
+        self.assertIn("while {!$saw_vahid || !$saw_window}", g)
+        # 2. Single 240s deadline (replaces the old 120+120 sequential
+        #    budget; a slow-but-healthy boot needs the headroom).
+        self.assertIn("[clock seconds] + 240", g)
+        # 3. Adaptive per-iteration timeout: the final wait expires exactly
+        #    at the deadline (a fixed 30s would fail up to 30s late).
+        self.assertIn("set rem [expr {$verdict_deadline - [clock seconds]}]", g)
+        self.assertIn("expect -timeout [expr {$rem < 30 ? $rem : 30}]", g)
+        # 4. Fail arms: vahid FATAL + init give-up, immediate exit 1 at any
+        #    position.
+        self.assertIn("{\\[vahid\\] FATAL:} {", g)
+        self.assertIn("FAIL: vahid fatal device-scan failure", g)
+        self.assertIn("-re {(?s)\\[init\\] giving up on .*?vahid}", g)
+        self.assertIn("FAIL: init gave up on vahid after too many crashes", g)
+        # 5. The window verdict arm sets the second flag (the order partner
+        #    of vahid's ready).
+        self.assertIn("{\\[login\\] window created} {", g)
+        self.assertIn("set saw_window 1", g)
+        # 6. Structure: flags init -> deadline -> loop -> adaptive timeout
+        #    -> fail arms, so the loop really is one state-tracked body and
+        #    not two sequential expects.
+        self.assertLess(
+            g.index("set saw_vahid 0"),
+            g.index("[clock seconds] + 240"),
+        )
+        self.assertLess(
+            g.index("[clock seconds] + 240"),
+            g.index("while {!$saw_vahid || !$saw_window}"),
+        )
+        self.assertLess(
+            g.index("while {!$saw_vahid || !$saw_window}"),
+            g.index("expect -timeout [expr {$rem < 30 ? $rem : 30}]"),
+        )
+        self.assertLess(
+            g.index("expect -timeout [expr {$rem < 30 ? $rem : 30}]"),
+            g.index("{\\[vahid\\] FATAL:} {"),
+        )
 
+
+
+
+    def test_login_manager_window_markers_match_gate_patterns(self):
+        # Source-to-harness cross-pin (mirrors test_giveup_gate.py's
+        # marker cross-pin): the GUI gate's state loop greps the login
+        # window verdict markers EXACTLY as login-manager prints them
+        # (login-manager/src/main.rs:62 and :66 - io::print_str with the
+        # literal \n), and the fail arm reads the '[login] mem free=N
+        # pages' memory marker the same source prints right before
+        # Window::create (:56). A rename or reformat in either file breaks
+        # here before the QEMU job goes stale.
+        g = self.gate
+        lm = self.lm_src
+        # 1. The two window verdict markers, escaped for Tcl braces.
+        self.assertIn('io::print_str("[login] window created\\n")', lm)
+        self.assertIn("{\\[login\\] window created} {", g)
+        # The WHY marker (paired with [login] mem free=N): ENOMEM -> Out
+        # of memory, any other errno -> errno {e}. Both keep the "failed
+        # to create window" prefix the gate's unanchored pattern greps.
+        self.assertIn('[login] failed to create window: Out of memory (errno 12)', lm)
+        self.assertIn('[login] failed to create window: errno {}', lm)
+        self.assertIn("{\\[login\\] failed to create window} {", g)
+        # 2. The window-created arm must set the order partner of vahid's
+        #    ready (saw_window), and the failed arm must FAIL immediately
+        #    (the respawn loop is a hard gate, not a soft timeout).
+        self.assertIn("set saw_window 1", g)
+        self.assertIn("respawn loop", g)
+        # 3. The memory-pressure marker the FAIL arm's evidence reads must
+        #    match login-manager's print before Window::create (a bare
+        #    "[login] mem free" without the "=N pages" shape would silently
+        #    stop feeding the verdict's memory evidence).
+        self.assertIn('[login] mem free={} pages\\n', lm)
+        self.assertIn(r"\[login\] mem free=(\d+) pages", g)
+        # 4. The audit table's source line refs must not drift from the
+        #    markers they cite (currently :62/:66 - corrected from a stale
+        #    :23/:27). Pin the refs' SHAPE (win_created/win_failed rows
+        #    exist) so an editor updating them is forced to keep the
+        #    markers in view.
+        self.assertIn("#   5 win_created", g)
+        self.assertIn("#   6 win_failed", g)
 
     def test_no_unescaped_brackets_in_executable_strings(self):
         # Scan-based companion to test_bracket_escaping_in_tcl_strings: EVERY
@@ -1632,6 +1851,17 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         )
         self.assertIn("PASS: session ended via ctrl+alt+backspace", leg)
         self.assertIn("PASS: session ended via esc fallback", leg)
+        # The positive arms must expect the RICH unwind marker (code +
+        # ending state printed by main.rs at unwind), cross-pinned against
+        # the emit below so harness and main can't drift: exactly two
+        # positive arms (chord + esc fallback) in this leg.
+        self.assertEqual(
+            leg.count("ending=true} {"), 2,
+        )
+        # (main.rs emit cross-pinned in TestInitRespawnContract.)
+        # The gui-login Verify step greps the rich marker as
+        # belt-and-suspenders after the verdict + IRQ1 check.
+        self.assertIn(r"\[ade\] session ended code=0 ending=true", self.ci)
         self.assertIn("set chord_ended 0", leg)
         self.assertIn("if {!$chord_ended} {", leg)
         # The toggle must gate the fallback: in Design A mode the timeout
@@ -1660,14 +1890,14 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
     def test_ci_a11y_gate_includes_keyboard_window_open(self):
         # The selftests test_a11y_keyboard_window_open,
         # test_a11y_start_menu_rows and test_a11y_overlay_mouse_keyboard_parity
-        # must be counted in the ci.yml PASS-name gate (19 names now); the
+        # must be counted in the ci.yml PASS-name gate (20 names now); the
         # gate test (test_ade_selftest_gate.py) already pins set-equality
         # with run_all.
         self.assertIn("a11y_keyboard_window_open", self.ci)
         self.assertIn("a11y_start_menu_rows", self.ci)
         self.assertIn("a11y_overlay_mouse_keyboard_parity", self.ci)
-        self.assertIn('"$a11y_passes" -lt 19', self.ci)
-        self.assertIn("found $a11y_passes/19", self.ci)
+        self.assertIn('"$a11y_passes" -lt 20', self.ci)
+        self.assertIn("found $a11y_passes/20", self.ci)
 
     def test_ci_verify_steps_grep_irq_marker_after_verdict(self):
         # Both Verify steps grep the marker (escaped for BRE) and only after
@@ -1678,6 +1908,22 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         pass_idx = self.ci.find("GUI login integration: PASS")
         irq_idx = self.ci.find(r"\[KBD\] IRQ1 fired!", pass_idx)
         self.assertGreater(irq_idx, pass_idx, "login IRQ1 grep must come after the PASS check")
+
+
+def port_reap_classification(status):
+    """Faithful port of ade session.rs reap()'s classification of a reaped
+    child: 0 -> ("terminated", None) (Clean, no crash notification);
+    < 0 -> ("crashed", "killed"); > 128 -> ("crashed", "signal N") using
+    the POSIX 128+sig convention; else -> ("crashed", "exit N"). Mirrors
+    init's binary view: only status 0 avoids the crash path.
+    """
+    if status == 0:
+        return "terminated", None
+    if status < 0:
+        return "crashed", "killed"
+    if status > 128:
+        return "crashed", f"signal {status - 128}"
+    return "crashed", f"exit {status}"
 
 
 class TestInitRespawnContract(unittest.TestCase):
@@ -1716,7 +1962,9 @@ class TestInitRespawnContract(unittest.TestCase):
     signal-killed service still has a non-zero waitpid status, so it is
     counted toward MAX_RESPAWNS just like a bad exit code. That matches
     the "non-zero (or signal) exits count" framing -- there is no status
-    init treats as a crash that is not non-zero.
+    init treats as a crash that is not non-zero. Behaviorally pinned in
+    test_vahid_contract.py::test_signal_killed_service_is_bounded_like_bad_exit
+    and test_binary_view_agrees_with_exit_class.
     """
 
     @classmethod
@@ -1729,12 +1977,12 @@ class TestInitRespawnContract(unittest.TestCase):
         cls.ade_main_code = strip_rust(cls.ade_main)
 
     # --- init side (init/src/main.rs) ---
-    def test_max_respawns_constant_is_5(self):
+    def test_max_respawns_matches_source(self):
         # Deliberately pinned here too (not just in test_vahid_contract.py,
         # which ports the same state machine): this file holds the SESSION
         # side of the contract, and a MAX_RESPAWNS bump must fail loudly in
         # both places so neither side of the agreement drifts silently.
-        self.assertIn("const MAX_RESPAWNS: u32 = 5;", self.init)
+        self.assertIn(f"const MAX_RESPAWNS: u32 = {MAX_RESPAWNS};", self.init)
 
     def test_zero_status_resets_crash_counter_first(self):
         # The reset must run BEFORE the increment: a clean exit always
@@ -1806,10 +2054,13 @@ class TestInitRespawnContract(unittest.TestCase):
 
     # --- the wiring between them (ade/src/main.rs) ---
     def test_ade_passes_session_exit_code_to_init(self):
-        # main.rs's end-of-session path: "[ade] session ended" then the
-        # session's exit code -- exactly the value init's waitpid sees.
-        self.assertIn('io::print_str("[ade] session ended\\n");', self.ade_main)
+        # main.rs's end-of-session path: the unwind marker carries the
+        # session's exit code AND ending state to serial, so the CI grep
+        # gates can assert the idempotent-unwind contract on real input --
+        # exactly the value init's waitpid sees (EXIT_LOGOUT 0).
+        self.assertIn('"[ade] session ended code={} ending={}\\n"', self.ade_main)
         self.assertIn("desktop.session.exit_code()", self.ade_main_code)
+        self.assertIn("desktop.session.is_ending()", self.ade_main_code)
         # The comment on that line documents the contract in init terms.
         self.assertIn("init treats 0 as a clean exit and respawns", self.ade_main)
 
@@ -1820,6 +2071,334 @@ class TestInitRespawnContract(unittest.TestCase):
         # same value in init terms.
         self.assertIn("const EXIT_LOGOUT: i32 = 0;", self.session)
         self.assertIn("EXIT_LOGOUT = 0; init treats 0 as a clean exit", self.ade_main)
+
+
+    def test_reap_dispatches_on_exit_class(self):
+        # reap() classifies every reaped child through session.rs's
+        # exit_class -- the same 128+sig convention init's binary view
+        # counts as a crash. Clean children are terminated in place;
+        # everything else falls into the crash branch.
+        code = self.session_code
+        self.assertIn("match exit_class(status) {", code)
+        self.assertIn("ExitClass::Clean => self.lifecycle.mark_terminated(pid),", code)
+        self.assertIn("cls => {", code)
+
+    def test_only_non_clean_reap_notifies_crashed(self):
+        # The "Application Crashed" notification sits ONLY in the non-Clean
+        # branch: exactly one notify site, reachable only through
+        # mark_crashed, never through the Clean arm's mark_terminated. A
+        # clean exit is silent -- the session-side mirror of init's
+        # status == 0 reset (only non-zero exits count toward give-up).
+        code = self.session_code
+        raw = self.session
+        # strip_rust blanks string literals, so literal-bearing pins
+        # (the notify title, the reason payloads) read the RAW source;
+        # structural pins read the stripped code.
+        self.assertEqual(raw.count('services.notify("Application Crashed"'), 1)
+        clean = code.index("ExitClass::Clean => self.lifecycle.mark_terminated(pid),")
+        crashed = code.index("self.lifecycle.mark_crashed(pid);")
+        notify = code.index("services.notify(")  # survives stripping
+        self.assertGreater(crashed, clean)
+        self.assertGreater(notify, crashed)
+        # The notify sits inside the `cls => {` crash branch, which
+        # never touches mark_terminated (the Clean arm does). Slice from
+        # the branch open to the notify so the Clean arm's own
+        # mark_terminated is excluded.
+        branch = code[code.index("cls => {"):notify]
+        self.assertIn("mark_crashed", branch)
+        self.assertNotIn("mark_terminated", branch)
+        # Brace-balance the slice: the notify must sit inside at least one
+        # open block. This closes the hoist-after-match hole -- moving the
+        # notify out of the match (called unconditionally, clean exits
+        # included) zeroes the balance and trips here, where the ordering
+        # assertions above would pass vacuously (mark_terminated only lives
+        # in the Clean arm, before the slice start).
+        self.assertGreater(
+            branch.count("{"), branch.count("}"),
+            "notify hoisted outside the crash branch",
+        )
+        # The reason strings map the exit_class arms onto the notification
+        # payload: Killed / Signal(128+sig) / Error(exit code).
+        self.assertIn('alloc::string::String::from("killed")', raw)
+        self.assertIn('alloc::format!("signal {}", sig)', raw)
+        self.assertIn('alloc::format!("exit {}", code)', raw)
+
+    def test_reap_classification_matches_behavior(self):
+        # Behavioral sweep of the reap classification: only status 0 is
+        # Clean (terminated, no notification); every other status -- a bad
+        # exit code, a 128+sig signal kill, or a negative kill -- is a
+        # crash with the documented reason, exactly the set init's binary
+        # view counts toward MAX_RESPAWNS.
+        cases = [
+            (0, "terminated", None),
+            (1, "crashed", "exit 1"),
+            (42, "crashed", "exit 42"),
+            (127, "crashed", "exit 127"),
+            (128, "crashed", "exit 128"),
+            (130, "crashed", "signal 2"),    # SIGINT
+            (137, "crashed", "signal 9"),    # SIGKILL
+            (143, "crashed", "signal 15"),   # SIGTERM
+            (-1, "crashed", "killed"),
+            (-9, "crashed", "killed"),
+        ]
+        for status, outcome, reason in cases:
+            self.assertEqual(
+                port_reap_classification(status), (outcome, reason),
+                f"status {status}",
+            )
+        # Binary-view agreement with init: Clean iff status == 0.
+        for status in (0, 1, 130, 137, -9):
+            is_clean = status == 0
+            self.assertEqual(
+                port_reap_classification(status)[0] == "terminated", is_clean,
+                f"status {status}: reap classification vs init binary view disagree",
+            )
+
+
+class TestOption2bDocDiff(unittest.TestCase):
+    """Pins that the Option 2b draft diff in kernel-gui-window-fix.md
+    still applies cleanly to login-manager/src/main.rs, so the doc patch
+    cannot drift from the live source. (Draft patch, NOT applied - it is
+    the userspace companion to kernel Option 2, mutually exclusive with
+    the recommended Option 1.)"""
+
+    DOC = os.path.join(REPO_ROOT, "ade", "docs", "kernel-gui-window-fix.md")
+
+    def _extract_diff(self, header, doc=None):
+        """Extract the 4-space-indented diff block under a '## <header>'
+        section of a doc (default kernel-gui-window-fix.md). Anchors are
+        pinned with clean FAILs: a renamed header or dropped fence fails
+        with a message, not a ValueError ERROR."""
+        path = doc or self.DOC
+        name = os.path.basename(path)
+        with io.open(path, encoding="utf-8") as fh:
+            s = fh.read()
+        self.assertIn(header, s,
+                        "%s section header renamed in %s" % (header, name))
+        head = s.index(header)
+        self.assertIn("```diff", s[head:],
+                        "no diff fence after the %s header" % header)
+        fence = s.index("```diff", head)
+        self.assertIn("```", s[fence + 8 :],
+                        "%s diff fence never closed" % header)
+        close = s.index("```", fence + 8)
+        block = s[fence + len("```diff\n") : close]
+        lines = []
+        for ln in block.splitlines():
+            if not ln.startswith("    "):
+                raise AssertionError(
+                    "%s diff line not 4-space markdown-indented: %r" % (header, ln)
+                )
+            lines.append(ln[4:])
+        return "\n".join(lines) + "\n"
+
+    def _extract_2b_diff(self):
+        return self._extract_diff("## Patch Option 2b")
+
+    def test_option2b_diff_applies_cleanly_to_login_manager(self):
+        diff = self._extract_2b_diff()
+        # Guard the extraction: the block must target login-manager.
+        self.assertIn("--- a/login-manager/src/main.rs", diff)
+        self.assertIn("+++ b/login-manager/src/main.rs", diff)
+        # Name the drift point in the live source (git apply would fail
+        # anyway; these make the diagnosis specific).
+        lm = open(
+            os.path.join(REPO_ROOT, "login-manager", "src", "main.rs"), encoding="utf-8"
+        ).read()
+        self.assertIn("const MAX_FAILED_ATTEMPTS: u32 = 10;", lm)
+        self.assertIn("const BACKOFF_NS: u64 = 30_000_000_000;", lm)
+        self.assertIn('[login] failed to create window: Out of memory (errno 12)', lm)
+        self.assertIn("return 0;", lm)
+        # The doc's hunk context must apply to the working tree.
+        # input=bytes, NOT text: on Windows the text-mode pipe translates
+        # \\n -> \\r\\n and corrupts the patch (git apply then reports
+        # 'patch failed' on hunk 1 despite the diff being valid).
+        r = subprocess.run(
+            ["git", "apply", "--check", "--whitespace=nowarn", "-"],
+            cwd=REPO_ROOT,
+            input=diff.encode("utf-8"),
+            capture_output=True,
+        )
+        self.assertEqual(
+            r.returncode,
+            0,
+            "Option 2b diff in kernel-gui-window-fix.md no longer applies to "
+            "login-manager/src/main.rs - the doc drifted from the live source: %s"
+            % r.stderr.decode("utf-8", "replace").strip()[:300],
+        )
+
+    def test_option2_diff_applies_cleanly_to_kernel(self):
+        """The Option 2 kernel hunk (sys_gui_create_window -> -ENOMEM) must
+        keep applying to the kernel tree. Same difflib-verified treatment as
+        Option 2b: the doc block is generated from the live source, so any
+        drift (doc context edited, or the kernel region rewritten) trips here
+        before the rewrite can pick up a stale patch."""
+        # Full header, NOT the short '## Patch Option 2': that string is a
+        # prefix of '## Patch Option 2b', so a deleted or reordered Option 2
+        # section would pass the header assert while silently extracting the
+        # 2b block (same substring false-fire class as the mknod SYS_MKNOD /
+        # SYS_MKNODAT fix).
+        diff = self._extract_diff("## Patch Option 2 (alternative)")
+        # Guard the extraction: the block must target the kernel syscall.
+        self.assertIn("--- a/kernel/src/syscalls/mod.rs", diff)
+        self.assertIn("+++ b/kernel/src/syscalls/mod.rs", diff)
+        # Name the drift point (git apply would fail anyway; this makes the
+        # diagnosis specific).
+        self.assertIn("return errno::Errno::ENOMEM as u64;", diff)
+        self.assertIn("-        win.content = Some(alloc::vec![0; content_len].into_boxed_slice());", diff)
+        # Locate the kernel tree: env override, then the same siblings the
+        # mknod/devfs pins in test_vahid_contract.py use.
+        env = os.environ.get("SKYOS_KERNEL_DIR")
+        candidates = [env] if env else []
+        parent = os.path.dirname(REPO_ROOT)
+        candidates += [
+            os.path.join(parent, "SKYIOUS KERNEL"),
+            os.path.join(parent, "SKYIOUS-KERNEL"),
+            os.path.join(parent, "SKYIOUS_KERNEL"),
+        ]
+        root = next((c for c in candidates if os.path.isfile(os.path.join(c, "kernel", "src", "syscalls", "mod.rs"))), None)
+        if root is None:
+            self.skipTest("kernel tree not found (SKYOS_KERNEL_DIR or a "
+                          "SKYIOUS KERNEL sibling); CI checks it out, so CI has teeth")
+            return
+        # input=bytes, NOT text: on Windows the text-mode pipe translates
+        # \n -> \r\n and corrupts the patch (see the Option 2b test).
+        r = subprocess.run(
+            ["git", "apply", "--check", "--whitespace=nowarn", "-"],
+            cwd=root,
+            input=diff.encode("utf-8"),
+            capture_output=True,
+        )
+        self.assertEqual(
+            r.returncode,
+            0,
+            "Option 2 diff in kernel-gui-window-fix.md no longer applies to "
+            "kernel/src/syscalls/mod.rs - the doc drifted from the kernel "
+            "source: %s"
+            % r.stderr.decode("utf-8", "replace").strip()[:300],
+        )
+
+    def test_lowwater_diff_applies_cleanly_to_kernel(self):
+        """The /ctl/sys/mem/lowwater draft diff in kernel-mem-lowwater.md
+        must keep applying to the kernel tree (buddy.rs + ctlfs.rs). Same
+        difflib-verified treatment as Option 2/2b: the doc block is
+        generated from the live source, so any drift (doc context edited, or
+        the kernel region rewritten) trips here before the rewrite can pick
+        up a stale patch."""
+        doc = os.path.join(REPO_ROOT, "ade", "docs", "kernel-mem-lowwater.md")
+        # Full section header, NOT the short '## 3. Patch': assert the
+        # generated marker so a renumbered header trips cleanly.
+        diff = self._extract_diff(
+            "## 3. Patch (difflib-generated, `git apply --check` verified)",
+            doc=doc,
+        )
+        # Guard the extraction: the block must target the two kernel files.
+        self.assertIn("--- a/kernel/src/memory/buddy.rs", diff)
+        self.assertIn("+++ b/kernel/src/memory/buddy.rs", diff)
+        self.assertIn("--- a/kernel/src/vfs/ctlfs.rs", diff)
+        self.assertIn("+++ b/kernel/src/vfs/ctlfs.rs", diff)
+        # Name the drift points (git apply would fail anyway; these make the
+        # diagnosis specific).
+        self.assertIn("+    min_free_pages: usize,", diff)
+        self.assertIn('add_child(&mem_dir, "lowwater", file_fn(|| {', diff)
+        # Locate the kernel tree: env override, then the same siblings the
+        # mknod/devfs pins in test_vahid_contract.py use.
+        env = os.environ.get("SKYOS_KERNEL_DIR")
+        candidates = [env] if env else []
+        parent = os.path.dirname(REPO_ROOT)
+        candidates += [
+            os.path.join(parent, "SKYIOUS KERNEL"),
+            os.path.join(parent, "SKYIOUS-KERNEL"),
+            os.path.join(parent, "SKYIOUS_KERNEL"),
+        ]
+        root = next((c for c in candidates if os.path.isfile(
+            os.path.join(c, "kernel", "src", "memory", "buddy.rs"))), None)
+        if root is None:
+            self.skipTest("kernel tree not found (SKYOS_KERNEL_DIR or a "
+                          "SKYIOUS KERNEL sibling); CI checks it out, so CI has teeth")
+            return
+        # input=bytes, NOT text: on Windows the text-mode pipe translates
+        # \n -> \r\n and corrupts the patch (see the Option 2b test).
+        r = subprocess.run(
+            ["git", "apply", "--check", "--whitespace=nowarn", "-"],
+            cwd=root,
+            input=diff.encode("utf-8"),
+            capture_output=True,
+        )
+        self.assertEqual(
+            r.returncode,
+            0,
+            "lowwater diff in kernel-mem-lowwater.md no longer applies to "
+            "kernel/src/memory/buddy.rs + kernel/src/vfs/ctlfs.rs - the doc "
+            "drifted from the kernel source: %s"
+            % r.stderr.decode("utf-8", "replace").strip()[:300],
+        )
+
+    def test_option2b_draft_build_job_pinned(self):
+        """The CI job that proves Option 2b COMPILES (not just applies) must
+        stay wired: the job runs tests/build_option2b_draft.py, which must
+        extract via the pinned extractor, scratch-copy the workspace, apply
+        the diff, and cargo build -p login-manager with the same flags the
+        build job uses. A future edit that drops the build job, retargets
+        the script, or skips the cargo step fails here before any CI run."""
+        ci = io.open(
+            os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml"),
+            encoding="utf-8").read()
+        # Guard the script's existence with a named clean FAIL: an io.open
+        # on a deleted file would ERROR (unhandled FileNotFoundError), and
+        # this session's anchor convention is named FAILs, not ERRORs.
+        script_path = os.path.join(REPO_ROOT, "tests", "build_option2b_draft.py")
+        self.assertTrue(os.path.isfile(script_path),
+                        "tests/build_option2b_draft.py deleted")
+        script = io.open(script_path, encoding="utf-8").read()
+
+        # The job exists and runs the script.
+        self.assertIn("option2b-draft-build:", ci,
+                      "CI option2b-draft-build job removed")
+        self.assertIn("python3 tests/build_option2b_draft.py", ci,
+                      "CI job no longer runs tests/build_option2b_draft.py")
+
+        # The script is wired to the pieces that give it teeth:
+        # 1. extract via the same pinned extractor (no drift from the apply
+        #    pin). Needles are the exact code forms, NOT the bare class name:
+        #    the docstring mentions TestOption2bDocDiff, so a bare assertIn
+        #    would be satisfied by the comment alone after the import died.
+        self.assertIn("import test_login_flow as tlf", script,
+                      "build script no longer imports the pinned extractor")
+        self.assertIn("tlf.TestOption2bDocDiff()", script,
+                      "build script no longer instantiates the pinned extractor")
+        self.assertIn('extractor._extract_diff("## Patch Option 2b")', script,
+                      "build script no longer extracts the Option 2b block")
+        # 2. scratch copy + apply. The needle is the CALL site, not the
+        #    bare name: `def make_scratch` would satisfy the bare string
+        #    even after the call was dropped (silently re-copying nothing).
+        self.assertIn("make_scratch(scratch)", script,
+                      "build script no longer scratch-copies the workspace")
+        self.assertIn('["git", "apply", "--whitespace=nowarn", "-"]', script,
+                      "build script no longer applies the diff")
+        # 3. cargo build -p login-manager with the build job's flags
+        self.assertIn('"cargo", "build", "-p", "login-manager"', script,
+                      "build script no longer cargo-builds login-manager")
+        self.assertIn("-Zbuild-std=core,alloc", script,
+                      "build script dropped the build-std flag")
+        # Code form, not the bare file name: the docstring also mentions
+        # x86_64-sarga.json, so the bare string stays satisfied after the
+        # build command was retargeted to another spec.
+        self.assertIn('"--target", TARGET_JSON', script,
+                      "build script no longer targets the sarga JSON spec")
+        # 4. failing build must fail the script (non-zero exit). The needle
+        #    is the message+exit BLOCK, not a bare sys.exit(1): the script
+        #    legitimately exits 1 on the apply-fail path too, so a bare
+        #    needle would stay satisfied if the compile-fail path lost its
+        #    exit (silently turning a non-compiling draft into exit 0).
+        self.assertIn('print("=== Option 2b draft does NOT compile ===")\n        sys.exit(1)',
+                      script,
+                      "build script no longer exits non-zero on a failed build")
+
+        # The script must live next to the other host tests so CI's working
+        # directory resolves it (job uses working-directory: SkyOS).
+        self.assertIn("tests/build_option2b_draft.py", ci,
+                      "CI no longer references the script by that path")
 
 
 if __name__ == "__main__":

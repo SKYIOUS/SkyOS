@@ -50,9 +50,9 @@
 #                                            141-143) + TTY0W interleave; name on its
 #                                            own line. Old full-name pattern DEAD.
 #   5 win_created     \[login\] window created
-#                                            REAL  login-manager/src/main.rs:23.
+#                                            REAL  login-manager/src/main.rs:62.
 #   6 win_failed      \[login\] failed to create window
-#                                            REAL  login-manager/src/main.rs:27.
+#                                            REAL  login-manager/src/main.rs:66.
 #   7 panic           "=== KERNEL PANIC ==="
 #                                            REAL  kernel/src/main.rs:631-632.
 #                                            "SARGA OS PANIC" was DEAD (no such

@@ -19,8 +19,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
+
+from expect_consume import ConsumeMatcher
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_IMAGE = (
@@ -103,17 +104,21 @@ def main() -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        deadline = time.monotonic() + args.timeout
-        ok, reason = False, ""
-        while time.monotonic() < deadline and proc.poll() is None:
-            ok, reason = check_log(logfile)
-            if ok:
-                break
-            time.sleep(0.5)
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
+        # The deadline/exit/sleep skeleton is the shared serial driver
+        # (ConsumeMatcher.poll_with_timeout), not a local copy. check()
+        # returns True only on a PASS marker (whole-file scan of terminal
+        # tokens); EXITED/TIMEOUT both fall through to the kill + final
+        # re-check, exactly like the old inline loop.
+        outcome = ConsumeMatcher().poll_with_timeout(
+            lambda _: True if check_log(logfile)[0] else None,
+            timeout=args.timeout,
+            poll=lambda: proc.poll() is not None,
+        )
+        ok = outcome is True
         if not ok:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
             ok, reason = check_log(logfile)
         if ok:
             print(f"try {try_no}/{args.tries}: PASS")

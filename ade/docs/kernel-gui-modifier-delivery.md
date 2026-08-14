@@ -290,7 +290,7 @@ answer only if the kernel team wants the smallest possible diff this cycle.
    host suite `tests/test_login_flow.py::TestKernelKeyContract` mirrors the
    same values in Python. Existing `test_session_end_gate`
    already asserts the chord → `KeyAction::Quit`. On top of that (Aug 10,
-   2026): `test_keymap` sweeps the packed space — every one of the 18
+   2026): `test_keymap` sweeps the packed space — every one of the 17
    binding rows must be reachable via `from_raw` over (byte, mods) pairs, so
    nothing stays synthetic once the kernel lands — and `test_session_end_gate`
    drives the chord through the real `Event::Key(0x0308)` path (proving the

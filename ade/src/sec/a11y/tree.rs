@@ -59,6 +59,19 @@ impl A11yTree {
         self.set_parent(child, parent);
     }
 
+    /// Mark a node as visible (on-screen) or not. `build_tree` clears this
+    /// for surfaces the compositor does not paint — minimized (non-
+    /// animating) windows and windows pushed fully off-screen — so the
+    /// ring can never land on undrawn chrome. Navigation and the
+    /// `validate` re-sync both test `focusable && state.visible`, so an
+    /// invisible node drops out of ring reach and a ring left on it
+    /// re-syncs elsewhere the next frame.
+    pub fn set_visible(&mut self, id: u32, visible: bool) {
+        if let Some(n) = self.nodes.iter_mut().find(|n| n.id == id) {
+            n.state.visible = visible;
+        }
+    }
+
     pub fn set_focus(&mut self, id: u32) {
         self.focused_id = Some(id);
         for n in self.nodes.iter_mut() {

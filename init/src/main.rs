@@ -21,6 +21,10 @@ struct Service {
     respawn: bool,
     pid: Option<u64>,
     crashes: u32,
+    /// Extra argv entries passed to execve after argv[0] (the path).
+    /// Empty for stock services; the force-vahid-fail feature adds
+    /// "--force-fail" so CI can drive vahid's fatal /dev path.
+    args: alloc::vec::Vec<alloc::string::String>,
 }
 
 impl Service {
@@ -31,10 +35,13 @@ impl Service {
 
         match process::fork() {
             Ok(0) => {
-                // Child: pass argv[0] and the path so services see their own
-                // name; empty argv made getopt/argv scans misbehave.
+                // Child: pass argv[0] (the path) plus any service args
+                // so services see their own name and flags; empty argv
+                // made getopt/argv scans misbehave.
                 let path = self.exec.as_str();
-                if let Err(_e) = process::execve(path, &[path], &[]) {
+                let mut argv: alloc::vec::Vec<&str> = alloc::vec![path];
+                argv.extend(self.args.iter().map(|a| a.as_str()));
+                if let Err(_e) = process::execve(path, &argv, &[]) {
                     let msg = alloc::format!("[init] exec failed for {}: {}\n", self.name, _e);
                     let _ = io::write_all(1, msg.as_bytes());
                     process::exit(1);
@@ -85,6 +92,14 @@ fn user_main() -> i32 {
             respawn: true,
             pid: None,
             crashes: 0,
+            // Test-only: the force-vahid-fail feature makes init spawn
+            // vahid with --force-fail, driving its FATAL /dev path so
+            // "[init] giving up on vahid" gets a real QEMU run.
+            args: if cfg!(feature = "force-vahid-fail") {
+                alloc::vec!["--force-fail".to_string()]
+            } else {
+                alloc::vec![]
+            },
         },
         Service {
             name: "login-manager".to_string(),
@@ -92,13 +107,21 @@ fn user_main() -> i32 {
             respawn: true,
             pid: None,
             crashes: 0,
+            args: alloc::vec![],
         },
         Service {
             name: "svc".to_string(),
             exec: "/bin/svc".to_string(),
-            respawn: true,
+            // On the fail-vahid build, svc is a ONE-SHOT: its Usage exit is
+            // far faster than vahid's forced /dev path, so respawning svc
+            // would race vahid for MAX_RESPAWNS and the harness's
+            // boundedness wait could fire on svc first, hiding the
+            // 'giving up on vahid' the dedicated boot must prove. vahid
+            // then is the sole bounded non-zero service, deterministically.
+            respawn: !cfg!(feature = "force-vahid-fail"),
             pid: None,
             crashes: 0,
+            args: alloc::vec![],
         },
         Service {
             name: "getty".to_string(),
@@ -106,6 +129,7 @@ fn user_main() -> i32 {
             respawn: true,
             pid: None,
             crashes: 0,
+            args: alloc::vec![],
         },
     ];
 

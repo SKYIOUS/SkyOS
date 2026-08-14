@@ -76,11 +76,24 @@
 #                                            accumulated expect buffer after
 #                                            'login:' (match_max raised so the
 #                                            early marker survives).
+#  15 mem_marker    \[login\] mem free=  REAL  login/src/main.rs (getty
+#                                            user_main startup, before the
+#                                            login loop: ctlFS /ctl/sys/mem/free
+#                                            buddy free-page read; the same
+#                                            marker login-manager prints before
+#                                            Window::create - the shell job
+#                                            collects the same OOM evidence the
+#                                            GUI gate does). Prints once per
+#                                            boot (the getty never exits).
 
 set iso [lindex $argv 0]
 set timeout [lindex $argv 1]
 if {$timeout == ""} { set timeout 120 }
 set logfile "qemu_integration_log.txt"
+# The logfile only takes effect when log_file activates it: without
+# this call the CI Verify step greps a file that is never written
+# (grep exits 2 -> the gate passes silently, vacuous green).
+log_file -noappend $logfile
 
 spawn qemu-system-x86_64 \
     -bios OVMF.fd \
@@ -130,7 +143,8 @@ check "boot_login" "login:" { }
 # reached its healthy sleep loop BEFORE the console login came up (init
 # spawns vahid first). '[vahid] ready' is the stable end of vahid's healthy
 # path (vahid/src/main.rs:108). The check greps the accumulated expect
-# buffer from spawn (match_max 200000 above), so a missing marker fails the
+# buffer from spawn (match_max 1000000 above, set at the top of the
+# harness), so a missing marker fails the
 # shell-interaction job exactly like it fails the GUI gate.
 if {[regexp -- {\[vahid\] ready} $expect_out(buffer)]} {
     set pass_count [expr {$pass_count + 1}]
@@ -138,6 +152,22 @@ if {[regexp -- {\[vahid\] ready} $expect_out(buffer)]} {
 } else {
     set fail_count [expr {$fail_count + 1}]
     send_user "FAIL: vahid_ready - '\[vahid\] ready' missing from accumulated boot log\n"
+    exit 1
+}
+
+# Memory-pressure marker (Aug 12, 2026): the console getty prints the same
+# '[login] mem free=N pages' ctlFS read at startup that login-manager does
+# (login/src/main.rs, before the login loop; kernel buddy allocator free
+# count via /ctl/sys/mem/free). Grepped from the accumulated buffer like
+# vahid_ready, so the shell-interaction job collects the same per-boot OOM
+# evidence the GUI gate does (kernel-gui-window-fix.md Option 1 vs 2: free
+# near zero = persistent OOM -> Option 2; plenty free = transient -> Option 1).
+if {[regexp -- {\[login\] mem free=} $expect_out(buffer)]} {
+    set pass_count [expr {$pass_count + 1}]
+    send_user "PASS: mem_marker - getty printed the boot-time memory-pressure marker\n"
+} else {
+    set fail_count [expr {$fail_count + 1}]
+    send_user "FAIL: mem_marker - '\[login\] mem free=' missing from accumulated boot log\n"
     exit 1
 }
 

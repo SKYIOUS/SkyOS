@@ -39,6 +39,7 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/sysinfo':       'sysinfo',
         'bin/sysmon':        'sysmon',
         'bin/ade':           'ade',
+        'bin/skysettings':   'sargasettings',
         'bin/aicli':         'aicli',
         'bin/skystore':      'skystore',
         'bin/spkg':          'spkg',

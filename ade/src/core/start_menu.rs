@@ -62,11 +62,10 @@ pub(crate) fn menu_hover_at(
         }
     }
 
-    // App list (visible rows only, scroll-aware — same range as the draw).
-    let list_r = layout::menu_list_rect(menu_r);
-    let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
-    let start = state.scroll as usize;
-    let end = (start + avail).min(state.filtered.len());
+    // App list (visible rows only, scroll-aware — the single window rule
+    // in `StartMenuState::visible_range`, shared with the draw and the
+    // a11y row nodes).
+    let (start, end, _) = state.visible_range(menu_r);
     for i in start..end {
         if layout::menu_item_rect(menu_r, i, start).hit_test(mouse) {
             return Some(HoverTarget::StartApp(i));
@@ -160,6 +159,21 @@ impl StartMenuState {
         }
     }
 
+    /// The scroll-aware visible row window as a filtered slice:
+    /// `(start, end, &self.filtered[start..end])`. The ONE place the window
+    /// rule lives — the draw, `menu_hover_at`, the a11y row nodes
+    /// (`build_tree`), and `Desktop::menu_row_index` all derive the visible
+    /// rows from here, so the scroll/geometry rule cannot drift between
+    /// them. `menu_r` positions the list rect; the row pitch derives
+    /// `avail` from its height.
+    pub(crate) fn visible_range(&self, menu_r: Rect) -> (usize, usize, &[AppId]) {
+        let list_r = layout::menu_list_rect(menu_r);
+        let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
+        let start = self.scroll as usize;
+        let end = (start + avail).min(self.filtered.len());
+        (start, end, &self.filtered[start..end])
+    }
+
     pub fn selected_app(&self) -> Option<AppId> {
         if self.selected < self.filtered.len() {
             Some(self.filtered[self.selected])
@@ -196,7 +210,6 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
     let menu_r = Rect::new(menu_x as i32, menu_y as i32, layout::MENU_W, layout::MENU_H);
     let search_r = layout::menu_search_rect(menu_r);
     let sidebar_r = layout::menu_sidebar_rect(menu_r);
-    let list_r = layout::menu_list_rect(menu_r);
     let bottom_y = layout::menu_bottom_y(menu_r);
 
     canvas.draw_shadow(
@@ -275,6 +288,11 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         }
         let selected = i == state.cat_idx;
         let hover = snap.hover == Some(HoverTarget::StartCategory(i));
+        // The a11y ring on this category lights it — same union the app
+        // rows use, so "ring-focus is accent_light blue" holds on the
+        // sidebar too. `snap.focused` carries the identical StartCategory
+        // target the hover does (one resolution, `Desktop::focused_target`).
+        let focused = snap.focused == Some(HoverTarget::StartCategory(i));
         // Held-down rows darken like the taskbar buttons (hover+pressed
         // only) — visible here because a category click does not close the
         // menu, so the hold frame actually renders.
@@ -282,6 +300,8 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
             theme.pressed
         } else if selected {
             theme.accent
+        } else if focused {
+            theme.accent_light
         } else if hover {
             theme.hover
         } else {
@@ -290,10 +310,11 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         // Indigo fills (accent when selected, hover) carry white text —
         // theme.text flips to black in the light theme and would vanish on
         // them. Only the pressed fill (light gray in light mode) keeps
-        // theme.text.
+        // theme.text. The accent_light focus fill is the same blue as the
+        // taskbar focus, so on_accent text applies there too.
         let txt = if hover && snap.mouse_down {
             theme.text
-        } else if selected || hover {
+        } else if selected || hover || focused {
             theme.on_accent
         } else {
             theme.text_secondary
@@ -302,11 +323,10 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         canvas.draw_string(cat_r.x as u32 + 6, cat_r.y as u32 + 5, cat_name, txt, 0);
     }
 
-    let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
-
     if !state.filtered.is_empty() {
-        let start = state.scroll as usize;
-        let end = (start + avail).min(state.filtered.len());
+        // The visible row window is the shared `visible_range` rule (same
+        // source as the hover hit-testing and the a11y row nodes).
+        let (start, end, _) = state.visible_range(menu_r);
         for i in start..end {
             let app_id = state.filtered[i];
             let app = &reg.apps[app_id.0];
@@ -403,11 +423,17 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         let app = &reg.apps[idx];
         let label = layout::trunc(app.name, layout::MENU_RECENT_NAME_MAX);
         let hover = snap.hover == Some(HoverTarget::StartRecent(ri));
+        // Ring focus lights the tile in accent_light like every other menu
+        // surface (the recent hover uses the light-gray border fill, so
+        // focus must be distinct — "blue = ring" holds here too).
+        let focused = snap.focused == Some(HoverTarget::StartRecent(ri));
         let sel = state.section == MenuSection::Recent && ri == 0;
         let bg = if hover && snap.mouse_down {
             theme.pressed
         } else if sel {
             theme.accent
+        } else if focused {
+            theme.accent_light
         } else if hover {
             theme.border
         } else {
@@ -416,14 +442,15 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         canvas.draw_rounded_rect(r.x as u32, r.y as u32, r.w, r.h, 4, bg);
         // Selected tile is indigo accent -> on_accent text (see category
         // arm); hover uses the light-gray border fill, which keeps the
-        // secondary gray.
+        // secondary gray. The accent_light focus fill is the same blue as
+        // the taskbar focus, so on_accent text applies there too.
         canvas.draw_string(
             r.x as u32 + 6,
             r.y as u32 + 3,
             label,
             if hover && snap.mouse_down {
                 theme.text
-            } else if sel {
+            } else if sel || focused {
                 theme.on_accent
             } else {
                 theme.text_secondary

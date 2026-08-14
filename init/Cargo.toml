@@ -4,5 +4,11 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[features]
+# Test-only: init spawns vahid with --force-fail, driving vahid's
+# FATAL /dev path so CI can assert '[init] giving up on vahid' on a
+# forced-failure ISO instead of waiting for a genuine /dev failure.
+force-vahid-fail = []
+
 [dependencies]
 libsarga = { path = "../libsarga" }

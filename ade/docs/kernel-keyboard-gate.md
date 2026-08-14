@@ -256,7 +256,7 @@ ctrl=true, alt=true, shift=false)` → `resolve` → `Quit`. Exact-match table r
    per-key `sendkey_seq` helper — it presses *and releases* each key, so ctrl
    and alt would be up before backspace is pressed and the mods byte would
    never read ctrl+alt.
-4. **Userspace pins** — `ade` selftests `test_keymap` (binding dump: count 18,
+4. **Userspace pins** — `ade` selftests `test_keymap` (binding dump: count 17,
    chord present, Ctrl+Q absent) and `test_session_end_gate` (near-miss
    matrix) are the host-verifiable contract; once libsarga delivers mods,
    `test_keymap` extends `from_byte` coverage from synthetic to decoded mods.

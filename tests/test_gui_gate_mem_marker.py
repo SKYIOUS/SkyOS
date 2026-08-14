@@ -91,6 +91,15 @@ class GuiGateMemMarkerContract(unittest.TestCase):
         # expected — this guards against a future refactor leaving one).
         self.assertNotIn("#[allow(dead_code)]", self.lm)
 
+    def test_host_tests_step_wired(self):
+        # This file itself must be run by the host-tests job — it was
+        # created before its CI step and nearly went unwired. A future
+        # edit that drops the step fails the suite, not just CI.
+        self.assertIn(
+            "python3 tests/test_gui_gate_mem_marker.py", self.ci,
+            "host-tests job lost the GUI gate memory marker step",
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

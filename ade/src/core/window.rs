@@ -25,6 +25,13 @@ pub(crate) const START_BUTTON_OWNER: WindowId = WindowId(u64::MAX);
 /// structurally.
 pub(crate) const TRAY_PANEL_OWNER: WindowId = WindowId(u64::MAX - 1);
 
+/// Sentinel `WindowId` stamping the a11y notification-row nodes. A
+/// notification owns no window, so its overlay rows get this reserved id
+/// (never handed out by the window manager, distinct from the Start-button
+/// and tray-panel sentinels) so tooltip resolution, focus resolution, and
+/// future activation can identify them structurally.
+pub(crate) const NOTIFICATION_OWNER: WindowId = WindowId(u64::MAX - 2);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowState {
     Normal,
@@ -339,6 +346,40 @@ pub(crate) struct WinInteraction {
     pub mouse_down: bool,
 }
 
+/// Which interactive face a window control button shows, from the unified
+/// interaction inputs. One union drives both chrome controls (Close and
+/// Minimize) so "pressed vs focused vs hover" can't drift between them:
+/// pressed wins (hover while the primary button is held), then the
+/// hover/focused light, then the base state. Pressed is deliberately
+/// pointer-only — the focused (keyboard) state never presses, exactly like
+/// the taskbar buttons. Pure over three booleans, so
+/// `tests/test_window_button_contract.py` ports it host-side the way
+/// `format_tooltip` is ported.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WindowButtonFace {
+    Pressed,
+    Focused,
+    Hover,
+    Base,
+}
+
+/// The interaction union every chrome control draw shares: pressed (hover
+/// held) > keyboard focus (a `Focused` face, drawn as the accent_light
+/// blue — visually distinct from pointer hover, matching the taskbar
+/// buttons) > hover (indigo) > resting. Focus wins over hover when both
+/// apply (the ring is the active mode), and pressed stays pointer-only.
+pub(crate) fn window_button_face(hover: bool, focused: bool, mouse_down: bool) -> WindowButtonFace {
+    if hover && mouse_down {
+        WindowButtonFace::Pressed
+    } else if focused {
+        WindowButtonFace::Focused
+    } else if hover {
+        WindowButtonFace::Hover
+    } else {
+        WindowButtonFace::Base
+    }
+}
+
 pub(crate) fn draw(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -469,12 +510,16 @@ pub(crate) fn draw(
             win: WindowId(aw.id),
             btn: WindowButton::Close,
         });
-    let close_fill = if hover_close && ix.mouse_down {
-        libsarga::theme::colors::WIN_CLOSE_PRESSED
-    } else if hover_close || focused_close {
-        libsarga::theme::colors::WIN_CLOSE_HOVER
-    } else {
-        theme.error
+    let close_fill = match window_button_face(hover_close, focused_close, ix.mouse_down) {
+        WindowButtonFace::Pressed => libsarga::theme::colors::WIN_CLOSE_PRESSED,
+        // Focus keeps the semantic close red (hover-brightened) — the fill
+        // means "close". Keyboard focus is marked by the accent_light ring
+        // drawn after the fill, so the ring stays visually distinct from
+        // pointer hover without erasing the red semantics.
+        WindowButtonFace::Focused | WindowButtonFace::Hover => {
+            libsarga::theme::colors::WIN_CLOSE_HOVER
+        }
+        WindowButtonFace::Base => theme.error,
     };
 
     canvas.draw_rounded_rect(
@@ -485,6 +530,19 @@ pub(crate) fn draw(
         4,
         apply_alpha(close_fill, aw.flags.opacity),
     );
+    // The accent_light focus ring: "blue = ring" on the chrome — the same
+    // hue as the taskbar/menu focus fills — but as a ring around the
+    // control, so the close red stays the close red.
+    if focused_close {
+        canvas.draw_rounded_rect_outline(
+            close_x,
+            close_y,
+            close.w,
+            close.h,
+            4,
+            apply_alpha(theme.accent_light, aw.flags.opacity),
+        );
+    }
     // Same rationale as the title: the close fill is theme.error / the
     // WIN_CLOSE reds (theme-invariant), so the glyph stays on_accent for
     // contrast (4.6+ in both themes).
@@ -508,9 +566,8 @@ pub(crate) fn draw(
             win: WindowId(aw.id),
             btn: WindowButton::Minimize,
         });
-    // Same focused union as Close: the ring lights the minimize control
-    // like hover (white wash over the elevated fill); pressed is
-    // pointer-only.
+    // Same focused union as Close: the ring marks focus with the white
+    // wash (the minimize semantics) — pressed is pointer-only.
     let focused_min = ix.focused
         == Some(HoverTarget::Window {
             win: WindowId(aw.id),
@@ -524,15 +581,33 @@ pub(crate) fn draw(
         4,
         apply_alpha(theme.bg_elevated, aw.flags.opacity),
     );
-    if hover_min && ix.mouse_down {
-        canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x50000000);
-    } else if hover_min || focused_min {
-        canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x35FFFFFF);
+    match window_button_face(hover_min, focused_min, ix.mouse_down) {
+        WindowButtonFace::Pressed => {
+            canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x50000000)
+        }
+        // Focus keeps the white wash (the minimize semantics), marked by
+        // the accent_light ring drawn after the wash.
+        WindowButtonFace::Focused | WindowButtonFace::Hover => {
+            canvas.draw_rect_alpha(min_x, close_y, min.w, min.h, 0x35FFFFFF)
+        }
+        WindowButtonFace::Base => {}
+    }
+    if focused_min {
+        canvas.draw_rounded_rect_outline(
+            min_x,
+            close_y,
+            min.w,
+            min.h,
+            4,
+            apply_alpha(theme.accent_light, aw.flags.opacity),
+        );
     }
     canvas.draw_line_h(
         min_x + 6,
         close_y + 14,
         10,
+        // The wash is white at 21% under hover AND focus (the ring marks
+        // focus now, not the fill), so the glyph stays theme.text on it.
         apply_alpha(theme.text, aw.flags.opacity),
     );
 

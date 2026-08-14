@@ -15,12 +15,13 @@ use crate::core::desktop::Desktop;
 use crate::core::event::Event;
 use crate::core::geometry::{ContextMenu, Rect};
 use crate::core::window::{
-    AppWindow, HoverTarget, WindowButton, WindowId, WindowState, START_BUTTON_OWNER,
-    TRAY_PANEL_OWNER,
+    AppWindow, HoverTarget, WindowButton, WindowId, WindowState, NOTIFICATION_OWNER,
+    START_BUTTON_OWNER, TRAY_PANEL_OWNER,
 };
 use crate::input::keys;
 use crate::layout;
 use crate::render::snapshot::RenderSnapshot;
+use crate::sec::a11y::node::A11yNode;
 use crate::sec::a11y::{A11yRole, A11yTree, FocusManager};
 use crate::util::app_catalog::AppId;
 use alloc::vec::Vec;
@@ -32,6 +33,19 @@ use libsarga::io;
 /// failure (or a panic) later in the test.
 fn a11y_log_pass(test: &str, step: &str) {
     io::print_str(&alloc::format!("[a11y] {} {}: PASS\n", test, step));
+}
+
+/// Chrome nodes of a window: its Window node plus the Close/Minimize
+/// Buttons parented to it. The taskbar button is excluded (parent role
+/// Taskbar, not Window) — it stays reachable even while the window's
+/// chrome is hidden.
+fn window_chrome(tree: &A11yTree, n: &A11yNode, wid: WindowId) -> bool {
+    n.owner == Some(wid)
+        && (n.role == A11yRole::Window
+            || (n.role == A11yRole::Button
+                && n.parent
+                    .and_then(|p| tree.nodes.iter().find(|m| m.id == p))
+                    .is_some_and(|p| p.role == A11yRole::Window)))
 }
 
 pub(crate) fn test_a11y_close_button() -> bool {
@@ -302,11 +316,18 @@ pub(crate) fn test_a11y_start_menu_rows() -> bool {
         return false;
     };
     let sm_id = sm.id;
+    // StartMenu children are not only app rows: the sidebar categories and
+    // the recent tiles are Button children too (same parent role, distinct
+    // geometry — `Desktop::focused_target` discriminates by bounds). The
+    // row-count contract therefore filters to row-rect children only.
     let rows: Vec<u32> = d
         .a11y_tree
         .nodes
         .iter()
-        .filter(|n| n.parent == Some(sm_id))
+        .filter(|n| {
+            n.parent == Some(sm_id)
+                && (start..end).any(|i| n.bounds == layout::menu_item_rect(menu_r, i, start))
+        })
         .map(|n| n.id)
         .collect();
     if rows.len() != end - start {
@@ -434,6 +455,233 @@ pub(crate) fn test_a11y_start_menu_rows() -> bool {
     true
 }
 
+/// Scroll-aware ring navigation over the start menu. The a11y tree models
+/// only the VISIBLE row window (the same scroll-aware range the draw uses),
+/// so the ring cannot reach rows below the fold with plain tree navigation
+/// — arrows at the window edge must scroll the menu, and the focused row
+/// must stay visible when the filter re-indexes it (backspacing a typed
+/// search expands the list, pushing the focused app off-window; `build_tree`
+/// clamps the scroll and re-lands the ring on the SAME app). Each leg runs
+/// through the real `handle_event` byte path with a fresh `Desktop`.
+pub(crate) fn test_a11y_start_menu_ring_scroll() -> bool {
+    let mut d = Desktop::new(800, 600);
+    d.start_menu.open_with(&d.app_reg);
+    d.tick();
+
+    let menu_r = layout::menu_rect(d.taskbar_y());
+    let list_r = layout::menu_list_rect(menu_r);
+    let avail = (list_r.h / layout::MENU_ITEM_H) as usize;
+    let total = d.start_menu.filtered.len();
+    if total <= avail + 2 {
+        io::print_str(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: catalog too small to scroll\n",
+        );
+        return false;
+    }
+
+    // Seat the ring on the first visible row (the same direct focus the
+    // Enter-launch path uses), then sync the intent the way the arrow path
+    // does.
+    let sm = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::StartMenu);
+    let Some(sm) = sm else {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: no StartMenu node\n");
+        return false;
+    };
+    let first_row = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.parent == Some(sm.id) && n.bounds == layout::menu_item_rect(menu_r, 0, 0));
+    let Some(first_row) = first_row else {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: no first row node\n");
+        return false;
+    };
+    d.focus.focus(first_row.id);
+    d.sync_menu_focus_intent();
+    d.tick();
+
+    // Down past the window edge: after `avail` presses the ring is on row
+    // `avail` (one past the window), and build_tree must have clamped the
+    // scroll so that row is visible. Each further Down advances the scroll
+    // by one while the ring stays on a row.
+    for _ in 0..avail {
+        d.handle_event(Event::Key(keys::SCAN_DOWN as u16));
+        d.tick();
+    }
+    if d.start_menu.scroll as usize != 1 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: scroll {} != 1 after edge press\n",
+            d.start_menu.scroll
+        ));
+        return false;
+    }
+    let fid = match d.focus.focused() {
+        Some(f) => f,
+        None => {
+            io::print_str(
+                "[test] FAIL test_a11y_start_menu_ring_scroll: ring lost after edge press\n",
+            );
+            return false;
+        }
+    };
+    let idx = match d.menu_row_index(fid) {
+        Some(i) => i,
+        None => {
+            io::print_str(
+                "[test] FAIL test_a11y_start_menu_ring_scroll: ring left the menu at the edge\n",
+            );
+            return false;
+        }
+    };
+    if idx != avail {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: ring on row {idx} != {avail}\n"
+        ));
+        return false;
+    }
+    let start = d.start_menu.scroll as usize;
+    if !(start..start + avail).contains(&idx) {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: ring row not visible\n");
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_start_menu_ring_scroll",
+        "Down scrolls past the window edge",
+    );
+
+    // Two more Downs: the scroll advances to 3 and the ring follows to row
+    // `avail + 2` — the ring tracks the scroll, it never stalls at the old
+    // window edge.
+    for _ in 0..2 {
+        d.handle_event(Event::Key(keys::SCAN_DOWN as u16));
+        d.tick();
+    }
+    if d.start_menu.scroll as usize != 3 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: scroll {} != 3 after two more downs\n",
+            d.start_menu.scroll
+        ));
+        return false;
+    }
+    let idx2 = d.focus.focused().and_then(|f| d.menu_row_index(f));
+    if idx2 != Some(avail + 2) {
+        io::print_str(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: ring did not follow the scroll\n",
+        );
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_start_menu_ring_scroll",
+        "ring follows the scroll",
+    );
+
+    // Up back to the top: enough presses return the scroll to 0 and the
+    // ring to row 0 (Up at the top edge is a boundary no-op, not a leak
+    // into the taskbar).
+    for _ in 0..=avail + 2 {
+        d.handle_event(Event::Key(keys::SCAN_UP as u16));
+        d.tick();
+    }
+    if d.start_menu.scroll != 0 {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: scroll {} != 0 after up sweep\n",
+            d.start_menu.scroll
+        ));
+        return false;
+    }
+    if d.focus.focused().and_then(|f| d.menu_row_index(f)) != Some(0) {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: ring not back on row 0\n");
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_start_menu_ring_scroll",
+        "Up returns the ring to the top",
+    );
+
+    // Typed-search narrowing: focus the sole row of a narrow search, then
+    // clear the search via the real Backspace key — the list expands and
+    // the focused app re-indexes far below the window. build_tree must
+    // clamp the scroll and keep the ring on the SAME app, now visible.
+    d.start_menu.search = b"about".to_vec();
+    d.start_menu.rebuild_filter(&d.app_reg);
+    d.tick();
+    let about_id = d
+        .app_reg
+        .apps
+        .iter()
+        .position(|a| a.name == "About SARGA")
+        .map(AppId);
+    let Some(about_id) = about_id else {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: no About SARGA in catalog\n");
+        return false;
+    };
+    let sm = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::StartMenu);
+    let Some(sm) = sm else {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: no StartMenu after search\n");
+        return false;
+    };
+    let menu_r = layout::menu_rect(d.taskbar_y());
+    let about_row = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.parent == Some(sm.id) && n.bounds == layout::menu_item_rect(menu_r, 0, 0));
+    let Some(about_row) = about_row else {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: About row node missing\n");
+        return false;
+    };
+    d.focus.focus(about_row.id);
+    d.sync_menu_focus_intent();
+    d.tick();
+
+    d.handle_event(Event::Key(keys::KEY_BACKSPACE as u16));
+    d.tick();
+    let fid = match d.focus.focused() {
+        Some(f) => f,
+        None => {
+            io::print_str(
+                "[test] FAIL test_a11y_start_menu_ring_scroll: ring lost after filter expand\n",
+            );
+            return false;
+        }
+    };
+    let idx = match d.menu_row_index(fid) {
+        Some(i) => i,
+        None => {
+            io::print_str(
+                "[test] FAIL test_a11y_start_menu_ring_scroll: ring left the menu after expand\n",
+            );
+            return false;
+        }
+    };
+    if d.start_menu.filtered[idx] != about_id {
+        io::print_str(
+            "[test] FAIL test_a11y_start_menu_ring_scroll: ring moved to a different app\n",
+        );
+        return false;
+    }
+    let start = d.start_menu.scroll as usize;
+    if !(start..start + avail).contains(&idx) {
+        io::print_str("[test] FAIL test_a11y_start_menu_ring_scroll: focused row off-window\n");
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_start_menu_ring_scroll",
+        "ring follows the app through a filter change",
+    );
+
+    io::print_str("[test] PASS test_a11y_start_menu_ring_scroll\n");
+    true
+}
+
 pub(crate) fn test_a11y_taskbar_button() -> bool {
     // Taskbar window buttons carry their window's owner. Activating one
     // brings the window to front (like a taskbar mouse click), never closes
@@ -466,6 +714,73 @@ pub(crate) fn test_a11y_taskbar_button() -> bool {
         return false;
     }
     a11y_log_pass("test_a11y_taskbar_button", "taskbar brings to front");
+
+    // The ring follows the activated window: activation brings A to front,
+    // which reorders `wm`; the next rebuild renumbers every window-surface
+    // node id (positional), so without the activation intent the
+    // fingerprint check would re-sync the ring to a sibling taskbar button.
+    // `build_tree` re-lands it on A's OWN Window node instead.
+    d.tick(); // rebuild with the reordered wm
+    let focused_after = d
+        .focus
+        .focused()
+        .and_then(|fid| d.a11y_tree.nodes.iter().find(|n| n.id == fid));
+    match focused_after {
+        Some(n) if n.role == A11yRole::Window && n.owner == Some(a) => {}
+        other => {
+            io::print_str(&alloc::format!(
+                "[test] FAIL test_a11y_taskbar_button: ring did not follow activated window A (focused: {:?})\n",
+                other.map(|n| (n.role, n.owner, n.label.as_str()))
+            ));
+            return false;
+        }
+    }
+    a11y_log_pass(
+        "test_a11y_taskbar_button",
+        "ring follows activated window (not taskbar sibling)",
+    );
+
+    // Same contract via the Window-node activation path: Enter on A's
+    // Window node brings A to front, and the ring stays on A's own node
+    // through the rebuild, never re-syncing to a sibling.
+    let mut d = Desktop::new(800, 600);
+    let a = d.wm.create(AppWindow::new(50, 50, 300, 200, "WinA"));
+    let _b = d.wm.create(AppWindow::new(200, 200, 300, 200, "WinB"));
+    d.tick();
+    let win_a = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::Window && n.owner == Some(a))
+        .map(|n| n.id)
+        .expect("Window node for A");
+    d.focus.focus(win_a);
+    d.handle_event(Event::Key(keys::SCAN_ENTER as u16));
+    if d.wm.active() != Some(a) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: window-node activation did not focus A\n",
+        );
+        return false;
+    }
+    d.tick(); // rebuild with the reordered wm
+    let focused_after = d
+        .focus
+        .focused()
+        .and_then(|fid| d.a11y_tree.nodes.iter().find(|n| n.id == fid));
+    match focused_after {
+        Some(n) if n.role == A11yRole::Window && n.owner == Some(a) => {}
+        other => {
+            io::print_str(&alloc::format!(
+                "[test] FAIL test_a11y_taskbar_button: window-node ring did not follow A (focused: {:?})\n",
+                other.map(|n| (n.role, n.owner, n.label.as_str()))
+            ));
+            return false;
+        }
+    }
+    a11y_log_pass(
+        "test_a11y_taskbar_button",
+        "window-node activation keeps ring on window",
+    );
 
     // A minimized window is restored (state leaves Minimized) and brought to
     // front, exactly like a taskbar click.
@@ -504,6 +819,112 @@ pub(crate) fn test_a11y_taskbar_button() -> bool {
         return false;
     }
     a11y_log_pass("test_a11y_taskbar_button", "taskbar restores minimized");
+
+    // The minimized window's surface and chrome must LEAVE the ring:
+    // `window::draw` paints nothing for a minimized (non-animating) window
+    // (only its shadow), so its Window/Close/Minimize nodes are marked
+    // invisible — the same rule as the taskbar overflow cap, so the ring
+    // can't land on undrawn chrome and the focused light silently miss.
+    // The taskbar button stays visible (the restore path), and restoring
+    // the window makes the chrome visible again.
+    let mut d = Desktop::new(800, 600);
+    let a = d.wm.create(AppWindow::new(50, 50, 300, 200, "WinA"));
+    d.wm.minimize(a, d.screen_w, d.taskbar_y());
+    for _ in 0..60 {
+        d.tick(); // settle the minimize animation (duration 10)
+    }
+    let chrome: Vec<_> = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .filter(|n| window_chrome(&d.a11y_tree, n, a))
+        .collect();
+    if chrome.len() != 3 {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: minimized window chrome count wrong\n",
+        );
+        return false;
+    }
+    if chrome.iter().any(|n| n.state.visible) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: minimized window chrome still visible\n",
+        );
+        return false;
+    }
+    // The taskbar button (the restore path) stays visible + focusable.
+    let tb = d.a11y_tree.nodes.iter().find(|n| {
+        n.role == A11yRole::Button
+            && n.label == "WinA"
+            && n.parent
+                .and_then(|p| d.a11y_tree.nodes.iter().find(|m| m.id == p))
+                .is_some_and(|p| p.role == A11yRole::Taskbar)
+    });
+    let Some(tb) = tb else {
+        io::print_str("[test] FAIL test_a11y_taskbar_button: no taskbar node while minimized\n");
+        return false;
+    };
+    if !(tb.state.visible && tb.focusable) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: minimized taskbar button not reachable\n",
+        );
+        return false;
+    }
+    // Restore via the taskbar button (Enter) — chrome visible again.
+    d.focus.focus(tb.id);
+    d.handle_event(Event::Key(keys::SCAN_ENTER as u16));
+    for _ in 0..60 {
+        d.tick(); // settle the restore animation
+    }
+    let hidden = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .filter(|n| window_chrome(&d.a11y_tree, n, a))
+        .any(|n| !n.state.visible);
+    if hidden {
+        io::print_str("[test] FAIL test_a11y_taskbar_button: restored window chrome not visible\n");
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_taskbar_button",
+        "minimized chrome leaves the ring",
+    );
+
+    // A window pushed fully off-screen (x or y below -100) paints nothing
+    // either (`window::draw`'s safety check) — its chrome must leave the
+    // ring too, while its taskbar button stays reachable.
+    let mut d = Desktop::new(800, 600);
+    let a = d.wm.create(AppWindow::new(-120, 50, 300, 200, "OffWin"));
+    d.tick();
+    let off_chrome: Vec<_> = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .filter(|n| window_chrome(&d.a11y_tree, n, a))
+        .collect();
+    if off_chrome.is_empty() || off_chrome.iter().any(|n| n.state.visible) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: off-screen window chrome still visible\n",
+        );
+        return false;
+    }
+    let tb_off = d.a11y_tree.nodes.iter().find(|n| {
+        n.role == A11yRole::Button
+            && n.label == "OffWin"
+            && n.parent
+                .and_then(|p| d.a11y_tree.nodes.iter().find(|m| m.id == p))
+                .is_some_and(|p| p.role == A11yRole::Taskbar)
+    });
+    if !tb_off.is_some_and(|n| n.state.visible && n.focusable) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_button: off-screen taskbar button not reachable\n",
+        );
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_taskbar_button",
+        "off-screen chrome leaves the ring",
+    );
 
     // A window literally titled "Close" must still behave as a taskbar button
     // (bring to front, not close) because the guard is structural (parent
@@ -1210,6 +1631,148 @@ pub(crate) fn test_focus_validate_central() -> bool {
     }
     a11y_log_pass("test_focus_validate_central", "Ctrl+W re-syncs");
 
+    // End-to-end, close-animation window: `wm.close(a)` starts an ~8-tick
+    // shrink, but `process_closing` only removes A on the tick the anim
+    // completes — so during the animation the tree STILL contains A's
+    // chrome nodes (same owner/role/parent-role fingerprint as the frame
+    // before close). Pin BOTH `validate` branches at their real boundary:
+    //   MATCH branch (shrink): the focused id's fingerprint in each rebuilt
+    //     tree equals the previous frame's, so the identity check passes and
+    //     the ring FOLLOWS the closing chrome — it must NOT re-sync early;
+    //   MISMATCH branch (vanish): the tick the anim completes, process_closing
+    //     removes A and the rebuilt tree loses A's nodes — the old focused
+    //     id now either names a different node or is gone, so its fingerprint
+    //     no longer matches and `validate` re-syncs to B's surface.
+    let mut d = Desktop::new(800, 600);
+    let a = d.wm.create(AppWindow::new(50, 50, 300, 200, "WinA"));
+    let b = d.wm.create(AppWindow::new(200, 200, 300, 200, "WinB"));
+    d.tick();
+    let win_a = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::Window && n.owner == Some(a));
+    let Some(win_a) = win_a else {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: no Window node for A (close-anim)\n",
+        );
+        return false;
+    };
+    d.focus.focus(win_a.id);
+    d.wm.close(a);
+    // Shrink window: for every tick A is still in the tree, the ring must
+    // stay on A's chrome (never re-sync to B mid-animation). Capture the
+    // focused id's fingerprint from the OLD tree before each rebuild and
+    // assert it is UNCHANGED in the rebuilt tree — that equality is exactly
+    // the identity-check condition `validate` uses to keep the ring.
+    let mut shrink_ticks = 0u32;
+    let mut ring_stayed_on_a = true;
+    let mut fp_matched_every_shrink_tick = true;
+    let mut boundary_old_fid = None;
+    let mut boundary_old_fp = None;
+    for _ in 0..16 {
+        let old_fid = d.focus.focused();
+        let old_fp = old_fid.and_then(|fid| {
+            d.a11y_tree
+                .nodes
+                .iter()
+                .find(|n| n.id == fid)
+                .map(|n| crate::sec::a11y::focus::node_fingerprint(&d.a11y_tree, n))
+        });
+        d.tick();
+        if d.wm.lookup(a).is_none() {
+            // Boundary tick: A was removed. Save the pre-removal focused id
+            // and fingerprint so the mismatch branch can be asserted after.
+            boundary_old_fid = old_fid;
+            boundary_old_fp = old_fp;
+            break;
+        }
+        shrink_ticks += 1;
+        let fid = d.focus.focused();
+        let on_a = d.a11y_tree.nodes.iter().any(|n| {
+            n.id == fid.unwrap_or(0) && n.owner == Some(a) && n.focusable && n.state.visible
+        });
+        if !on_a {
+            ring_stayed_on_a = false;
+        }
+        // Identity check: the focused id's fingerprint in the rebuilt tree
+        // must equal the previous frame's (MATCH branch — ring kept).
+        let new_fp = fid.and_then(|id| {
+            d.a11y_tree
+                .nodes
+                .iter()
+                .find(|n| n.id == id)
+                .map(|n| crate::sec::a11y::focus::node_fingerprint(&d.a11y_tree, n))
+        });
+        if old_fp.is_some() && new_fp != old_fp {
+            fp_matched_every_shrink_tick = false;
+        }
+    }
+    if shrink_ticks < 7 {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: close-anim too short (window removed early)\n",
+        );
+        return false;
+    }
+    if !ring_stayed_on_a {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: close-anim ring left closing chrome\n",
+        );
+        return false;
+    }
+    if !fp_matched_every_shrink_tick {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: close-anim fingerprint changed mid-shrink\n",
+        );
+        return false;
+    }
+    // Boundary, MISMATCH branch: A is gone. The pre-removal focused id must
+    // NOT still carry its old fingerprint in the rebuilt tree — the id now
+    // names a different node (renumbered) or is gone, so the identity check
+    // fails and `validate` re-syncs. Assert the mismatch fired, then that
+    // the ring landed on B's surface with drawable bounds.
+    let boundary_new_fp = boundary_old_fid.and_then(|fid| {
+        d.a11y_tree
+            .nodes
+            .iter()
+            .find(|n| n.id == fid)
+            .map(|n| crate::sec::a11y::focus::node_fingerprint(&d.a11y_tree, n))
+    });
+    if boundary_old_fp.is_some() && boundary_new_fp == boundary_old_fp {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: close-anim boundary fingerprint still matched\n",
+        );
+        return false;
+    }
+    let fid = match d.focus.focused() {
+        Some(id) => id,
+        None => {
+            io::print_str(
+                "[test] FAIL test_focus_validate_central: close-anim boundary lost focus\n",
+            );
+            return false;
+        }
+    };
+    if !d
+        .a11y_tree
+        .nodes
+        .iter()
+        .any(|n| n.id == fid && n.focusable && n.state.visible && n.owner == Some(b))
+    {
+        io::print_str(
+            "[test] FAIL test_focus_validate_central: close-anim did not land on sibling\n",
+        );
+        return false;
+    }
+    if RenderSnapshot::from(&d).focused_bounds.is_none() {
+        io::print_str("[test] FAIL test_focus_validate_central: close-anim ring has no bounds\n");
+        return false;
+    }
+    a11y_log_pass(
+        "test_focus_validate_central",
+        "close-anim fingerprint match follows, mismatch re-syncs",
+    );
+
     io::print_str("[test] PASS test_focus_validate_central\n");
     true
 }
@@ -1663,6 +2226,44 @@ pub(crate) fn test_a11y_taskbar_focus_feedback() -> bool {
     }
     a11y_log_pass("test_a11y_taskbar_focus_feedback", "taskbar button lit");
 
+    // The Taskbar CONTAINER is a focusable fallback (with no window, the
+    // ring lands on it via `preferred_target`), but it is not an
+    // interactive surface: through the full focus_visible ->
+    // `RenderSnapshot::from` pipeline the resolver excludes it, so
+    // snap.focused stays None — no phantom light on the bar. The ring
+    // itself is NOT blurred: the exclusion lives in the resolver
+    // (focused_target), not in the focus manager.
+    let mut d = Desktop::new(800, 600);
+    d.tick();
+    let taskbar_node = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::Taskbar);
+    let Some(taskbar_node) = taskbar_node else {
+        io::print_str("[test] FAIL test_a11y_taskbar_focus_feedback: no Taskbar node\n");
+        return false;
+    };
+    d.focus.focus(taskbar_node.id);
+    d.focus_visible = true;
+    let snap = RenderSnapshot::from(&d);
+    if snap.focused.is_some() {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_focus_feedback: Taskbar container leaked a focus target\n",
+        );
+        return false;
+    }
+    if d.focus.focused() != Some(taskbar_node.id) {
+        io::print_str(
+            "[test] FAIL test_a11y_taskbar_focus_feedback: Taskbar container focus was blurred\n",
+        );
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_taskbar_focus_feedback",
+        "Taskbar container excluded",
+    );
+
     // The Start button resolves to its own target (sentinel owner), not a
     // window id.
     let mut d = Desktop::new(800, 600);
@@ -1772,6 +2373,43 @@ pub(crate) fn test_a11y_taskbar_focus_feedback() -> bool {
             );
             return false;
         }
+        // The window chrome controls (Close/Minimize) share the same
+        // focus-distinction contract through the `window_button_face`
+        // union: focused must surface as its OWN face rather than
+        // collapsing into the hover face, focus must beat hover, and
+        // pressed (hover held) must beat everything. The draw sites keep
+        // the semantic fill (close red / white wash) under focus and mark
+        // focus with an accent_light ring — pinned host-side in
+        // test_window_button_contract.py; this asserts the face decision
+        // itself is distinct.
+        let face = crate::core::window::window_button_face;
+        use crate::core::window::WindowButtonFace as F;
+        if face(false, true, false) != F::Focused {
+            io::print_str(
+                "[test] FAIL test_a11y_taskbar_focus_feedback: focused face != Focused\n",
+            );
+            return false;
+        }
+        if face(true, false, false) != F::Hover {
+            io::print_str("[test] FAIL test_a11y_taskbar_focus_feedback: hover face != Hover\n");
+            return false;
+        }
+        if face(true, true, false) != F::Focused {
+            io::print_str(
+                "[test] FAIL test_a11y_taskbar_focus_feedback: focus did not beat hover\n",
+            );
+            return false;
+        }
+        if face(false, false, false) != F::Base {
+            io::print_str("[test] FAIL test_a11y_taskbar_focus_feedback: resting face != Base\n");
+            return false;
+        }
+        if face(true, true, true) != F::Pressed {
+            io::print_str(
+                "[test] FAIL test_a11y_taskbar_focus_feedback: pressed did not beat focus\n",
+            );
+            return false;
+        }
         a11y_log_pass(
             "test_a11y_taskbar_focus_feedback",
             "focus fill distinct from hover",
@@ -1785,8 +2423,14 @@ pub(crate) fn test_a11y_taskbar_focus_feedback() -> bool {
     // undrawn button and the focused light would silently miss (and the
     // ring would float over the overflow/tray region). The overflow
     // window stays reachable via its Window node.
+    //
+    // WIDE desktop (1800) and cleared icons: the keyboard-wrap leg below
+    // drives spatial navigation from the LAST visible button, so all eight
+    // buttons must sit on-screen with the tray entries as the only
+    // right-hand focusable surfaces (icons would pollute the search).
     {
-        let mut d = Desktop::new(800, 600);
+        let mut d = Desktop::new(1800, 700);
+        d.desktop_icons.icons.clear();
         let mut overflow_win = None;
         for i in 0..=crate::layout::TASKBAR_MAX_BTNS {
             let wid = d.wm.create(AppWindow::new(20, 20, 200, 150, "OverflowWin"));
@@ -1837,6 +2481,56 @@ pub(crate) fn test_a11y_taskbar_focus_feedback() -> bool {
             }
         }
         a11y_log_pass("test_a11y_taskbar_focus_feedback", "overflow cap lockstep");
+
+        // Keyboard loop: the ring on the LAST visible taskbar button
+        // (index TASKBAR_MAX_BTNS-1) pressing Right must wrap to a LIVE
+        // node — the first tray entry, the nearest focusable surface to
+        // its right. The cap means no node exists at the overflow "..."
+        // slot, so the spatial search cannot park the ring there; a
+        // phantom overflow button (the cap regressing) would win the
+        // search as the nearest right-hand candidate and strand the ring
+        // on an undrawn surface — the exact failure the lockstep
+        // prevents. The landed node must be the tray sentinel at the
+        // first tray-entry rect, i.e. a node the draw actually paints.
+        let ty = d.taskbar_y();
+        let tray_len = d.tray.entries.len() as u32;
+        let last_visible = d
+            .a11y_tree
+            .nodes
+            .iter()
+            .find(|n| {
+                n.role == A11yRole::Button
+                    && n.parent == Some(taskbar_id)
+                    && n.owner != Some(START_BUTTON_OWNER)
+                    && n.bounds == layout::taskbar_btn_rect(crate::layout::TASKBAR_MAX_BTNS - 1, ty)
+            })
+            .map(|n| n.id);
+        let Some(last_visible) = last_visible else {
+            io::print_str(
+                "[test] FAIL test_a11y_taskbar_focus_feedback: last visible taskbar button missing\n",
+            );
+            return false;
+        };
+        d.focus.focus(last_visible);
+        d.handle_event(Event::Key(keys::SCAN_RIGHT as u16));
+        let wrapped = d.focus.focused().is_some_and(|f| {
+            d.a11y_tree.nodes.iter().any(|n| {
+                n.id == f
+                    && n.role == A11yRole::Button
+                    && n.owner == Some(TRAY_PANEL_OWNER)
+                    && n.bounds == layout::tray_entry_rect(0, ty, d.screen_w, tray_len)
+            })
+        });
+        if !wrapped {
+            io::print_str(
+                "[test] FAIL test_a11y_taskbar_focus_feedback: Right from last visible button did not wrap to the first tray entry (overflow phantom?)\n",
+            );
+            return false;
+        }
+        a11y_log_pass(
+            "test_a11y_taskbar_focus_feedback",
+            "overflow keyboard wrap to live node",
+        );
     }
 
     io::print_str("[test] PASS test_a11y_taskbar_focus_feedback\n");
@@ -2089,6 +2783,43 @@ pub(crate) fn test_a11y_focused_target() -> bool {
     }
     a11y_log_pass("test_a11y_focused_target", "Minimize control");
 
+    // Notification row -> Notification(i): a focusable Button child of
+    // Desktop (the overlay is a desktop-level surface), owner-stamped with
+    // the NOTIFICATION_OWNER sentinel, resolving to the same payload the
+    // overlay draw lights for hover.
+    let mut d = Desktop::new(800, 600);
+    d.services
+        .notify("Demo", "This is a test notification", 1, 120, d.clock_ticks);
+    d.tick();
+    let notif = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::Button && n.owner == Some(NOTIFICATION_OWNER));
+    let Some(notif) = notif else {
+        io::print_str("[test] FAIL test_a11y_focused_target: no notification node\n");
+        return false;
+    };
+    if !notif.focusable {
+        io::print_str("[test] FAIL test_a11y_focused_target: notification node not focusable\n");
+        return false;
+    }
+    if notif.bounds != layout::notification_rect(d.screen_w, 0) {
+        io::print_str("[test] FAIL test_a11y_focused_target: notification bounds wrong\n");
+        return false;
+    }
+    if d.focused_target(notif.id) != Some(HoverTarget::Notification(0)) {
+        io::print_str("[test] FAIL test_a11y_focused_target: notification misresolved\n");
+        return false;
+    }
+    // The focused light flows through the snapshot like the window controls.
+    d.focus.focus(notif.id);
+    if d.snapshot().focused != Some(HoverTarget::Notification(0)) {
+        io::print_str("[test] FAIL test_a11y_focused_target: notification not lit\n");
+        return false;
+    }
+    a11y_log_pass("test_a11y_focused_target", "notification row");
+
     // Non-interactive containers and roles resolve to None: the Window
     // node, the StartMenu container, the Taskbar container, the Desktop
     // root, and the tray panel all carry focus (the ring draws) but no
@@ -2244,6 +2975,96 @@ pub(crate) fn test_a11y_start_menu_focus_feedback() -> bool {
         return false;
     }
     a11y_log_pass("test_a11y_start_menu_focus_feedback", "mouse mode not lit");
+
+    // Sidebar category lit: a focused category node resolves to its
+    // StartCategory target through the same snapshot path the app rows use
+    // (focused_target discriminates StartMenu children by bounds — rows,
+    // categories, and recent tiles never share a rect).
+    let mut d = Desktop::new(800, 600);
+    d.start_menu.open_with(&d.app_reg);
+    d.tick();
+    let menu_r = layout::menu_rect(d.taskbar_y());
+    let sm = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::StartMenu);
+    let Some(sm) = sm else {
+        io::print_str("[test] FAIL test_a11y_start_menu_focus_feedback: no StartMenu (category)\n");
+        return false;
+    };
+    let cat0 = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.parent == Some(sm.id) && n.bounds == layout::menu_category_rect(menu_r, 0));
+    let Some(cat0) = cat0 else {
+        io::print_str("[test] FAIL test_a11y_start_menu_focus_feedback: no category 0 node\n");
+        return false;
+    };
+    d.focus.focus(cat0.id);
+    d.focus_visible = true;
+    let snap = RenderSnapshot::from(&d);
+    if snap.focused != Some(HoverTarget::StartCategory(0)) {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_focus_feedback: category not lit: {:?}\n",
+            snap.focused
+        ));
+        return false;
+    }
+    a11y_log_pass(
+        "test_a11y_start_menu_focus_feedback",
+        "sidebar category lit",
+    );
+
+    // Recent tile lit: the recent list is empty by default, so seed it with
+    // a real catalog app, then the focused tile resolves to its StartRecent
+    // target. (Recent tiles and rows are in disjoint regions, so the row
+    // resolver cannot shadow the tile.)
+    let mut d = Desktop::new(800, 600);
+    let about_idx = match d.app_reg.apps.iter().position(|a| a.name == "About SARGA") {
+        Some(i) => i,
+        None => {
+            io::print_str(
+                "[test] FAIL test_a11y_start_menu_focus_feedback: no About SARGA in catalog\n",
+            );
+            return false;
+        }
+    };
+    d.app_reg.recent.push_back(about_idx);
+    d.start_menu.open_with(&d.app_reg);
+    d.tick();
+    let menu_r = layout::menu_rect(d.taskbar_y());
+    let rx0 = layout::menu_recent_x0(menu_r);
+    let sm = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.role == A11yRole::StartMenu);
+    let Some(sm) = sm else {
+        io::print_str("[test] FAIL test_a11y_start_menu_focus_feedback: no StartMenu (recent)\n");
+        return false;
+    };
+    let recent = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .find(|n| n.parent == Some(sm.id) && n.bounds == layout::menu_recent_rect(menu_r, rx0));
+    let Some(recent) = recent else {
+        io::print_str("[test] FAIL test_a11y_start_menu_focus_feedback: no recent tile node\n");
+        return false;
+    };
+    d.focus.focus(recent.id);
+    d.focus_visible = true;
+    let snap = RenderSnapshot::from(&d);
+    if snap.focused != Some(HoverTarget::StartRecent(0)) {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_start_menu_focus_feedback: recent tile not lit: {:?}\n",
+            snap.focused
+        ));
+        return false;
+    }
+    a11y_log_pass("test_a11y_start_menu_focus_feedback", "recent tile lit");
 
     io::print_str("[test] PASS test_a11y_start_menu_focus_feedback\n");
     true
@@ -2835,6 +3656,39 @@ pub(crate) fn test_a11y_tray_panel() -> bool {
     }
     a11y_log_pass("test_a11y_tray_panel", "owner-stamped TrayPanel node");
 
+    // Each drawn tray entry is its own focusable Button child of the panel,
+    // owner-stamped with the same sentinel and bounds equal to the drawn
+    // `tray_entry_rect` — so the ring can land on an entry and the focused
+    // light can resolve it exactly like the hover light.
+    // Clone the nodes (A11yNode is Clone) so the loop below can mutate `d`
+    // (update_mouse, focus) while holding the entry-node data.
+    let entry_nodes: Vec<_> = d
+        .a11y_tree
+        .nodes
+        .iter()
+        .filter(|n| n.parent == Some(panel.id) && n.role == A11yRole::Button)
+        .cloned()
+        .collect();
+    if entry_nodes.len() != tray_len as usize {
+        io::print_str(&alloc::format!(
+            "[test] FAIL test_a11y_tray_panel: expected {} entry nodes, got {}\n",
+            tray_len,
+            entry_nodes.len()
+        ));
+        return false;
+    }
+    for (i, node) in entry_nodes.iter().enumerate() {
+        if !node.focusable || node.owner != Some(TRAY_PANEL_OWNER) {
+            io::print_str("[test] FAIL test_a11y_tray_panel: entry node stamp wrong\n");
+            return false;
+        }
+        if node.bounds != layout::tray_entry_rect(i, ty, d.screen_w, tray_len) {
+            io::print_str("[test] FAIL test_a11y_tray_panel: entry node bounds wrong\n");
+            return false;
+        }
+    }
+    a11y_log_pass("test_a11y_tray_panel", "entry Button nodes stamped");
+
     // Hover on entry 0 reports the unified tray hover, resolved through the
     // same panel-derived entry rect the draw uses.
     let tr = layout::tray_entry_rect(0, ty, d.screen_w, tray_len);
@@ -2844,6 +3698,15 @@ pub(crate) fn test_a11y_tray_panel() -> bool {
         return false;
     }
     a11y_log_pass("test_a11y_tray_panel", "hover on entry 0");
+
+    // Focused entry 0 resolves through the same HoverTarget payload the
+    // draw unions (`hover || focused`), exactly like the window controls.
+    d.focus.focus(entry_nodes[0].id);
+    if d.snapshot().focused != Some(HoverTarget::Tray(0)) {
+        io::print_str("[test] FAIL test_a11y_tray_panel: focused entry 0 wrong\n");
+        return false;
+    }
+    a11y_log_pass("test_a11y_tray_panel", "focused entry 0");
 
     io::print_str("[test] PASS test_a11y_tray_panel\n");
     true

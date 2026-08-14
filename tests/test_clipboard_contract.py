@@ -37,6 +37,9 @@ PORTAL_RS = os.path.join(REPO_ROOT, "ade", "src", "sec", "portal", "clipboard.rs
 MANAGER_RS = os.path.join(REPO_ROOT, "ade", "src", "service", "clipboard.rs")
 OVERLAY_RS = os.path.join(REPO_ROOT, "ade", "src", "render", "overlay.rs")
 LIBSARGA_IO_RS = os.path.join(REPO_ROOT, "libsarga", "src", "io.rs")
+DESKTOP_CORE_RS = os.path.join(REPO_ROOT, "ade", "src", "core", "desktop.rs")
+PROBE_EXP = os.path.join(REPO_ROOT, "tests", "qemu_clipboard_probe.exp")
+CI_YML = os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml")
 
 
 def _read(path):
@@ -155,6 +158,53 @@ class TestWrapperGuardsKept(unittest.TestCase):
             "if r < 0", code[len_start:len_end],
             "clipboard_len keeps its i64 errno guard (syscall1/3 return i64)",
         )
+
+
+class TestQemuClipboardProbeHarness(unittest.TestCase):
+    """The cross-world probe (tests/qemu_clipboard_probe.exp) must keep
+    driving the F1 payoff: console sash yank -> kernel store -> GUI
+    kernel-store read. A harness edit that drops any leg fails here before
+    the QEMU job runs."""
+
+    def test_exp_drives_yank_then_gui_paste(self):
+        exp = _read(PROBE_EXP)
+        # chr(92) = backslash: the exp escapes '[' and writes the Esc byte
+        # as '\x1b' inside expect patterns/sends, so the needles are built
+        # without literal backslashes in this source (no escape mangling).
+        bs = chr(92)
+        self.assertIn("CLIPX_PAYLOAD", exp,
+                      "probe lost its unique marker string")
+        self.assertIn('send "' + bs + 'x1b"', exp,
+                      "probe lost the Esc-to-Command-mode step")
+        self.assertIn('send "Y"', exp,
+                      "probe lost the Command-mode yank key (clipboard_write)")
+        self.assertIn('sendkey_seq "ctrl-b"', exp,
+                      "probe lost the GUI ClipboardPanel chord")
+        self.assertIn(
+            bs + "[clip" + bs + "] kernel store: echo CLIPX_PAYLOAD", exp,
+            "probe lost the cross-world assert (GUI kernel-store read shows "
+            "the yanked bytes)")
+
+    def test_ade_arm_prints_kernel_store(self):
+        # RAW source, not strip_rust: the print strings are string literals
+        # and ARE the evidence (strip_rust would delete them).
+        src = _read(DESKTOP_CORE_RS)
+        start = src.index("KeyAction::ClipboardPanel")
+        end = src.index("KeyAction::ToggleAot")
+        region = src[start:end]
+        self.assertIn('"[clip] kernel store:', region,
+                      "desktop ClipboardPanel arm lost its kernel-store print "
+                      "(the probe's serial evidence)")
+        self.assertIn("clipboard_read(", region,
+                      "desktop ClipboardPanel arm no longer reads the kernel "
+                      "store")
+
+    def test_ci_step_wired(self):
+        ci_yml = _read(CI_YML)
+        self.assertIn("qemu_clipboard_probe.exp", ci_yml,
+                      "CI lost the cross-world clipboard probe step")
+        self.assertIn("PASS: cross-world clipboard loop", ci_yml,
+                      "CI lost the probe verdict grep")
 
 
 if __name__ == "__main__":

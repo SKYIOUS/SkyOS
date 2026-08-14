@@ -197,5 +197,5 @@ out of scope for this shape fix, but the registry makes it a drop-in.
 | Proof | Marker |
 |---|---|
 | Kernel selftest | `ok N - gui::drmctl_set_mode_ok` and `ok N - gui::drmctl_map_dumb_roundtrip` in self_test serial |
-| Settings app | `DRM: set_mode` in the QEMU serial log after a resolution change |
+| Settings app | `tests/qemu_drm_probe.exp`: boot → launch skysettings from the console → sendkey `r` → `DRM: set_mode` in the QEMU serial log |
 | libsarga | UNUSABLE comments removed from `gpu.rs` `set_mode`/`map_dumb` |

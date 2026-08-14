@@ -22,11 +22,13 @@ pub(crate) fn run_all(desktop: &mut crate::core::desktop::Desktop) -> bool {
     ok &= input::test_from_raw();
     ok &= input::test_session_end_gate();
     ok &= input::test_logout_protocol_from_chord();
+    ok &= input::test_logout_inert_with_window_open();
     // Pure palette checks: WCAG contrast pins for both themes. Cheap and
     // panic-free, so it reports even if a later stateful test panics.
     ok &= theme::test_theme_contrast();
     ok &= a11y::test_a11y_close_button();
     ok &= a11y::test_a11y_start_menu_rows();
+    ok &= a11y::test_a11y_start_menu_ring_scroll();
     ok &= a11y::test_a11y_taskbar_button();
     ok &= a11y::test_tooltip_owner_label();
     ok &= a11y::test_a11y_close_resyncs_focus();

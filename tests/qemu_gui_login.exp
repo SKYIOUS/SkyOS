@@ -145,7 +145,9 @@
 #                     backspace on the empty desktop. Mode selected by
 #                     the CI-visible $KERNEL_DESIGN_A toggle (ci.yml
 #                     login step): =1 asserts '[ade] session ended'
-#                     within 8s (chord = 0x0308, kernel A1-A4 landed)
+#                     within 8s, asserting the rich unwind marker
+                     '[ade] session ended code=0 ending=true' (chord =
+                     0x0308, kernel A1-A4 landed)
 #                     with NO esc fallback - timeout FAILs; unset/0
 #                     keeps the esc fallback (0x1B) for the current
 #                     kernel where the chord is inert (Backspace arrives
@@ -518,7 +520,7 @@ expect -timeout 8 {
 #    docs/kernel-gui-modifier-delivery.md A1-A4) the chord arrives as
 #    0x0308 = Ctrl+Alt+Backspace (host-pinned in
 #    test_login_flow.py::TestKernelKeyContract) and ends the session:
-#    '[ade] session ended' within 8s -> PASS via chord.
+#    '[ade] session ended code=0 ending=true' within 8s -> PASS via chord.
 #    MODE (CI-visible toggle $KERNEL_DESIGN_A, plumbed in ci.yml):
 #    - =1: the chord is ASSERTED - a timeout FAILs with a named message
 #      (no esc fallback); the chord is the only logout path.
@@ -533,7 +535,7 @@ set chord_ended 0
 sendkey_chord {ctrl alt} backspace
 
 expect -timeout 8 {
-    {\[ade\] session ended} {
+    {\[ade\] session ended code=0 ending=true} {
         send_user "PASS: session ended via ctrl+alt+backspace (kernel Design A delivered)\n"
         set chord_ended 1
     }
@@ -558,7 +560,7 @@ expect -timeout 8 {
 if {!$chord_ended} {
     sendkey_seq "esc"
     expect {
-        {\[ade\] session ended} {
+        {\[ade\] session ended code=0 ending=true} {
             send_user "PASS: session ended via esc fallback\n"
         }
         timeout { send_user "FAIL: session ended never appeared (chord or esc)\n"; exit 1 }

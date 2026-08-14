@@ -139,8 +139,6 @@ impl KeyEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyAction {
     ToggleDebugOverlay,
-    /// Close any open menu / exit fullscreen.
-    Escape,
     Enter,
     Backspace,
     /// Tab — a11y focus next (or menu category / switcher next in context).
@@ -195,14 +193,14 @@ pub(crate) const BINDINGS: &[Binding] = &[
         action: KeyAction::ToggleDebugOverlay,
         desktop: false,
     },
-    Binding {
-        code: keys::KEY_ESC,
-        ctrl: false,
-        alt: false,
-        shift: false,
-        action: KeyAction::Escape,
-        desktop: false,
-    },
+    // NOTE: there is deliberately NO Escape binding row. `handle_a11y_key`
+    // consumes Esc (byte 0x1B and SCAN_ESC) before `resolve` can ever see
+    // it, so a row here would be unreachable dead weight — all Esc behavior
+    // (dismiss overlays, exit fullscreen, terminal 0x1B forward, and the
+    // empty-desktop logout) lives in that arm. The `Escape` action variant
+    // is removed for the same reason: nothing can construct it, so the
+    // table holds only reachable rows and the dispatcher only reachable
+    // actions.
     // Navigation / editing.
     Binding {
         code: keys::KEY_TAB,
@@ -234,8 +232,9 @@ pub(crate) const BINDINGS: &[Binding] = &[
     // deliberately UNBOUND — the old Ctrl+Q/plain-'q' gates are gone. Only
     // this chord ends the session via the table; Esc on an empty desktop is
     // the second (byte-deliverable) session-end path, handled contextually in
-    // the a11y Esc arm — NOT a Quit binding, so `quit_count` stays exactly 1
-    // (pinned in testing/input.rs).
+    // the a11y Esc arm — NOT a Quit binding (and not a binding row at all,
+    // see the NOTE above), so `quit_count` stays exactly 1 (pinned in
+    // testing/input.rs).
     Binding {
         code: keys::KEY_BACKSPACE,
         ctrl: true,
@@ -398,7 +397,7 @@ pub(crate) struct BindingDump {
 /// keymap edit that accidentally re-adds a session-end binding (e.g.
 /// Ctrl+Q → Quit) or turns a terminal key into a desktop grab fails the
 /// selftest first in the suite, before any QEMU run. Cost is trivial:
-/// 2,048 `resolve` + 2,048 `is_desktop_shortcut` calls against an 18-row
+/// 2,048 `resolve` + 2,048 `is_desktop_shortcut` calls against a 17-row
 /// table.
 pub(crate) fn dump_bindings() -> BindingDump {
     let mut count: u32 = 0;

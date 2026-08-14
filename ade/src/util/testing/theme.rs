@@ -105,6 +105,20 @@ pub(crate) fn test_theme_contrast() -> bool {
             theme.hover,
             4.5,
         );
+        // The keyboard-focus fill: the lighter accent_light blue (every
+        // focused surface — taskbar buttons, start-menu rows, window
+        // chrome, tray, notification rows) carries the same white
+        // on_accent text. It is deliberately BELOW the 4.5 AA the indigo
+        // gets — the distinct focus hue is the tradeoff — but must stay
+        // above the 3:1 WCAG UI-component floor (taskbar.rs:127-130
+        // documents ~3.42:1). A palette edit that dims accent_light
+        // below the floor fails here with the actual ratio.
+        ok &= check(
+            &alloc::format!("{} on_accent on accent_light (focused)", name),
+            theme.on_accent,
+            theme.accent_light,
+            3.0,
+        );
     }
 
     // Base text pairs — the normal surfaces, both themes.

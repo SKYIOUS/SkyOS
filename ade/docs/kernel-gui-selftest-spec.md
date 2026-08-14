@@ -365,6 +365,87 @@ Also assert the **pre-fix failure** once for honesty: with Option 1 NOT
 applied, test 2 must fail (`map_buffer` returns 0) — if it passes, the test
 isn't exercising the fallback (see the `drained.is_empty()` guard).
 
+## Second user-visible path — forced-failure boot leg (drain hook + serial markers)
+
+The three TAP tests above prove Option 1's mechanism **synthetically** — the
+buddy drained inside the kernel, before any process exists. This section
+specs the **real-hardware leg**: a test-only kernel boot flag that drains the
+buddy at boot and HOLDS the blocks, so login-manager's own 800x600
+`Window::create` runs under genuine memory pressure and the boot's serial
+stream carries the two markers the QEMU gates assert. The **first**
+user-visible path — the healthy boot (`[login] window created`, GUI gate
+PASS, fix doc Verification plan item 1) — is covered there; this is the
+second, the forced-failure boot. The leg is the bridge between the selftest
+(drain helper, synthetic) and the give-up harness (mem-series capture, real
+boot): the same drain mechanism, one level up the stack.
+
+### Drain hook contract (kernel, test-only)
+
+Mirror vahid's userspace `--force-fail` test hook, kernel-side. When the
+rewrite lands a working buddy allocator, add a test-only boot flag
+(`SKYOS_DRAIN_BUDDY=<order>`, default unset) honored in `kernel/src/main.rs`
+after memory init and before the first userspace process is spawned:
+
+- Parse the flag; when set to order N, run the selftest's `drain_order(N)`
+  loop — allocate every contiguous N-order block the buddy holds — and
+  **hold** the blocks (keep the returned Vec alive in a `static`, or
+  `core::mem::forget` it; never release), so `count_free_pages()` stays
+  near zero for the whole boot.
+- **Hold, not release:** the selftest drains then releases to model
+  *transient* pressure (Option 1's promotion has room after release). The
+  boot leg models the *persistent* row of the fix doc's evidence table:
+  free stays low across every login-manager respawn, so the give-up
+  harness's per-respawn series is flat and classifies Option 2. Both rows
+  of the table now have a deterministic driver.
+- Order 9 for login-manager's 800x600 window (create_window computes
+  content_len = 800*600*4 bytes -> order 9 — the same constant the tests
+  above hardcode; share the `order_for_size` helper the fix doc suggests).
+- No production behavior change: the flag is absent on every normal boot.
+  The exact delivery (boot arg vs early env) is the rewrite's call — the
+  flag NAME is the stable contract, like the `gui::option1_*` TAP names.
+
+### Serial markers the leg asserts
+
+With the drain hook set, login-manager's real create runs under pressure and
+the boot must show, in order:
+
+1. `[login] mem free=N pages` with N **near zero** (the fix doc's `< 2k
+   pages` ≈ `< 8 MB` line) — login-manager/src/main.rs:56 (ctlFS
+   `/ctl/sys/mem/free`), printed before every `Window::create`.
+2. `[login] failed to create window` — login-manager/src/main.rs:66
+   (`Window::create` Err: the fallback's `phys_addr == None` makes
+   `sys_gui_map_buffer` return 0, so libsarga yields `Err(5)` and this
+   print runs).
+3. `[login] window created` stays ABSENT on this boot.
+
+No new serial print is needed: the drain is proven by the marker's magnitude
+(near zero) and the failure by the existing `failed to create window` line.
+
+### Evidence-table mapping
+
+| Boot-leg observation (drain hook set) | Selftest equivalent | Verdict | Kernel fix |
+|---|---|---|---|
+| `mem free=N` near zero + `failed to create window`, series flat across respawns | `gui::option1_fallback_forced` (drain, no release) | persistent OOM | Option 2 + 2b |
+| `mem free=N` recovers + `window created` | `fallback_forced` + release + `promotion_maps` | transient | Option 1 |
+
+### Bridge to selftest + gate
+
+- The drain hook reuses the selftest's `drain_order` helper — one source of
+  truth for "drain until `allocate_contiguous` returns None"; the hook is
+  the same loop called at boot with a hold-leak instead of a returned Vec.
+- The give-up harness (`qemu_giveup_boot.exp`, audit row 6) already captures
+  the per-respawn `mem_readings` series live. When the hook lands, its
+  forced-failure boot additionally greps `[login] failed to create window`
+  and asserts the first reading is near zero — turning the persistent
+  verdict from a NOTE/PASS series classification into a hard requirement on
+  a boot where pressure is guaranteed.
+- Division of labor: the selftest proves the mechanism pre-userspace (no
+  process exists, so no serial login-manager can run); the boot leg proves
+  the same pressure conditions through the real syscall path and real init
+  respawn accounting. The selftest alone cannot produce the serial markers,
+  and the boot leg alone cannot isolate the drain (the mem marker is the
+  only probe) — hence both.
+
 ## CI
 
 The TAP lines print to serial (`ok 2 - gui::option1_promotion_maps`), so the
@@ -380,3 +461,8 @@ automatically. If the rewrite wants a narrower tripwire, grep for
    (visibility only, no behavior change).
 4. Optionally extract `order_for_size()` shared by create_window + the test
    (the fix doc's existing suggestion).
+5. `kernel/src/main.rs` — the `SKYOS_DRAIN_BUDDY` boot-flag parse + the
+   drain-hold call (test-only; the second user-visible path above).
+6. `tests/qemu_giveup_boot.exp` — GATED on the hook landing: the
+   `[login] failed to create window` grep + near-zero first-reading
+   assertion on the forced-failure boot (see the leg section).

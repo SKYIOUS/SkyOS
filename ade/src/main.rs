@@ -145,10 +145,16 @@ fn user_main() -> i32 {
             libsarga::syscall::syscall2(35, 0, sleep_ns);
         }
     }
-    // Session lifecycle: session ended — clean return with the session's
-    // exit code (EXIT_LOGOUT = 0; init treats 0 as a clean exit and respawns
-    // login-manager).
-    io::print_str("[ade] session ended\n");
+    // Session lifecycle: session ended — print the exit code and ending
+    // state so the CI grep gates can assert the idempotent-unwind contract
+    // on real input (EXIT_LOGOUT = 0; init treats 0 as a clean exit and respawns
+    // login-manager), not just in the synthetic host tests. The marker lands
+    // exactly once per session, at unwind.
+    io::print_str(&alloc::format!(
+        "[ade] session ended code={} ending={}\n",
+        desktop.session.exit_code(),
+        desktop.session.is_ending(),
+    ));
     desktop.session.exit_code()
 }
 

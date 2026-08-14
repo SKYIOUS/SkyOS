@@ -9,6 +9,7 @@ pub(crate) fn draw_notifications(
     canvas: &mut Canvas,
     notifications: &[Notification],
     hover: Option<HoverTarget>,
+    focused: Option<HoverTarget>,
     theme: &libsarga::theme::Theme,
 ) {
     for (i, n) in notifications
@@ -17,7 +18,15 @@ pub(crate) fn draw_notifications(
         .enumerate()
     {
         let r = layout::notification_rect(canvas.w, i);
-        let hovered = hover == Some(HoverTarget::Notification(i));
+        let target = HoverTarget::Notification(i);
+        // The same union as the window controls, split so the keyboard
+        // state is distinct: the focused (ring) row fills with the
+        // accent_light blue, the hovered row with the indigo `th.hover` —
+        // "blue = ring" holds on the overlay too, and the ring shows where
+        // Enter/activation would land.
+        let hover_lit = hover == Some(target);
+        let focused_lit = focused == Some(target);
+        let lit = hover_lit || focused_lit;
         let border_color = if n.urgency >= 2 {
             theme.error
         } else if n.urgency == 0 {
@@ -25,7 +34,9 @@ pub(crate) fn draw_notifications(
         } else {
             theme.accent
         };
-        let bg_color = if hovered {
+        let bg_color = if focused_lit {
+            theme.accent_light
+        } else if hover_lit {
             theme.hover
         } else if n.urgency == 0 {
             theme.bg_surface
@@ -34,11 +45,11 @@ pub(crate) fn draw_notifications(
         };
         canvas.draw_rounded_rect(r.x as u32, r.y as u32, r.w, r.h, 8, bg_color);
         canvas.draw_rounded_rect_outline(r.x as u32, r.y as u32, r.w, r.h, 8, border_color);
-        // A hovered row fills with the theme-invariant indigo, so its text
-        // is on_accent (white) — theme.text/theme.text_secondary flip dark
-        // in the light theme and would vanish on it.
-        let title_c = if hovered { theme.on_accent } else { theme.text };
-        let body_c = if hovered {
+        // A lit row fills with a dark-indigo/blue fill, so its text is
+        // on_accent (white) — theme.text/theme.text_secondary flip dark in
+        // the light theme and would vanish on it.
+        let title_c = if lit { theme.on_accent } else { theme.text };
+        let body_c = if lit {
             theme.on_accent
         } else {
             theme.text_secondary
