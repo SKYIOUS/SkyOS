@@ -65,6 +65,30 @@ build = the working ISO's no-`self_test` config, builder → `make_iso.py`).
    the harnesses run against the known-good target rather than failing at
    build/boot.
 
+## Verified locally (Aug 14, 2026)
+
+Re-ran the workflow's own reachability gate (`tests/probe_iso_boot.py`, which
+mirrors the `boot_capture` QEMU command exactly: `-bios OVMF.fd -cdrom … -m
+512M -smp 2 -display none -monitor none -serial file:`) against every ISO in
+`release/`:
+
+| ISO | Built | Size | Reaches `login:`? |
+|---|---|---|---|
+| `skyos-probe.iso` | Aug 9 19:14 | 8.4 MB | **PASS** — `[init] SARGA init starting`, `starting service:`, `login:` |
+| `skyos-kgtest.iso` | Aug 12 | 8.4 MB | FAIL — hangs at `[APIC] init_timer...` |
+| `skyos-0.6.0-itg2.iso` | Aug 12 | 8.4 MB | FAIL — same APIC hang |
+| `skyos-0.6.0.iso` | Aug 12 | 30 MB | FAIL — same APIC hang |
+| `skyos-focuscheck-1639.iso` | Aug 14 16:39 | 9.5 MB | FAIL — same APIC hang |
+
+So the structural-validity loop is now closed with boot evidence: the pinned
+builder's hybrid contract (MBR+GPT+El Torito, `test_make_iso_pycdlib.py`) is
+byte-valid **and** the surviving known-good image actually boots to the getty
+under OVMF. The later ISOs fail at `[APIC] init_timer...` — the same kernel
+breakage the iso-capture doc's provenance section predicts (remote `master` no
+longer reaches userspace; the working state was the local Aug 9 tree). The
+`boot_capture` gate in `release-iso.yml` would FAIL on any of the later ISOs,
+which is the intended honest behavior.
+
 ## Related
 
 - `ade/docs/session-lifecycle.md` — respawn accounting and logout contract the
