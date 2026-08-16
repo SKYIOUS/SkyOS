@@ -200,7 +200,7 @@ impl SleepQueue {
         let n = self.sleepers.len();
         for _ in 0..n {
             let Some(mut t) = self.sleepers.pop_front() else { break };
-            let due = t.sleep_until.map_or(false, |wake_time| current_ticks >= wake_time);
+            let due = t.sleep_until.is_some_and(|wake_time| current_ticks >= wake_time);
             if due || t.has_unmasked_pending {
                 t.status = TStatus::Ready;
                 t.sleep_until = None;

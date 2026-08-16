@@ -35,17 +35,19 @@ impl PageCache {
 
     fn insert_page(&mut self, ino: u64, index: u64, data: [u8; 4096]) {
         let key = (ino, index);
-        if self.pages.contains_key(&key) {
-            self.pages.insert(key, Page { data, dirty: false });
+        let page = Page { data, dirty: false };
+        // Existing page: overwrite in place, LRU order untouched.
+        if self.pages.insert(key, page).is_some() {
             return;
         }
-        if self.pages.len() >= self.capacity {
+        // New page: evict the LRU entry once past capacity, then record
+        // the insertion in the order queue.
+        if self.pages.len() > self.capacity {
             if let Some(oldest) = self.order.pop_front() {
                 self.pages.remove(&oldest);
             }
         }
         self.order.push_back(key);
-        self.pages.insert(key, Page { data, dirty: false });
     }
 
     fn mark_dirty(&mut self, ino: u64, index: u64) {
