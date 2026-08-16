@@ -1,10 +1,16 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Default per-test timeout. A test that exceeds it fails as "timed out"
+/// instead of stalling the run (and with it, CI).
+pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
 /// A registered test function.
 pub struct Test {
     pub name: &'static str,
     pub category: &'static str,
-    pub run: Box<dyn Fn() -> Result<(), String>>,
+    /// `+ Send`: each test is moved onto its own thread so a hung test can be
+    /// abandoned at the timeout instead of stalling the whole run.
+    pub run: Box<dyn Fn() -> Result<(), String> + Send>,
 }
 
 /// Result of running a single test.
@@ -18,14 +24,19 @@ pub struct TestRun {
 }
 
 impl TestRun {
-    fn from_test(test: &Test, result: Result<(), String>, duration_ms: u64) -> Self {
+    fn from_test(
+        name: &'static str,
+        category: &'static str,
+        result: Result<(), String>,
+        duration_ms: u64,
+    ) -> Self {
         let (passed, message) = match result {
             Ok(()) => (true, String::new()),
             Err(e) => (false, e),
         };
         TestRun {
-            name: test.name.to_string(),
-            category: test.category.to_string(),
+            name: name.to_string(),
+            category: category.to_string(),
             passed,
             message,
             duration_ms,
@@ -37,11 +48,27 @@ impl TestRun {
 pub struct TestRunner {
     tests: Vec<Test>,
     runs: Vec<TestRun>,
+    /// Per-test cap; `None` disables the timeout. A timed-out test is marked
+    /// FAILED and its thread abandoned (leaked) -- the process still exits
+    /// normally once the run finishes, so one hung test costs at most one
+    /// timeout instead of a forever-stalled CI job.
+    timeout: Option<Duration>,
 }
 
 impl TestRunner {
     pub fn new() -> Self {
-        TestRunner { tests: Vec::new(), runs: Vec::new() }
+        Self::new_with_timeout(DEFAULT_TIMEOUT_MS)
+    }
+
+    /// `timeout_ms == 0` disables the cap (for debugging a genuinely slow
+    /// test); otherwise the per-test timeout is `timeout_ms` milliseconds.
+    pub fn new_with_timeout(timeout_ms: u64) -> Self {
+        let timeout = if timeout_ms == 0 {
+            None
+        } else {
+            Some(Duration::from_millis(timeout_ms))
+        };
+        TestRunner { tests: Vec::new(), runs: Vec::new(), timeout }
     }
 
     pub fn register(&mut self, test: Test) {
@@ -54,11 +81,17 @@ impl TestRunner {
 
     pub fn run_all(&mut self) {
         self.runs.clear();
-        for test in &self.tests {
+        // Consume the registered tests: each closure moves into its own thread.
+        // (run_all is called once per runner; re-register before a second run.)
+        let tests = std::mem::take(&mut self.tests);
+        for test in tests {
+            // Destructure first: `run` moves into its thread, while `name` /
+            // `category` (both &'static str) stay available for the report.
+            let Test { name, category, run } = test;
             let start = Instant::now();
-            let result = (test.run)();
+            let result = run_with_timeout(run, self.timeout);
             let duration = start.elapsed().as_millis() as u64;
-            self.runs.push(TestRun::from_test(test, result, duration));
+            self.runs.push(TestRun::from_test(name, category, result, duration));
         }
     }
 
@@ -166,7 +199,136 @@ macro_rules! assert_eq_result {
                 stringify!($left), stringify!($right), l, r));
         }
     }};
+    ($left:expr, $right:expr, $($arg:tt)+) => {{
+        let l = $left;
+        let r = $right;
+        if l != r {
+            return Err(format!(
+                "{}: assertion failed: `{} == {}`\n  left: {:?}\n right: {:?}",
+                format!($($arg)+), stringify!($left), stringify!($right), l, r));
+        }
+    }};
+}
+
+/// Run one test closure on its own thread, catching panics and enforcing the
+/// per-test timeout. Panics become failures; a timeout becomes a failure with
+/// a "timed out" message and the thread is abandoned.
+fn run_with_timeout(
+    run: Box<dyn Fn() -> Result<(), String> + Send>,
+    timeout: Option<Duration>,
+) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let spawn = std::thread::Builder::new().spawn(move || {
+        // Flatten before sending: catch_unwind yields a nested Result; the
+        // channel message must be the test's own `Result<(), String>` so the
+        // receiver's `Ok(outcome)` unwraps directly.
+        let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run())) {
+            Ok(r) => r,
+            Err(payload) => Err(panic_payload_message(payload)),
+        };
+        let _ = tx.send(outcome);
+    });
+    let spawn = match spawn {
+        Ok(h) => h,
+        Err(e) => return Err(format!("failed to spawn test thread: {}", e)),
+    };
+    // The channel carries the test's own Result; the recv error is the
+    // timeout/vanished case. Never join the thread: a hung test must not
+    // block the runner -- it is abandoned and reclaimed at process exit.
+    drop(spawn);
+    match timeout {
+        Some(t) => match rx.recv_timeout(t) {
+            Ok(outcome) => outcome,
+            Err(_) => Err(format!("timed out after {}ms", t.as_millis())),
+        },
+        None => match rx.recv() {
+            Ok(outcome) => outcome,
+            Err(_) => Err("test thread vanished".to_string()),
+        },
+    }
+}
+
+fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        return (*s).to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    "panicked (non-string payload)".to_string()
 }
 
 pub mod mock;
 pub mod suites;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test(name: &'static str, f: impl Fn() -> Result<(), String> + Send + 'static) -> Test {
+        Test { name, category: "self", run: Box::new(f) }
+    }
+
+    #[test]
+    fn passing_test_reports_ok() {
+        let mut r = TestRunner::new_with_timeout(1000);
+        r.register(test("pass", || Ok(())));
+        r.run_all();
+        assert_eq!(r.total(), 1);
+        assert_eq!(r.passed(), 1);
+        assert_eq!(r.failed(), 0);
+        assert_eq!(r.runs()[0].name, "pass");
+        assert_eq!(r.runs()[0].message, "");
+    }
+
+    #[test]
+    fn failing_test_reports_message() {
+        let mut r = TestRunner::new_with_timeout(1000);
+        r.register(test("fail", || Err("boom".to_string())));
+        r.run_all();
+        assert_eq!(r.failed(), 1);
+        assert!(r.runs()[0].message.contains("boom"), "message: {}", r.runs()[0].message);
+    }
+
+    #[test]
+    fn hung_test_times_out_and_is_failed() {
+        let mut r = TestRunner::new_with_timeout(50);
+        r.register(test("hang", || {
+            std::thread::sleep(Duration::from_secs(30));
+            Ok(())
+        }));
+        r.run_all();
+        assert_eq!(r.failed(), 1);
+        assert!(r.runs()[0].message.contains("timed out"), "message: {}", r.runs()[0].message);
+        assert!(r.runs()[0].duration_ms >= 50, "duration: {}", r.runs()[0].duration_ms);
+    }
+
+    #[test]
+    fn panicking_test_is_a_failure_not_an_abort() {
+        let mut r = TestRunner::new_with_timeout(1000);
+        r.register(test("panic", || panic!("kaboom")));
+        r.run_all();
+        assert_eq!(r.failed(), 1);
+        assert!(r.runs()[0].message.contains("kaboom"), "message: {}", r.runs()[0].message);
+    }
+
+    #[test]
+    fn zero_timeout_disables_the_cap() {
+        let mut r = TestRunner::new_with_timeout(0);
+        r.register(test("pass", || Ok(())));
+        r.run_all();
+        assert_eq!(r.passed(), 1);
+    }
+
+    #[test]
+    fn all_tests_run_even_with_failures() {
+        let mut r = TestRunner::new_with_timeout(1000);
+        r.register(test("a", || Err("x".to_string())));
+        r.register(test("b", || Ok(())));
+        r.register(test("c", || Ok(())));
+        r.run_all();
+        assert_eq!(r.total(), 3);
+        assert_eq!(r.passed(), 2);
+        assert_eq!(r.failed(), 1);
+    }
+}

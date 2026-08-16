@@ -26,6 +26,11 @@ enum Commands {
         /// Output file path (for json/html)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Per-test timeout in milliseconds (0 = no timeout). A test that
+        /// exceeds it fails as 'timed out' instead of stalling the run.
+        #[arg(long, default_value_t = skyos_test_core::DEFAULT_TIMEOUT_MS)]
+        timeout_ms: u64,
     },
     /// Generate HTML report from existing JSON results
     Report {
@@ -53,8 +58,9 @@ fn main() {
             category,
             format,
             output,
+            timeout_ms,
         } => {
-            let mut runner = TestRunner::new();
+            let mut runner = TestRunner::new_with_timeout(timeout_ms);
             // Select ONCE: register_all extends, so registering the unfiltered
             // list and then the filtered subset would run everything twice
             // (e.g. --category kernel::alloc ran 23 tests instead of 6).
@@ -70,15 +76,10 @@ fn main() {
             runner.run_all();
             let report = runner.report();
 
-            // Exit-code discipline: a run with failures, or a run that
-            // executed nothing (e.g. a typo'd --category, or a suite silently
-            // dropped from registration), must fail the process -- otherwise
-            // CI and scripts stay green on a broken suite. This runs before
-            // the format match so json/html reports get it too.
-            if runner.failed() > 0 || runner.total() == 0 {
-                std::process::exit(1);
-            }
-
+            // Print/write the report FIRST (it is the diagnostics a failed run
+            // needs) and only then enforce exit-code discipline. The previous
+            // ordering exited before the console arm ran, so a piped failed
+            // run printed NOTHING -- which test failed was invisible.
             match format.as_str() {
                 "json" => {
                     let json = report.to_json();
@@ -114,6 +115,19 @@ fn main() {
                         runner.failed()
                     );
                 }
+            }
+
+            // Exit-code discipline: a run with failures, or a run that
+            // executed nothing (e.g. a typo'd --category, or a suite silently
+            // dropped from registration), must fail the process -- otherwise
+            // CI and scripts stay green on a broken suite. The report above is
+            // already emitted; std::process::exit skips destructors, so flush
+            // the block-buffered streams before bailing.
+            if runner.failed() > 0 || runner.total() == 0 {
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                let _ = std::io::stderr().flush();
+                std::process::exit(1);
             }
         }
         Commands::Report { input, output } => {
