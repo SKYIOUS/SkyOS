@@ -1,6 +1,6 @@
 # How to Write and Run Tests
 
-The bare-metal targets have no `#[test]`-based harness, but **`libsarga`'s pure-logic `#[cfg(test)]` modules run on the host**: `cargo test -p libsarga` compiles the crate under `cfg(test)` with the std test harness (23 errno/net/semver tests). Testing is otherwise split across host-side suites, on-OS integration binaries, and QEMU boot tests. See `docs/testing/integration.md` for the full picture.
+The bare-metal targets have no `#[test]`-based harness, but **`libsarga`'s pure-logic `#[cfg(test)]` modules run on the host**: `cargo test -p libsarga` compiles the crate under `cfg(test)` with the std test harness (62 tests across errno/net/semver/hash/toml/png/theme). Testing is otherwise split across host-side suites, on-OS integration binaries, and QEMU boot tests. See `docs/testing/integration.md` for the full picture.
 
 ## Host-Side Suites (`tests/skyos-test`)
 

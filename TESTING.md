@@ -32,15 +32,15 @@ Current CI (`.github/workflows/ci.yml`) includes:
 - `build` - Compilation verification
 - `integration-qemu` - Boot test and kernel self-test verification
 
-**Included:** `cargo test -p libsarga` (host unit tests for pure logic)
+**Included:** `cargo test -p libsarga` + `cargo test -p ade --lib` (host unit tests for pure logic)
 
 ## Testing Gap: No CI-Wired Unit Tests
 
 ### Current State
 
-- **`libsarga`'s `#[cfg(test)]` modules run on the host.** `cargo test -p libsarga` compiles the crate for the host with the std test harness and runs the pure-logic tests in `errno.rs`, `net.rs`, and `semver.rs` (23 tests). No QEMU, no kernel, no syscalls.
-- **The `skyos-test` host framework runs in CI** (buddy-allocator + PS/2-mouse suites, 17 tests): `cargo run --manifest-path tests/skyos-test/Cargo.toml -- run`, wired into the `host-tests` job. Its runner exits non-zero on any FAIL or an empty run, so a broken suite cannot silently pass.
-- **`ade`'s `#[cfg(test)]` modules** (`sys/{audio,display,input,network}.rs`, `util/{automation,developer,extension,plugin,sdk}.rs`) still cannot run on the host: `ade` is a `#![no_std]` + `#![no_main]` binary with no lib target, so `cargo test -p ade` has no harness to compile.
+- **`libsarga`'s `#[cfg(test)]` modules run on the host.** `cargo test -p libsarga` compiles the crate for the host with the std test harness and runs the pure-logic tests in `errno.rs`, `net.rs`, `semver.rs`, `hash.rs`, `toml.rs`, `png.rs`, and `theme.rs` (62 tests). No QEMU, no kernel, no syscalls. Its lang items (panic handler, global allocator, alloc error handler) are gated on the sarga targets (`os = "none"`), so the crate also builds as a host dependency — the prerequisite for `ade`'s host tests.
+- **The `skyos-test` host framework runs in CI** (buddy allocator, PS/2 mouse, VFS page cache, futex, and page-table/COW suites, 50 tests): `cargo run --manifest-path tests/skyos-test/Cargo.toml -- run`, wired into the `host-tests` job. Its runner exits non-zero on any FAIL or an empty run, so a broken suite cannot silently pass. Every test runs on its own thread under a per-test timeout (default 30 s, `--timeout-ms` to change, 0 to disable), so a hung test fails the run instead of stalling CI; the runner's own unit tests (`cargo test --manifest-path tests/skyos-test-core/Cargo.toml`) and the CLI-contract tests (`cargo test --manifest-path tests/skyos-test/Cargo.toml`, unknown args must exit non-zero) run in the same job.
+- **`ade`'s `#[cfg(test)]` modules run on the host.** `ade` gained a lib target (`lib.rs`) with the same `cfg_attr(not(test), no_std)` treatment as libsarga; the binary (`main.rs`) is the bare-metal entrypoint only. `cargo test -p ade --lib` runs 36 tests across `sys/{audio,display,input,network}.rs` (mixer volume/balance math, display mode/DPI/pitch math, Ctrl-folding byte classification, IPv4/CIDR/SSID/RSSI) and `util/{app_catalog,explorer}.rs` (launch tracking/filtering, entry sorting/size formatting). The input pipeline's `from_byte`/`text` consume the `sys::input` helpers, so the host tests pin real producer behavior.
 - Test crates (`skyos-test`, `skyos-test-core`) are excluded from `Cargo.toml` workspace members (host-only deps; they declare their own `[workspace]` roots).
 
 ### How `libsarga`'s Host Tests Work (and Why the Others Can't)
@@ -98,9 +98,9 @@ Accept that kernel self-tests are the primary verification mechanism and documen
 
 ## Current Recommendation
 
-**Run `cargo test -p libsarga` (wired into the CI `host-tests` job), and keep adding `#[cfg(test)]` modules for pure logic.**
+**Run `cargo test -p libsarga` and `cargo test -p ade --lib` (wired into the CI `host-tests` job), and keep adding `#[cfg(test)]` modules for pure logic.**
 
-The `#[cfg(test)]` modules in `libsarga` cover pure logic (parsing, errno, semver) that does not need the kernel runtime. New pure-logic code should follow the same pattern: keep it syscall-free, and let the crate's `cfg(test)` mode compile it for the host. `ade` should gain a lib target (`ade-core`) before its `#[cfg(test)]` modules can run; code that touches syscalls/hardware stays covered by kernel self-tests.
+The `#[cfg(test)]` modules in `libsarga` and `ade` cover pure logic (parsing, errno, semver, mixer/display/input/network math, catalog/explorer state) that does not need the kernel runtime. New pure-logic code should follow the same pattern: keep it syscall-free, and let the crate's `cfg(test)` mode compile it for the host (a lib target when the crate is a binary). Code that touches syscalls/hardware stays covered by kernel self-tests.
 
 ## Adding Unit Tests for Pure Logic
 
@@ -108,7 +108,7 @@ To add unit tests for pure logic (e.g., `libsarga/src/hash.rs::hex_decode`):
 
 1. Add test module with `#[cfg(test)]` guard
 2. Keep the logic syscall-free (pure parsing/encoding/comparison)
-3. Run with `cargo test -p libsarga` (the crate compiles for the host under `cfg(test)`; no `--target` needed)
+3. Run with `cargo test -p libsarga` (or `cargo test -p ade --lib` for ade) — the crate compiles for the host under `cfg(test)`; no `--target` needed
 
 Example (matches the existing `libsarga/src/errno.rs` test module):
 ```rust
@@ -131,6 +131,6 @@ mod tests {
 ## Summary
 
 - **Primary test path:** Kernel self-tests (TAP format, verified in CI)
-- **Unit tests:** `libsarga`'s `#[cfg(test)]` modules (errno/net/semver) run on the host via `cargo test -p libsarga` and are wired into the CI `host-tests` job; `ade`'s modules still need a lib target before they can run
+- **Unit tests:** `libsarga`'s `#[cfg(test)]` modules (errno/net/semver/hash/toml/png/theme) and `ade`'s (sys/{audio,display,input,network} + util/{app_catalog,explorer}) run on the host via `cargo test -p libsarga` / `cargo test -p ade --lib` and are wired into the CI `host-tests` job
 - **Host-side test framework:** Exists but excluded from workspace
-- **Recommendation:** Keep adding syscall-free `#[cfg(test)]` modules to `libsarga`; extract an `ade-core` lib for ADE's pure logic; rely on kernel self-tests for system verification
+- **Recommendation:** Keep adding syscall-free `#[cfg(test)]` modules to `libsarga` and `ade` (the lib target exists); rely on kernel self-tests for system verification
