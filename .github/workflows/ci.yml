@@ -1102,7 +1102,7 @@ jobs:
 
       - name: libsarga host unit tests
         working-directory: SkyOS
-        # libsarga's errno/net/semver/hash/toml/png/theme #[cfg(test)]
+        # libsarga's errno/fs/gui/hash/net/png/semver/theme/toml #[cfg(test)]
         # modules run on the host: no_std is cfg_attr(not(test), ..), the
         # lang items (panic handler, global allocator, alloc error handler)
         # are gated on the sarga targets (os = "none") so they are absent on
@@ -1110,6 +1110,16 @@ jobs:
         # a host binary (dependencies never compile with cfg(test)). No QEMU,
         # no syscalls.
         run: cargo test -p libsarga --lib
+
+      - name: libsarga host-test coverage (per-module counts)
+        working-directory: SkyOS
+        # Asks the real host test binary for its test list
+        # (`cargo test -p libsarga --lib -- --list`), prints per-module
+        # counts, and fails if any pure-logic module (errno/net/semver/hash/
+        # toml/png/theme) has zero tests — a #[cfg(test)] module that stops
+        # running, or a new pure-logic module added without tests, fails
+        # here instead of silently shrinking the suite.
+        run: python3 tests/test_libsarga_host_coverage.py
 
       - name: ade host unit tests
         working-directory: SkyOS
@@ -1149,8 +1159,10 @@ jobs:
       - name: skyos-test runner unit tests (timeout + CLI contract)
         working-directory: SkyOS
         # Hermetic #[cfg(test)] pins inside the standalone workspaces: the
-        # per-test timeout (a hung test FAILs after --timeout-ms instead of
-        # stalling the job forever) and the CLI contract (unknown flags,
+        # per-test timeout (a hung test's subprocess is KILLED after
+        # --timeout-ms instead of stalling the job forever), the total-run
+        # watchdog (--total-timeout-ms
+        # caps the SUM of all tests) and the CLI contract (unknown flags,
         # subcommands, and stray positionals are hard non-zero exits, never
         # silently ignored input). skyos-test-core is its own workspace root,
         # so its manifest is invoked separately.
