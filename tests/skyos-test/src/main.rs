@@ -176,7 +176,7 @@ fn main() {
                 .into_iter()
                 .find(|t| t.name == name)
             {
-                Some(t) => skyos_test_core::run_test_in_process(t),
+                Some(t) => skyos_test_core::exec::run_test_in_process(t),
                 None => Err(format!("no test named {:?}", name)),
             };
             let (passed, message) = match &result {

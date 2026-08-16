@@ -81,21 +81,11 @@ pub struct TestRunner {
 }
 
 impl TestRunner {
-    pub fn new() -> Self {
-        Self::new_with_timeouts(DEFAULT_TIMEOUT_MS, DEFAULT_TOTAL_TIMEOUT_MS)
-    }
-
-    /// Per-test timeout `timeout_ms` with the overall run cap DISABLED (for
-    /// callers that manage their own total budget, e.g. the unit tests) and
-    /// `RunMode::Thread` (in-process; see `RunMode`).
-    pub fn new_with_timeout(timeout_ms: u64) -> Self {
-        Self::new_with_timeouts(timeout_ms, 0)
-    }
-
     /// `timeout_ms == 0` disables the per-test cap (for debugging a genuinely
     /// slow test); `total_timeout_ms == 0` disables the total-run watchdog.
-    /// Tests run in-process (`RunMode::Thread`) -- unit tests cannot re-exec
-    /// themselves; the CLI binary uses `new_subprocess` instead.
+    /// Tests run in-process (`RunMode::Thread`) -- the runner's own unit
+    /// tests cannot re-exec themselves; the CLI binary uses `new_subprocess`
+    /// instead.
     pub fn new_with_timeouts(timeout_ms: u64, total_timeout_ms: u64) -> Self {
         Self::new_inner(timeout_ms, total_timeout_ms, RunMode::Thread)
     }
@@ -180,7 +170,7 @@ impl TestRunner {
             };
             let result = match self.mode {
                 RunMode::Thread => run_with_timeout(run, budget),
-                RunMode::Subprocess => run_in_subprocess(name, budget),
+                RunMode::Subprocess => crate::exec::run_in_subprocess(name, budget),
             };
             let duration = start.elapsed().as_millis() as u64;
             self.runs.push(TestRun::from_test(name, category, result, duration));
@@ -231,7 +221,7 @@ impl TestReport {
         html.push_str(".badge-fail{background:#b71c1c;color:#ef9a9a}");
         html.push_str(".timestamp{color:#888;font-size:0.9rem}");
         html.push_str("</style></head><body>");
-        html.push_str(&format!("<h1>SkyOS Test Report</h1>"));
+        html.push_str("<h1>SkyOS Test Report</h1>");
         html.push_str(&format!("<div class=\"timestamp\">{}</div>", chrono_now()));
         html.push_str(&format!(
             "<div class=\"summary\">Total: {} | <span class=\"pass\">Passed: {}</span> | <span class=\"fail\">Failed: {}</span></div>",
@@ -305,7 +295,7 @@ macro_rules! assert_eq_result {
 /// `RunMode::Thread` path: run one test closure in-process on its own thread,
 /// catching panics and enforcing the per-test timeout. Panics become
 /// failures; a timeout becomes a failure with a "timed out" message and the
-/// thread is abandoned (leaked). Production runs use `run_in_subprocess`
+/// thread is abandoned (leaked). Production runs use `exec::run_in_subprocess`
 /// instead, which KILLS the test process; this path exists for the runner's
 /// own unit tests, which cannot re-exec themselves.
 fn run_with_timeout(
@@ -317,7 +307,7 @@ fn run_with_timeout(
         // Flatten before sending: catch_unwind yields a nested Result; the
         // channel message must be the test's own `Result<(), String>` so the
         // receiver's `Ok(outcome)` unwraps directly.
-        let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run())) {
+        let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)) {
             Ok(r) => r,
             Err(payload) => Err(panic_payload_message(payload)),
         };
@@ -343,7 +333,7 @@ fn run_with_timeout(
     }
 }
 
-fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
+pub(crate) fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         return (*s).to_string();
     }
@@ -353,104 +343,14 @@ fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
     "panicked (non-string payload)".to_string()
 }
 
-/// Runs one test in a per-test SUBPROCESS: re-exec the current executable
-/// with the hidden `exec --name <test>` subcommand. The child prints a
-/// `SKYOS_TEST_RESULT <json>` envelope as its last stdout line; on timeout
-/// the child is KILLED (process isolation) rather than abandoned.
-fn run_in_subprocess(name: &'static str, timeout: Option<Duration>) -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("cannot locate own executable for test subprocess: {}", e))?;
-    let mut child = std::process::Command::new(&exe)
-        .args(["exec", "--name", name])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit()) // panic traces reach the console
-        .spawn()
-        .map_err(|e| format!("failed to spawn test subprocess: {}", e))?;
-    let out = wait_and_drain(&mut child, timeout)?;
-    parse_envelope(&String::from_utf8_lossy(&out))
-}
-
-/// Waits for `child` (killing it at `timeout`) while draining its stdout on
-/// a helper thread. The drain starts IMMEDIATELY: if the pipe (a few KB)
-/// fills while the child is still writing, the child BLOCKS on write and
-/// would be mis-killed as "timed out" even though it isn't hung -- a legit
-/// test printing a large buffer must not look like a hang. The reader thread
-/// ends on its own once the child exits (EOF on the pipe) or is killed (the
-/// pipe closes), so it never leaks. Returns the full captured stdout.
-fn wait_and_drain(
-    child: &mut std::process::Child,
-    timeout: Option<Duration>,
-) -> Result<Vec<u8>, String> {
-    let mut stdout = child.stdout.take().expect("piped stdout present");
-    let reader = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        buf
-    });
-    wait_for_child(child, timeout)?;
-    let _ = child.wait(); // reap (wait_for_child already observed the exit)
-    Ok(reader.join().unwrap_or_default())
-}
-
-/// Polls `try_wait` until the child exits; on timeout KILLS the child and
-/// reaps it so it can't linger. Returns `Err` with a "killed" message when
-/// the deadline hits.
-fn wait_for_child(child: &mut std::process::Child, timeout: Option<Duration>) -> Result<(), String> {
-    let deadline = timeout.map(|t| Instant::now() + t);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return Ok(()),
-            Ok(None) => {}
-            Err(e) => return Err(format!("failed to wait on test subprocess: {}", e)),
-        }
-        if let Some(dl) = deadline {
-            if Instant::now() >= dl {
-                // Kill, then reap: the child must not linger as a zombie.
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "timed out after {}ms, subprocess killed",
-                    timeout.map(|t| t.as_millis()).unwrap_or(0)
-                ));
-            }
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-}
-
-/// Extracts the `SKYOS_TEST_RESULT {"passed":bool,"message":str}` envelope
-/// from the subprocess stdout (scanning from the end, so stray prints from
-/// the test itself earlier in the stream don't interfere).
-fn parse_envelope(stdout: &str) -> Result<(), String> {
-    for line in stdout.lines().rev() {
-        if let Some(rest) = line.strip_prefix("SKYOS_TEST_RESULT ") {
-            let v: serde_json::Value = serde_json::from_str(rest)
-                .map_err(|e| format!("malformed test result envelope: {}", e))?;
-            let passed = v.get("passed").and_then(|p| p.as_bool()).unwrap_or(false);
-            let message = v.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
-            return if passed { Ok(()) } else { Err(message) };
-        }
-    }
-    Err("test subprocess produced no result envelope".to_string())
-}
-
-/// Runs a single test closure in the CURRENT process, converting panics to
-/// `Err`. The CLI's hidden `exec` subcommand uses this; the parent enforces
-/// the timeout by killing this process, so no timeout logic lives here.
-pub fn run_test_in_process(test: Test) -> Result<(), String> {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (test.run)())) {
-        Ok(r) => r,
-        Err(payload) => Err(panic_payload_message(payload)),
-    }
-}
-
+pub mod exec;
 pub mod mock;
 pub mod suites;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exec::{wait_and_drain, wait_for_child};
 
     fn test(name: &'static str, f: impl Fn() -> Result<(), String> + Send + 'static) -> Test {
         Test { name, category: "self", run: Box::new(f) }
@@ -458,7 +358,7 @@ mod tests {
 
     #[test]
     fn passing_test_reports_ok() {
-        let mut r = TestRunner::new_with_timeout(1000);
+        let mut r = TestRunner::new_with_timeouts(1000, 0);
         r.register(test("pass", || Ok(())));
         r.run_all();
         assert_eq!(r.total(), 1);
@@ -470,7 +370,7 @@ mod tests {
 
     #[test]
     fn failing_test_reports_message() {
-        let mut r = TestRunner::new_with_timeout(1000);
+        let mut r = TestRunner::new_with_timeouts(1000, 0);
         r.register(test("fail", || Err("boom".to_string())));
         r.run_all();
         assert_eq!(r.failed(), 1);
@@ -479,7 +379,7 @@ mod tests {
 
     #[test]
     fn hung_test_times_out_and_is_failed() {
-        let mut r = TestRunner::new_with_timeout(50);
+        let mut r = TestRunner::new_with_timeouts(50, 0);
         r.register(test("hang", || {
             std::thread::sleep(Duration::from_secs(30));
             Ok(())
@@ -492,7 +392,7 @@ mod tests {
 
     #[test]
     fn panicking_test_is_a_failure_not_an_abort() {
-        let mut r = TestRunner::new_with_timeout(1000);
+        let mut r = TestRunner::new_with_timeouts(1000, 0);
         r.register(test("panic", || panic!("kaboom")));
         r.run_all();
         assert_eq!(r.failed(), 1);
@@ -501,7 +401,7 @@ mod tests {
 
     #[test]
     fn zero_timeout_disables_the_cap() {
-        let mut r = TestRunner::new_with_timeout(0);
+        let mut r = TestRunner::new_with_timeouts(0, 0);
         r.register(test("pass", || Ok(())));
         r.run_all();
         assert_eq!(r.passed(), 1);
@@ -509,7 +409,7 @@ mod tests {
 
     #[test]
     fn all_tests_run_even_with_failures() {
-        let mut r = TestRunner::new_with_timeout(1000);
+        let mut r = TestRunner::new_with_timeouts(1000, 0);
         r.register(test("a", || Err("x".to_string())));
         r.register(test("b", || Ok(())));
         r.register(test("c", || Ok(())));
