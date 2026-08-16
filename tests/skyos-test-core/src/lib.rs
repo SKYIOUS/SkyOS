@@ -4,13 +4,32 @@ use std::time::{Duration, Instant};
 /// instead of stalling the run (and with it, CI).
 pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
+/// Default TOTAL-run cap, in milliseconds, across all tests. The per-test
+/// timeout bounds one test; N tests each hanging at their per-test limit
+/// would otherwise sum to N * timeout (85 * 30 s = 42 min). The watchdog
+/// bounds the SUM instead: generous for the current suite (which finishes in
+/// well under a second) but a hard ceiling on the pathological case.
+pub const DEFAULT_TOTAL_TIMEOUT_MS: u64 = 120_000;
+
 /// A registered test function.
 pub struct Test {
     pub name: &'static str,
     pub category: &'static str,
-    /// `+ Send`: each test is moved onto its own thread so a hung test can be
-    /// abandoned at the timeout instead of stalling the whole run.
+    /// `+ Send`: the closure is moved into a per-test SUBPROCESS in the
+    /// default runner mode, so a hung test is killed at the timeout instead
+    /// of stalling (or leaking into) the whole run.
     pub run: Box<dyn Fn() -> Result<(), String> + Send>,
+}
+
+/// How each test is executed. `Subprocess` (used by the CLI binary) re-execs
+/// the current executable with the hidden `exec` subcommand so a hung test
+/// can be KILLED (process isolation) instead of abandoned. `Thread` keeps the
+/// test in-process -- used by the runner's own unit tests, which cannot
+/// re-exec themselves.
+#[derive(Clone, Copy, PartialEq)]
+pub enum RunMode {
+    Thread,
+    Subprocess,
 }
 
 /// Result of running a single test.
@@ -48,27 +67,65 @@ impl TestRun {
 pub struct TestRunner {
     tests: Vec<Test>,
     runs: Vec<TestRun>,
-    /// Per-test cap; `None` disables the timeout. A timed-out test is marked
-    /// FAILED and its thread abandoned (leaked) -- the process still exits
-    /// normally once the run finishes, so one hung test costs at most one
-    /// timeout instead of a forever-stalled CI job.
+    /// Per-test cap; `None` disables the timeout. In `Subprocess` mode a
+    /// timed-out test's subprocess is KILLED and reaped; in `Thread` mode
+    /// its thread is abandoned (leaked) -- either way the run costs at most
+    /// one timeout instead of a forever-stalled CI job.
     timeout: Option<Duration>,
+    /// Overall run cap across ALL tests; `None` disables it. Bounds the SUM
+    /// of every test: even if each test hangs at its per-test limit, the run
+    /// ends by this deadline and tests that never start are failed by the
+    /// watchdog.
+    total_timeout: Option<Duration>,
+    mode: RunMode,
 }
 
 impl TestRunner {
     pub fn new() -> Self {
-        Self::new_with_timeout(DEFAULT_TIMEOUT_MS)
+        Self::new_with_timeouts(DEFAULT_TIMEOUT_MS, DEFAULT_TOTAL_TIMEOUT_MS)
     }
 
-    /// `timeout_ms == 0` disables the cap (for debugging a genuinely slow
-    /// test); otherwise the per-test timeout is `timeout_ms` milliseconds.
+    /// Per-test timeout `timeout_ms` with the overall run cap DISABLED (for
+    /// callers that manage their own total budget, e.g. the unit tests) and
+    /// `RunMode::Thread` (in-process; see `RunMode`).
     pub fn new_with_timeout(timeout_ms: u64) -> Self {
+        Self::new_with_timeouts(timeout_ms, 0)
+    }
+
+    /// `timeout_ms == 0` disables the per-test cap (for debugging a genuinely
+    /// slow test); `total_timeout_ms == 0` disables the total-run watchdog.
+    /// Tests run in-process (`RunMode::Thread`) -- unit tests cannot re-exec
+    /// themselves; the CLI binary uses `new_subprocess` instead.
+    pub fn new_with_timeouts(timeout_ms: u64, total_timeout_ms: u64) -> Self {
+        Self::new_inner(timeout_ms, total_timeout_ms, RunMode::Thread)
+    }
+
+    /// Per-test subprocess isolation: each test re-execs the current
+    /// executable's hidden `exec` subcommand, so a hung test is KILLED at its
+    /// timeout (process isolation) rather than abandoned. Slower than thread
+    /// mode (one process spawn per test) but leaks nothing.
+    pub fn new_subprocess(timeout_ms: u64, total_timeout_ms: u64) -> Self {
+        Self::new_inner(timeout_ms, total_timeout_ms, RunMode::Subprocess)
+    }
+
+    fn new_inner(timeout_ms: u64, total_timeout_ms: u64, mode: RunMode) -> Self {
         let timeout = if timeout_ms == 0 {
             None
         } else {
             Some(Duration::from_millis(timeout_ms))
         };
-        TestRunner { tests: Vec::new(), runs: Vec::new(), timeout }
+        let total_timeout = if total_timeout_ms == 0 {
+            None
+        } else {
+            Some(Duration::from_millis(total_timeout_ms))
+        };
+        TestRunner {
+            tests: Vec::new(),
+            runs: Vec::new(),
+            timeout,
+            total_timeout,
+            mode,
+        }
     }
 
     pub fn register(&mut self, test: Test) {
@@ -81,15 +138,50 @@ impl TestRunner {
 
     pub fn run_all(&mut self) {
         self.runs.clear();
-        // Consume the registered tests: each closure moves into its own thread.
-        // (run_all is called once per runner; re-register before a second run.)
+        // Consume the registered tests: each closure runs in its own thread or
+        // subprocess depending on RunMode. (run_all is called once per runner;
+        // re-register before a second run.)
         let tests = std::mem::take(&mut self.tests);
+        // Total-run watchdog: one fixed deadline for the WHOLE run, so N tests
+        // each hanging at their per-test limit cost at most the total cap
+        // (not N * timeout). Tests that never get a chance to start once the
+        // budget is gone are failed WITHOUT spawning a thread; a test already
+        // running keeps its per-test budget shrunk to what the deadline still
+        // allows, so the run ends by the deadline either way.
+        let deadline = self.total_timeout.map(|t| Instant::now() + t);
         for test in tests {
             // Destructure first: `run` moves into its thread, while `name` /
             // `category` (both &'static str) stay available for the report.
             let Test { name, category, run } = test;
             let start = Instant::now();
-            let result = run_with_timeout(run, self.timeout);
+            let budget = match deadline {
+                Some(dl) if Instant::now() >= dl => {
+                    self.runs.push(TestRun::from_test(
+                        name,
+                        category,
+                        Err("total-run watchdog: overall run cap exceeded, test never started"
+                            .to_string()),
+                        0,
+                    ));
+                    continue;
+                }
+                Some(dl) => {
+                    let remaining = dl.saturating_duration_since(Instant::now());
+                    match self.timeout {
+                        Some(t) => Some(t.min(remaining)),
+                        // Per-test cap disabled (`--timeout-ms 0`) but the
+                        // total cap is set: the total deadline still bounds
+                        // each test, so a hung test can't escape the
+                        // watchdog entirely.
+                        None => Some(remaining),
+                    }
+                }
+                None => self.timeout,
+            };
+            let result = match self.mode {
+                RunMode::Thread => run_with_timeout(run, budget),
+                RunMode::Subprocess => run_in_subprocess(name, budget),
+            };
             let duration = start.elapsed().as_millis() as u64;
             self.runs.push(TestRun::from_test(name, category, result, duration));
         }
@@ -210,9 +302,12 @@ macro_rules! assert_eq_result {
     }};
 }
 
-/// Run one test closure on its own thread, catching panics and enforcing the
-/// per-test timeout. Panics become failures; a timeout becomes a failure with
-/// a "timed out" message and the thread is abandoned.
+/// `RunMode::Thread` path: run one test closure in-process on its own thread,
+/// catching panics and enforcing the per-test timeout. Panics become
+/// failures; a timeout becomes a failure with a "timed out" message and the
+/// thread is abandoned (leaked). Production runs use `run_in_subprocess`
+/// instead, which KILLS the test process; this path exists for the runner's
+/// own unit tests, which cannot re-exec themselves.
 fn run_with_timeout(
     run: Box<dyn Fn() -> Result<(), String> + Send>,
     timeout: Option<Duration>,
@@ -256,6 +351,98 @@ fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
         return s.clone();
     }
     "panicked (non-string payload)".to_string()
+}
+
+/// Runs one test in a per-test SUBPROCESS: re-exec the current executable
+/// with the hidden `exec --name <test>` subcommand. The child prints a
+/// `SKYOS_TEST_RESULT <json>` envelope as its last stdout line; on timeout
+/// the child is KILLED (process isolation) rather than abandoned.
+fn run_in_subprocess(name: &'static str, timeout: Option<Duration>) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("cannot locate own executable for test subprocess: {}", e))?;
+    let mut child = std::process::Command::new(&exe)
+        .args(["exec", "--name", name])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit()) // panic traces reach the console
+        .spawn()
+        .map_err(|e| format!("failed to spawn test subprocess: {}", e))?;
+    let out = wait_and_drain(&mut child, timeout)?;
+    parse_envelope(&String::from_utf8_lossy(&out))
+}
+
+/// Waits for `child` (killing it at `timeout`) while draining its stdout on
+/// a helper thread. The drain starts IMMEDIATELY: if the pipe (a few KB)
+/// fills while the child is still writing, the child BLOCKS on write and
+/// would be mis-killed as "timed out" even though it isn't hung -- a legit
+/// test printing a large buffer must not look like a hang. The reader thread
+/// ends on its own once the child exits (EOF on the pipe) or is killed (the
+/// pipe closes), so it never leaks. Returns the full captured stdout.
+fn wait_and_drain(
+    child: &mut std::process::Child,
+    timeout: Option<Duration>,
+) -> Result<Vec<u8>, String> {
+    let mut stdout = child.stdout.take().expect("piped stdout present");
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    wait_for_child(child, timeout)?;
+    let _ = child.wait(); // reap (wait_for_child already observed the exit)
+    Ok(reader.join().unwrap_or_default())
+}
+
+/// Polls `try_wait` until the child exits; on timeout KILLS the child and
+/// reaps it so it can't linger. Returns `Err` with a "killed" message when
+/// the deadline hits.
+fn wait_for_child(child: &mut std::process::Child, timeout: Option<Duration>) -> Result<(), String> {
+    let deadline = timeout.map(|t| Instant::now() + t);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {}
+            Err(e) => return Err(format!("failed to wait on test subprocess: {}", e)),
+        }
+        if let Some(dl) = deadline {
+            if Instant::now() >= dl {
+                // Kill, then reap: the child must not linger as a zombie.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "timed out after {}ms, subprocess killed",
+                    timeout.map(|t| t.as_millis()).unwrap_or(0)
+                ));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Extracts the `SKYOS_TEST_RESULT {"passed":bool,"message":str}` envelope
+/// from the subprocess stdout (scanning from the end, so stray prints from
+/// the test itself earlier in the stream don't interfere).
+fn parse_envelope(stdout: &str) -> Result<(), String> {
+    for line in stdout.lines().rev() {
+        if let Some(rest) = line.strip_prefix("SKYOS_TEST_RESULT ") {
+            let v: serde_json::Value = serde_json::from_str(rest)
+                .map_err(|e| format!("malformed test result envelope: {}", e))?;
+            let passed = v.get("passed").and_then(|p| p.as_bool()).unwrap_or(false);
+            let message = v.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+            return if passed { Ok(()) } else { Err(message) };
+        }
+    }
+    Err("test subprocess produced no result envelope".to_string())
+}
+
+/// Runs a single test closure in the CURRENT process, converting panics to
+/// `Err`. The CLI's hidden `exec` subcommand uses this; the parent enforces
+/// the timeout by killing this process, so no timeout logic lives here.
+pub fn run_test_in_process(test: Test) -> Result<(), String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (test.run)())) {
+        Ok(r) => r,
+        Err(payload) => Err(panic_payload_message(payload)),
+    }
 }
 
 pub mod mock;
@@ -330,5 +517,136 @@ mod tests {
         assert_eq!(r.total(), 3);
         assert_eq!(r.passed(), 2);
         assert_eq!(r.failed(), 1);
+    }
+
+    #[test]
+    fn total_watchdog_bounds_the_run() {
+        // Generous per-test budget (60 s) but a tiny overall cap: only ~2 of
+        // the 5 slow tests can fit, so the rest are failed by the watchdog
+        // without ever starting. Without the watchdog this run would take
+        // 5 x 100 ms; with a real 30 s per-test timeout, 5 x 30 s.
+        let mut r = TestRunner::new_with_timeouts(60_000, 200);
+        for name in ["slow0", "slow1", "slow2", "slow3", "slow4"] {
+            r.register(test(name, || {
+                std::thread::sleep(Duration::from_millis(100));
+                Ok(())
+            }));
+        }
+        let start = Instant::now();
+        r.run_all();
+        assert!(start.elapsed() < Duration::from_secs(5), "run must end by the total cap");
+        assert_eq!(r.total(), 5, "all tests are reported (some as watchdog failures)");
+        assert!(r.passed() < 5, "watchdog must cut the run short");
+        for run in r.runs() {
+            if !run.passed {
+                assert!(
+                    run.message.contains("total-run watchdog") || run.message.contains("timed out"),
+                    "unexpected failure message: {}",
+                    run.message
+                );
+            }
+        }
+        assert!(
+            r.runs().iter().any(|x| !x.passed && x.message.contains("total-run watchdog")),
+            "at least one test must be skipped by the watchdog"
+        );
+    }
+
+    #[test]
+    fn total_watchdog_binds_even_when_per_test_timeout_disabled() {
+        // `--timeout-ms 0 --total-timeout-ms N`: the per-test cap being off
+        // is not a watchdog escape hatch -- the total deadline must still
+        // bound a hung test.
+        let mut r = TestRunner::new_with_timeouts(0, 300);
+        r.register(test("hang", || {
+            std::thread::sleep(Duration::from_secs(60));
+            Ok(())
+        }));
+        let start = Instant::now();
+        r.run_all();
+        assert!(start.elapsed() < Duration::from_secs(10), "total cap must bind the run");
+        assert_eq!(r.failed(), 1);
+        assert!(r.runs()[0].message.contains("timed out"), "message: {}", r.runs()[0].message);
+    }
+
+    #[test]
+    fn total_watchdog_zero_disables_the_cap() {
+        let mut r = TestRunner::new_with_timeouts(1000, 0);
+        for name in ["fast0", "fast1", "fast2"] {
+            r.register(test(name, || Ok(())));
+        }
+        r.run_all();
+        assert_eq!(r.passed(), 3);
+        assert_eq!(r.failed(), 0);
+    }
+
+    /// Never exits. Only ever run via direct invocation -- the subprocess
+    /// kill test below re-execs the harness with `--include-ignored` and
+    /// this exact name -- so a normal `cargo test` never touches it.
+    #[test]
+    #[ignore]
+    fn zzz_internal_hang() {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    /// Prints far more than the ~4KB anonymous pipe buffer, then returns.
+    /// Only ever run via direct invocation -- the regression test below
+    /// re-execs the harness with `--include-ignored` and this exact name --
+    /// so a normal `cargo test` never touches it.
+    #[test]
+    #[ignore]
+    fn zzz_internal_chatty() {
+        for _ in 0..2000 {
+            println!("padding-padding-padding-padding-padding-padding");
+        }
+    }
+
+    #[test]
+    fn subprocess_output_larger_than_pipe_buffer_is_captured_not_killed() {
+        // Regression for the pipe-deadlock mis-kill: a test printing more
+        // than the pipe buffer must complete normally (drained on a helper
+        // thread), not be killed as "timed out" because its write blocked.
+        let exe = std::env::current_exe().expect("current exe");
+        // `--nocapture`: the harness captures test stdout by default, so the
+        // child must be told to let the prints reach the real pipe.
+        let mut child = std::process::Command::new(&exe)
+            .args(["tests::zzz_internal_chatty", "--exact", "--include-ignored", "--nocapture"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn harness");
+        let start = Instant::now();
+        let out = wait_and_drain(&mut child, Some(Duration::from_secs(30)))
+            .expect("chatty test must complete, not be killed");
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "drained, not killed at the timeout"
+        );
+        assert!(out.len() > 50_000, "full output captured ({} bytes)", out.len());
+    }
+
+    #[test]
+    fn subprocess_is_killed_on_timeout() {
+        // Re-exec the unit-test harness running ONLY the ignored hang test:
+        // wait_for_child must KILL it at the deadline instead of waiting for
+        // the loop (which never finishes). This exercises the exact poll +
+        // kill + reap machinery the production runner uses.
+        let exe = std::env::current_exe().expect("current exe");
+        let mut child = std::process::Command::new(&exe)
+            .args(["tests::zzz_internal_hang", "--exact", "--include-ignored"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn harness");
+        let start = Instant::now();
+        let res = wait_for_child(&mut child, Some(Duration::from_millis(800)));
+        let err = res.unwrap_err();
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "must be killed at the deadline, not waited on"
+        );
+        assert!(err.contains("killed"), "message: {}", err);
     }
 }
