@@ -151,7 +151,8 @@ while {!$deadline_hit} {
             exp_continue
         }
         # Passive note only: on the KERNEL-GATED path vahid FATALs before
-        # ready can print (no devfs on the pre-rewrite kernel). This gate's
+        # ready can print (no random/urandom/console on the pre-rewrite
+        # kernel). This gate's
         # subject is init's accounting, so the FATAL is tracked, not fatal.
         {\[vahid\] FATAL:} {
             send_user "NOTE: vahid device-manager FATAL (expected on the KERNEL-GATED path)\n"

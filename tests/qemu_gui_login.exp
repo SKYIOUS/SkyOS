@@ -146,8 +146,8 @@
 #                     the CI-visible $KERNEL_DESIGN_A toggle (ci.yml
 #                     login step): =1 asserts '[ade] session ended'
 #                     within 8s, asserting the rich unwind marker
-                     '[ade] session ended code=0 ending=true' (chord =
-                     0x0308, kernel A1-A4 landed)
+#                     '[ade] session ended code=0 ending=true' (chord =
+#                     0x0308, kernel A1-A4 landed)
 #                     with NO esc fallback - timeout FAILs; unset/0
 #                     keeps the esc fallback (0x1B) for the current
 #                     kernel where the chord is inert (Backspace arrives

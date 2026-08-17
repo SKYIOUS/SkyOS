@@ -224,7 +224,8 @@ class GiveUpGateContract(unittest.TestCase):
         # sets saw_vahid and prints the phase verdict the CI Verify step
         # greps. The FATAL arm is deliberately NON-blocking (a note, no
         # exit 1) - on the KERNEL-GATED path vahid FATALs before ready can
-        # print (pre-rewrite kernel, no devfs), and a fail-fast would break
+        # print (pre-rewrite kernel, no random/urandom/console), and a
+        # fail-fast would break
         # the gate's deferral. An edit that turns the FATAL arm into a hard
         # exit (or drops the ready arm) fails here before any QEMU run.
         exp = self.exp

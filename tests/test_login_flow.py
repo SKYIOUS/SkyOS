@@ -1545,11 +1545,15 @@ class TestPhaseBRoutingHarness(unittest.TestCase):
         )
 
     def test_gate_harness_has_dev_probe(self):
-        # The /dev usability probe (Aug 10, 2026) proves the O_CREAT
-        # fallback's six nodes exist AND work on a real boot: console
-        # login (root/skyos), 'ls /dev' with six \\b-anchored regexps over
-        # the accumulated buffer, and 'dd if=/dev/zero of=/dev/null' for
-        # the usable-char-device check. A future edit that silently drops
+        # The /dev usability probe (Aug 10, 2026) proves the six node
+        # names exist AND work on a real boot: console login (root/skyos),
+        # 'ls /dev' with six \b-anchored regexps over the accumulated
+        # buffer, and 'dd if=/dev/zero of=/dev/null' for the
+        # usable-char-device check. Node provenance is state-keyed: on the
+        # in-flight kernel all six are NATIVE devfs nodes (random/urandom/
+        # console minted in DevFs::new); on the committed CI default branch
+        # they exist only via the O_CREAT fallback, so the probe settles
+        # that on the next fresh boot. A future edit that silently drops
         # any part (login, a node regexp, the dd, or the match_max bump
         # that keeps the whole boot in the buffer) fails here before any
         # QEMU run.

@@ -371,9 +371,11 @@ expect {
         # Note: null/zero are NATIVE devfs nodes (mounted unconditionally in
         # DevFs::new), so this proves native /dev/null + /dev/zero are
         # usable char devices and that all six names are listed - it does
-        # not prove the O_CREAT fallback produced usable nodes (the
-        # fallback's only evidence is the presence of random/urandom/
-        # console, which are NOT native).
+        # not prove the O_CREAT fallback produced usable nodes. Node
+        # provenance is state-keyed: on the in-flight kernel random/urandom/
+        # console are ALSO native (minted in DevFs::new between tty and
+        # fb0), while on the committed CI default branch the fallback is
+        # their only possible source (they do not exist there at all).
         send_user "PASS: native /dev/null + /dev/zero usable; all six nodes listed\n"
     }
     timeout {

@@ -115,6 +115,9 @@ set fail_count 0
 
 proc check {name pattern action} {
     global pass_count fail_count
+    # expect_out is set by `expect` in THIS proc's scope; the caller greps
+    # the accumulated buffer after check returns, so it must be global.
+    global expect_out
     expect {
         -re $pattern {
             set pass_count [expr {$pass_count + 1}]
