@@ -7,14 +7,14 @@ use libsarga::sarga_main;
 
 fn read_file(path: &str) -> alloc::string::String {
     let fd = unsafe { libsarga::syscall::syscall2(2, path.as_ptr() as u64, 0) };
-    if (fd as i64) < 0 {
+    if fd < 0 {
         return alloc::string::String::new();
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
     loop {
         let n = unsafe { libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, 4096) };
-        if (n as i64) <= 0 {
+        if n <= 0 {
             break;
         }
         data.extend_from_slice(&buf[..n as usize]);

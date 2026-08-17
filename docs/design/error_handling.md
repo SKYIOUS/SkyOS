@@ -1,62 +1,29 @@
 # Kernel Error Handling Strategy
 
-SkyOS uses a structured approach to error handling that leverages Rust's type system.
+SkyOS uses `Result` and errno-based error propagation.
 
 ## Error Types
 
-The kernel defines several error types for different subsystems:
-
-```rust
-#[derive(Debug)]
-pub enum Error {
-    NotFound,
-    PermissionDenied,
-    AlreadyExists,
-    InvalidInput,
-    OutOfMemory,
-    Io(IoError),
-    Syscall(SysError),
-    Vfs(VfsError),
-    Driver(DriverError),
-}
-```
+There is no single umbrella `Error` enum. Subsystems use their own types:
+- **Syscalls**: return `u64` errno directly (see `syscalls/errno.rs`) — `0` on success, a positive errno on failure (e.g. `errno::Errno::ENOENT`).
+- **VFS**: `Result<T, ()>` — errors carry no payload; the syscall layer maps `Err(())` to the appropriate errno at the boundary.
+- **Block devices**: `Result<(), BlockDeviceError>` (`ReadError`/`WriteError`/`DeviceError`).
+- **Drivers**: `Result<(), ()>` or `Result<(), &'static str>` at init.
 
 ## Error Propagation
 
-Functions return `Result<T, Error>` throughout the kernel. The `?` operator propagates errors upward, with conversion between error types via `From` implementations.
+`?` propagates errors within a subsystem; `map_err` converts to the target type at module boundaries.
 
 ## Errno Mapping
 
-Kernel errors are mapped to POSIX errno values at the syscall boundary:
+Syscall handlers return POSIX errno values from `syscalls/errno.rs`. Userspace wrappers in `libsarga` return `Result<T, i64>` (negative errno) and set the thread-local errno via `errno::set_errno` for C-style paths.
 
-```rust
-impl From<Error> for SysError {
-    fn from(err: Error) -> SysError {
-        match err {
-            Error::NotFound => SysError::ENOENT,
-            Error::PermissionDenied => SysError::EACCES,
-            Error::AlreadyExists => SysError::EEXIST,
-            Error::InvalidInput => SysError::EINVAL,
-            Error::OutOfMemory => SysError::ENOMEM,
-            Error::Io(_) => SysError::EIO,
-            _ => SysError::EIO,
-        }
-    }
-}
-```
+## Panic Policy
 
-## No Panic Policy
-
-The kernel core never panics. All potential panic sources are eliminated:
-- Array indexing uses `.get()` or checked ranges
-- Division uses checked arithmetic
-- Memory allocation failures are propagated as errors
-- Unwrapping uses `.ok_or()` or `?`
+- `panic = "abort"` in both dev and release profiles; `#![deny(warnings)]`.
+- Kernel code avoids `unwrap()`/`expect()` in favor of `Result` (convention in AGENTS.md); boot-time initialization may use them where failure is unrecoverable.
+- A `#[panic_handler]` (in `libsarga` for userspace) prints `SARGA OS PANIC` and exits the process; the kernel has its own panic path (double-fault handling via IST in `arch/`).
 
 ## Debug Assertions
 
-Debug builds include assertions for invariant violations. These are stripped in release builds and are not considered error handling—they exist to catch programming errors during development.
-
-## Userspace Error Handling
-
-Errors returned from syscalls are negative errno values. The libc translates these into `errno` variable setting and returns -1 from the wrapper function.
+Debug builds include assertions for invariant violations; these are stripped in release builds.

@@ -10,7 +10,7 @@ fn join_path(base: &str, name: &str) -> String {
         alloc::format!("/{}", name)
     } else if base.ends_with('/') {
         alloc::format!("{}{}", base, name)
-    } else if base == "." || base == "" {
+    } else if base == "." || base.is_empty() {
         String::from(name)
     } else {
         alloc::format!("{}/{}", base, name)

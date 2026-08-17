@@ -1,6 +1,7 @@
-use alloc::vec::Vec;
+use crate::core::geometry::Rect;
+use crate::core::window::WindowId;
 use crate::sec::a11y::node::{A11yNode, A11yRole, A11yState};
-use crate::sec::a11y::focus::FocusDirection;
+use alloc::vec::Vec;
 
 pub(crate) struct A11yTree {
     pub nodes: Vec<A11yNode>,
@@ -17,19 +18,7 @@ impl A11yTree {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.nodes.clear();
-        self.focused_id = None;
-        self.next_id = 0;
-    }
-
-    pub fn add_node(
-        &mut self,
-        role: A11yRole,
-        label: &str,
-        bounds: (i32, i32, u32, u32),
-        focusable: bool,
-    ) -> u32 {
+    pub fn add_node(&mut self, role: A11yRole, label: &str, bounds: Rect, focusable: bool) -> u32 {
         let id = self.next_id;
         self.next_id += 1;
         self.nodes.push(A11yNode {
@@ -40,15 +29,21 @@ impl A11yTree {
             state: A11yState {
                 focused: false,
                 visible: true,
-                enabled: true,
-                selected: false,
-                checked: None,
             },
             focusable,
             parent: None,
             children: Vec::new(),
+            owner: None,
         });
         id
+    }
+
+    /// Stamp the owning window onto a node (window nodes and their control
+    /// buttons), so activation can route back to the real window.
+    pub fn set_owner(&mut self, id: u32, owner: WindowId) {
+        if let Some(n) = self.nodes.iter_mut().find(|n| n.id == id) {
+            n.owner = Some(owner);
+        }
     }
 
     pub fn set_parent(&mut self, child: u32, parent: u32) {
@@ -64,6 +59,19 @@ impl A11yTree {
         self.set_parent(child, parent);
     }
 
+    /// Mark a node as visible (on-screen) or not. `build_tree` clears this
+    /// for surfaces the compositor does not paint — minimized (non-
+    /// animating) windows and windows pushed fully off-screen — so the
+    /// ring can never land on undrawn chrome. Navigation and the
+    /// `validate` re-sync both test `focusable && state.visible`, so an
+    /// invisible node drops out of ring reach and a ring left on it
+    /// re-syncs elsewhere the next frame.
+    pub fn set_visible(&mut self, id: u32, visible: bool) {
+        if let Some(n) = self.nodes.iter_mut().find(|n| n.id == id) {
+            n.state.visible = visible;
+        }
+    }
+
     pub fn set_focus(&mut self, id: u32) {
         self.focused_id = Some(id);
         for n in self.nodes.iter_mut() {
@@ -71,28 +79,8 @@ impl A11yTree {
         }
     }
 
-    pub fn move_focus(&mut self, dir: FocusDirection) -> bool {
-        false
-    }
-
-    pub fn focused_node(&self) -> Option<&A11yNode> {
-        self.focused_id.and_then(|id| self.nodes.iter().find(|n| n.id == id))
-    }
-
     pub fn node_at(&self, x: i32, y: i32) -> Option<&A11yNode> {
-        for n in self.nodes.iter().rev() {
-            if x >= n.bounds.0
-                && x < n.bounds.0 + n.bounds.2 as i32
-                && y >= n.bounds.1
-                && y < n.bounds.1 + n.bounds.3 as i32
-            {
-                return Some(n);
-            }
-        }
-        None
-    }
-
-    pub fn find_by_role(&self, role: A11yRole) -> Option<&A11yNode> {
-        self.nodes.iter().find(|n| n.role == role)
+        let p = crate::core::geometry::Point::new(x, y);
+        self.nodes.iter().rev().find(|&n| n.bounds.hit_test(p))
     }
 }

@@ -1,11 +1,15 @@
-#![allow(dead_code)]
-
 use crate::render::compositor::Compositor;
 use crate::render::layer::Layer;
 use libsarga::io;
 
 pub(crate) fn test_compositor_clear() -> bool {
-    let mut comp = Compositor::new(320, 200);
+    let mut comp = match Compositor::new(320, 200) {
+        Some(c) => c,
+        None => {
+            io::print_str("[test] FAIL test_compositor_clear: buffer allocation failed\n");
+            return false;
+        }
+    };
     {
         let mut canvas = comp.layer_canvas(Layer::Wallpaper);
         canvas.fill_pixel(10, 10, 0xFFFF0000);
@@ -33,15 +37,27 @@ pub(crate) fn test_compositor_clear() -> bool {
 }
 
 pub(crate) fn test_compositor_layers() -> bool {
-    let mut comp = Compositor::new(100, 100);
+    let mut comp = match Compositor::new(100, 100) {
+        Some(c) => c,
+        None => {
+            io::print_str("[test] FAIL test_compositor_layers: buffer allocation failed\n");
+            return false;
+        }
+    };
 
     // Write a different color into each layer (one at a time to avoid borrow conflicts)
-    comp.layer_canvas(Layer::Wallpaper).fill_pixel(5, 5, 0xFF111111);
-    comp.layer_canvas(Layer::Desktop).fill_pixel(5, 5, 0xFF222222);
-    comp.layer_canvas(Layer::Windows).fill_pixel(5, 5, 0xFF333333);
-    comp.layer_canvas(Layer::Popups).fill_pixel(5, 5, 0xFF444444);
-    comp.layer_canvas(Layer::Overlay).fill_pixel(5, 5, 0xFF555555);
-    comp.layer_canvas(Layer::Cursor).fill_pixel(5, 5, 0xFF666666);
+    comp.layer_canvas(Layer::Wallpaper)
+        .fill_pixel(5, 5, 0xFF111111);
+    comp.layer_canvas(Layer::Desktop)
+        .fill_pixel(5, 5, 0xFF222222);
+    comp.layer_canvas(Layer::Windows)
+        .fill_pixel(5, 5, 0xFF333333);
+    comp.layer_canvas(Layer::Popups)
+        .fill_pixel(5, 5, 0xFF444444);
+    comp.layer_canvas(Layer::Overlay)
+        .fill_pixel(5, 5, 0xFF555555);
+    comp.layer_canvas(Layer::Cursor)
+        .fill_pixel(5, 5, 0xFF666666);
 
     // Verify each layer (one at a time)
     let expected = [

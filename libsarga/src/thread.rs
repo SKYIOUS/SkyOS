@@ -65,15 +65,14 @@ pub fn spawn(f: fn()) -> Thread {
 impl Thread {
     pub fn join(self) {
         while self.clear_tid.load(Ordering::Acquire) != 0 {
-            futex(
-                self.clear_tid.as_ptr() as *mut u32,
-                crate::syscall::FUTEX_WAIT,
-                1,
-            );
+            futex(self.clear_tid.as_ptr(), crate::syscall::FUTEX_WAIT, 1);
         }
     }
 }
 
+/// # Safety
+/// Caller must ensure `start`/`arg` remain valid for the lifetime of the new
+/// thread; the thread keeps running after this call returns.
 pub unsafe fn spawn_raw(
     start: extern "C" fn(*mut core::ffi::c_void) -> *mut core::ffi::c_void,
     arg: *mut core::ffi::c_void,
@@ -91,7 +90,7 @@ pub unsafe fn spawn_raw(
     let stack_top = stack_ptr as u64 + stack_size as u64;
 
     let sp = stack_top as *mut u64;
-    sp.offset(-1).write(start as u64);
+    sp.offset(-1).write(start as usize as u64);
     sp.offset(-2).write(arg as u64);
     let child_rsp = (sp as u64).wrapping_sub(16);
 
@@ -146,7 +145,9 @@ pub fn raw_thread_join(tid: usize) {
 
 pub fn exit(code: u64) -> ! {
     unsafe { crate::syscall::syscall1(SYS_EXIT, code) };
-    loop {}
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 pub fn sleep_ms(ms: u64) {
@@ -178,5 +179,11 @@ impl Mutex {
 
     fn state_ptr(&self) -> *mut u32 {
         &self.state as *const AtomicU32 as *mut u32
+    }
+}
+
+impl Default for Mutex {
+    fn default() -> Self {
+        Self::new()
     }
 }

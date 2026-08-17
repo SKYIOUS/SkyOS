@@ -12,20 +12,12 @@ Each process has an independent address space controlled by a separate page tabl
 ```rust
 pub struct Process {
     id: ProcessId,
-    page_table: PageTable,
-    memory_mappings: Vec<MemoryRegion>,
+    address_space: AddressSpace,   // page table + VMA tracking
     // ...
 }
-
-impl Process {
-    pub fn switch_to(&self) {
-        unsafe {
-            // Load this process's page table
-            self.page_table.load();
-        }
-    }
-}
 ```
+
+Address spaces are switched via `address_space.activate()` during context switch / exec.
 
 ## File Descriptor Isolation
 
@@ -50,17 +42,12 @@ IPC mechanisms are subject to access controls:
 
 ## Resource Limits
 
-Each process has configurable resource limits enforced by the kernel:
+`getrlimit`/`setrlimit`/`prlimit64` syscalls (in `syscalls/mod.rs`) store per-process `rlim_cur`/`rlim_max` arrays (16 slots) with root-only privilege to raise `rlim_max`. **The limits are stored but not currently enforced** — nothing caps address space, fd count, or CPU time against them.
 
-| Limit | Description |
-|-------|-------------|
-| RLIMIT_AS | Maximum address space size |
-| RLIMIT_DATA | Maximum data segment size |
-| RLIMIT_STACK | Maximum stack size |
-| RLIMIT_NOFILE | Maximum file descriptor count |
-| RLIMIT_NPROC | Maximum number of processes |
-| RLIMIT_MEMLOCK | Maximum locked memory |
-| RLIMIT_CPU | Maximum CPU time |
+| Limit slot | Description |
+|------------|-------------|
+| 0 | CPU time (stored, unenforced) |
+| ... | other POSIX slots (stored, unenforced) |
 
 ## Process State Transitions
 
@@ -70,5 +57,3 @@ Processes transition between states:
 - **Blocked**: Waiting for I/O, IPC, or timer
 - **Zombie**: Terminated, waiting for parent to collect exit status
 - **Dead**: Resources freed
-
-The kernel validates every state transition to ensure security invariants.

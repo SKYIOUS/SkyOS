@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 /// Socket domain.
 #[repr(u64)]
 pub enum SocketDomain {
+    /// Unix domain sockets (socketpair).
+    Unix = 1,
     /// IPv4 internet protocols.
     Inet = 2,
     /// IPv6 internet protocols.
@@ -174,6 +176,22 @@ pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
         idx += 1;
     }
     let has_dc = idx > p_len;
+    // `::` compresses exactly ONE run of empty groups; split(':') renders that
+    // as 1 empty part (interior `::`), 2 empty parts (boundary `::`, e.g.
+    // "::1" or "1::"), or 3 empty parts covering the whole string (the bare
+    // "::" all-zero address). Anything else -- ":::1", "a:::b", ":", ":::"
+    // -- is malformed and must not parse.
+    let run_len = idx - p_len;
+    let run_covers_all = p_len == 0 && idx == parts.len();
+    // A 2-empty run is only the split artifact of a boundary `::` ("::1",
+    // "1::"); interior "1:::2" is malformed.
+    let valid_dc = !has_dc
+        || run_len == 1
+        || (run_len == 2 && (p_len == 0 || idx == parts.len()) && !run_covers_all)
+        || (run_len == 3 && run_covers_all);
+    if !valid_dc {
+        return None;
+    }
     // suffix after ::
     let mut suffix = [0u16; 8];
     let mut s_len = 0;
@@ -187,9 +205,7 @@ pub fn parse_ipv6(s: &str) -> Option<[u8; 16]> {
     }
 
     let mut out = [0u16; 8];
-    for i in 0..p_len {
-        out[i] = prefix[i];
-    }
+    out[..p_len].copy_from_slice(&prefix[..p_len]);
     for i in 0..s_len {
         out[8 - s_len + i] = suffix[i];
     }
@@ -411,39 +427,97 @@ pub struct IoVec {
 
 /// Send a message on a socket.
 pub fn sendmsg(sockfd: i64, msg: &MsgHdr, flags: i32) -> Result<usize, Error> {
-    let r = unsafe { crate::syscall::syscall3(46, sockfd as u64, msg as *const MsgHdr as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+    let r = unsafe {
+        crate::syscall::syscall3(46, sockfd as u64, msg as *const MsgHdr as u64, flags as u64)
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// Receive a message on a socket.
 pub fn recvmsg(sockfd: i64, msg: &mut MsgHdr, flags: i32) -> Result<usize, Error> {
-    let r = unsafe { crate::syscall::syscall3(47, sockfd as u64, msg as *mut MsgHdr as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as usize) }
+    let r = unsafe {
+        crate::syscall::syscall3(47, sockfd as u64, msg as *mut MsgHdr as u64, flags as u64)
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// Get socket name (local address).
 pub fn getsockname(sockfd: i64, addr: &mut [u8], addrlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(51, sockfd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            51,
+            sockfd as u64,
+            addr.as_mut_ptr() as u64,
+            addrlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Get peer name (remote address).
 pub fn getpeername(sockfd: i64, addr: &mut [u8], addrlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall3(52, sockfd as u64, addr.as_mut_ptr() as u64, addrlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        crate::syscall::syscall3(
+            52,
+            sockfd as u64,
+            addr.as_mut_ptr() as u64,
+            addrlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Get a socket option.
-pub fn getsockopt(sockfd: i64, level: i32, optname: i32, optval: &mut [u8], optlen: &mut u32) -> Result<(), Error> {
-    let r = unsafe { crate::syscall::syscall5(55, sockfd as u64, level as u64, optname as u64, optval.as_mut_ptr() as u64, optlen as *mut u32 as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+pub fn getsockopt(
+    sockfd: i64,
+    level: i32,
+    optname: i32,
+    optval: &mut [u8],
+    optlen: &mut u32,
+) -> Result<(), Error> {
+    let r = unsafe {
+        crate::syscall::syscall5(
+            55,
+            sockfd as u64,
+            level as u64,
+            optname as u64,
+            optval.as_mut_ptr() as u64,
+            optlen as *mut u32 as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 /// Create a pair of connected sockets.
 pub fn socketpair(domain: u64, type_: u64, protocol: u64) -> Result<(i64, i64), Error> {
     let mut sv = [0i32; 2];
-    let r = unsafe { crate::syscall::syscall4(53, domain, type_, protocol, sv.as_mut_ptr() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok((sv[0] as i64, sv[1] as i64)) }
+    let r =
+        unsafe { crate::syscall::syscall4(53, domain, type_, protocol, sv.as_mut_ptr() as u64) };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok((sv[0] as i64, sv[1] as i64))
+    }
 }
 
 /// Parses an IPv4 address from a string.
@@ -531,7 +605,8 @@ mod tests {
         let a = ip.unwrap();
         assert_eq!(a[0..2], [0x20, 0x01]);
         assert_eq!(a[2..4], [0x0d, 0xb8]);
-        assert_eq!(a[14..16], [0x07, 0x34]);
+        // "7334" parses as 0x7334, i.e. bytes [0x73, 0x34]
+        assert_eq!(a[14..16], [0x73, 0x34]);
     }
 
     #[test]
@@ -539,6 +614,27 @@ mod tests {
         assert_eq!(parse_ipv6(""), None);
         assert_eq!(parse_ipv6("not:valid"), None);
         assert_eq!(parse_ipv6(":::1"), None);
+        assert_eq!(parse_ipv6(":::"), None);
+        assert_eq!(parse_ipv6(":"), None);
+        assert_eq!(parse_ipv6("1:::2"), None);
+        assert_eq!(parse_ipv6("1::2::3"), None);
+        assert_eq!(parse_ipv6("1:2:3:4:5:6:7"), None);
+    }
+
+    #[test]
+    fn test_parse_ipv6_double_colon_boundaries() {
+        // The all-zero address written as the bare "::".
+        assert_eq!(parse_ipv6("::"), Some([0u8; 16]));
+        // Boundary :: on the right: 1:0:0:0:0:0:0:0 (group 1 leads)
+        let mut expected = [0u8; 16];
+        expected[0] = 0x00;
+        expected[1] = 1;
+        assert_eq!(parse_ipv6("1::"), Some(expected));
+        // Interior :: with groups on both sides.
+        let ip = parse_ipv6("1::2");
+        let a = ip.unwrap();
+        assert_eq!(a[0..2], [0, 1]);
+        assert_eq!(a[14..16], [0, 2]);
     }
 
     #[test]
@@ -638,12 +734,19 @@ impl HttpClient {
         client.socket.write(request.as_bytes())?;
 
         // Read response
+        // ponytail: 32MB cap bounds memory against a hostile/hung server; raise if packages outgrow it
+        const MAX_RESPONSE: usize = 32 * 1024 * 1024;
         let mut response = alloc::vec::Vec::new();
         let mut buffer = [0u8; 4096];
         loop {
             match client.socket.read(&mut buffer) {
                 Ok(0) => break,
-                Ok(n) => response.extend_from_slice(&buffer[..n]),
+                Ok(n) => {
+                    if response.len() + n > MAX_RESPONSE {
+                        return Err(Error::from_i64(-28)); // ENOSPC
+                    }
+                    response.extend_from_slice(&buffer[..n]);
+                }
                 Err(_) => break,
             }
         }
@@ -660,11 +763,7 @@ impl HttpClient {
 
 /// Find the position of \r\n\r\n in a byte slice
 fn find_double_crlf(data: &[u8]) -> Option<usize> {
-    for i in 0..data.len().saturating_sub(3) {
-        if data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
-        {
-            return Some(i);
-        }
-    }
-    None
+    (0..data.len().saturating_sub(3)).find(|&i| {
+        data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n'
+    })
 }

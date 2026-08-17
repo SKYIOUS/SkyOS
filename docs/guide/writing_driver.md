@@ -2,61 +2,80 @@
 
 This guide explains how to write a driver for a hardware device in SkyOS.
 
-## Driver Structure
+## Driver Model
 
-Every driver implements the `DeviceDriver` trait:
+There is no single `DeviceDriver` trait. Two mechanisms exist:
 
-```rust
-pub trait DeviceDriver: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn probe(&self, device: &PciDevice) -> Result<(), DriverError>;
-    fn init(&mut self) -> Result<(), DriverError>;
-    fn shutdown(&mut self) -> Result<(), DriverError>;
-}
-```
+1. **Block/storage devices** — implement the `BlockDevice` trait and register via `register_block_device` (see `kernel/kernel/src/drivers/block/mod.rs`).
+2. **Device discovery (kext framework)** — PCI/network/storage/graphics devices are represented as **nubs** and matched to **driver families** (see `kernel/kernel/src/kext/`).
 
-## Step 1: Create the Driver Module
+## Step 1: Block Device Driver
 
-Create a new file in `src/drivers/`:
+Create a module under `kernel/kernel/src/drivers/storage/` and implement `BlockDevice`:
 
 ```rust
-// src/drivers/my_device.rs
-use crate::drivers::*;
+use crate::drivers::block::{BlockDevice, BlockDeviceError};
 
-pub struct MyDeviceDriver {
-    mmio_base: VirtAddr,
-    interrupt_vector: u8,
-}
-```
+pub struct MyDisk { /* sector count, backing storage */ }
 
-## Step 2: Implement Probe
-
-The probe function checks if the device matches the driver's vendor/device IDs:
-
-```rust
-impl DeviceDriver for MyDeviceDriver {
-    fn probe(&self, device: &PciDevice) -> Result<(), DriverError> {
-        if device.vendor_id == 0x1234 && device.device_id == 0x5678 {
-            Ok(())
-        } else {
-            Err(DriverError::NotSupported)
-        }
+impl BlockDevice for MyDisk {
+    fn read_sector(&mut self, sector: u64, buf: &mut [u8]) -> Result<(), BlockDeviceError> {
+        // copy sector `sector` into `buf`
+        Ok(())
+    }
+    fn write_sector(&mut self, sector: u64, buf: &[u8]) -> Result<(), BlockDeviceError> {
+        // store `buf` into sector `sector`
+        Ok(())
+    }
+    fn sector_count(&self) -> Result<u64, BlockDeviceError> {
+        Ok(/* total sectors */)
     }
 }
 ```
 
-## Step 3: Implement Init
+## Step 2: Register the Device
 
-Allocate resources, map MMIO regions, set up DMA buffers, and register interrupt handlers.
-
-## Step 4: Register the Driver
-
-Add the driver to the driver registry in `src/drivers/mod.rs`:
+Registration wraps the device in a `BlockCache` and pushes it onto the global device list:
 
 ```rust
-drivers.register(Box::new(MyDeviceDriver::new()));
+use alloc::sync::Arc;
+use spin::Mutex;
+
+let disk = Arc::new(Mutex::new(MyDisk { /* ... */ }));
+register_block_device(disk);  // block cache + registration
+```
+
+Consumers mount filesystems from the registered device via `BLOCK_DEVICES` or by index.
+
+## The kext Nub/Family Model
+
+For hot-plug/discovery-oriented device classes, the kext framework (`kernel/kernel/src/kext/`) models devices as nubs:
+
+- **Nub** (`nub.rs`): a point of connection — `PciDeviceNub`, `UsbDeviceNub`, `PlatformDeviceNub`. A PCI nub exposes `vendor_id`, `device_id`, `class_code`, `subclass`, `bus`, `device`, `function`, `irq`, and a `match_driver("pci:ven=...,dev=...,class=...")` matcher.
+- **DriverFamily** (`family.rs`): groups nubs by function and starts the matching driver — `NetFamily` (class 0x02), `StorageFamily` (class 0x01), `GraphicsFamily` (class 0x03).
+
+A family matches a nub and drives it:
+
+```rust
+impl DriverFamily for NetFamily {
+    fn family_name(&self) -> &'static str { "Network" }
+    fn match_nub(&self, nub: &Arc<dyn Nub>) -> bool {
+        matches!(nub.kind(), NubKind::Pci(p) if p.class_code == 0x02)
+    }
+    fn start_driver(&self, nub: Arc<dyn Nub>) -> Result<(), ()> {
+        // probe + initialize the device, register its services
+        Ok(())
+    }
+    fn stop_driver(&self, _nub: &Arc<dyn Nub>) {}
+}
+```
+
+Register a family/kext with the kext manager (`kext/mod.rs`):
+
+```rust
+register_kext("mykext", (0, 1, 0), "vendor", "description"); // returns KextId
 ```
 
 ## Interrupt Handling
 
-Drivers register interrupt handlers using `register_irq(vector, handler)`. Handlers run in interrupt context and should be minimal, deferring work to the async executor.
+Drivers register interrupt handlers via the APIC/IOAPIC layer (see `kernel/kernel/src/apic/`). Handlers run in interrupt context and should be minimal; defer work to the async executor or a kernel thread.

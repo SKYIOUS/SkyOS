@@ -4,13 +4,15 @@ This page documents common build problems and their solutions.
 
 ## Build Failures
 
-### "target not found: x86_64-skyos-unknown"
+### "target not found: x86_64-unknown-none"
 
 ```bash
 rustup target add x86_64-unknown-none --toolchain nightly
+rustup component add rust-src llvm-tools-preview --toolchain nightly
 ```
 
-The custom target spec should be in the project root. If missing, copy it from `config/x86_64-skyos.json`.
+The userspace custom target spec lives in the repo root (`x86_64-sarga.json`). The kernel builds
+for the built-in `x86_64-unknown-none` target via `kernel/kernel/.cargo/config.toml`.
 
 ### "linker not found: rust-lld"
 
@@ -45,7 +47,7 @@ xcode-select --install
 ### "Boot hangs after UEFI logo"
 
 - The bootloader may be failing to load the kernel ELF
-- Check that `bootimage-skyos.bin` was created correctly
+- Check that `bootimage-vahi_kernel.bin` was created correctly
 - Try with the `-machine q35` flag
 
 ## Common Mistakes

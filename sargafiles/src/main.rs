@@ -138,11 +138,7 @@ impl FileManager {
                 }
             }
         } else {
-            if self.current_path == "/" {
-                self.current_path.push_str(name);
-            } else {
-                self.current_path.push_str(name);
-            }
+            self.current_path.push_str(name);
         }
         self.refresh();
     }
@@ -190,16 +186,15 @@ fn user_main() -> i32 {
             let content_y = PATH_BAR_H + HEADER_H;
 
             // Path bar back button
-            if mx >= 4 && mx < 36 && my >= 4 && my < PATH_BAR_H - 4 {
-                if fm.current_path != "/" {
-                    if let Some(pos) = fm.current_path[..fm.current_path.len() - 1].rfind('/') {
-                        fm.current_path.truncate(pos + 1);
-                        if fm.current_path.is_empty() {
-                            fm.current_path.push('/');
-                        }
+            if (4..36).contains(&mx) && (4..PATH_BAR_H - 4).contains(&my) && fm.current_path != "/"
+            {
+                if let Some(pos) = fm.current_path[..fm.current_path.len() - 1].rfind('/') {
+                    fm.current_path.truncate(pos + 1);
+                    if fm.current_path.is_empty() {
+                        fm.current_path.push('/');
                     }
-                    fm.refresh();
                 }
+                fm.refresh();
             }
 
             // File list clicks
@@ -236,7 +231,7 @@ fn user_main() -> i32 {
         win.draw_rect(0, 0, win_w, PATH_BAR_H, theme.bg_surface);
 
         // Back button
-        let back_bg = if mx >= 4 && mx < 36 && my >= 4 && my < PATH_BAR_H - 4 {
+        let back_bg = if (4..36).contains(&mx) && (4..PATH_BAR_H - 4).contains(&my) {
             theme.hover
         } else {
             theme.bg_elevated
@@ -378,6 +373,7 @@ fn user_main() -> i32 {
 
         // Keyboard shortcuts
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'r' | b'R' => fm.refresh(),

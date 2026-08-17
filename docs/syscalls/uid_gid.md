@@ -1,17 +1,20 @@
 # User and Group System Calls
 
-The user/group syscalls manage process credentials and permissions.
+The user/group syscalls manage process credentials and permissions. SkyOS implements full POSIX
+credentials (real, effective, saved, and fsuid/fsgid) plus a Linux-compatible capability model.
+Credential syscalls live in the 300+ range.
 
-## getuid / geteuid (syscalls 41-42)
+## getuid / geteuid (syscalls 301/305)
 
 ```c
 uid_t getuid(void);
 uid_t geteuid(void);
 ```
 
-Returns the real user ID and effective user ID of the calling process. The real UID identifies the owner of the process; the effective UID is used for permission checks.
+Returns the real user ID and effective user ID of the calling process. The real UID identifies the
+owner of the process; the effective UID is used for permission checks.
 
-## getgid / getegid (syscalls 43-44)
+## getgid / getegid (syscalls 302/306)
 
 ```c
 gid_t getgid(void);
@@ -20,37 +23,44 @@ gid_t getegid(void);
 
 Returns the real group ID and effective group ID of the calling process.
 
-## setuid (syscall 45)
+## setuid / setgid (syscalls 303/304)
 
 ```c
 int setuid(uid_t uid);
-```
-
-Sets the effective user ID of the calling process. If the caller has `CAP_SETUID`, the real, effective, and saved user IDs are all set. Otherwise, only the effective UID can be set to the real UID or saved set-user-ID.
-
-## setgid (syscall 46)
-
-```c
 int setgid(gid_t gid);
 ```
 
-Sets the effective group ID. Same privilege rules as `setuid`.
+Sets the effective user/group ID of the calling process. If the caller has the appropriate
+capability, the real, effective, and saved IDs are all set; otherwise only the effective ID can be
+set to the real or saved ID.
 
-## getgroups (syscall 47)
+## getresuid / setresuid (syscalls 118/119)
+
+```c
+int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);
+int setresuid(uid_t ruid, uid_t euid, uid_t suid);
+```
+
+Get or set the real, effective, and saved user IDs.
+
+## getresgid / setresgid (syscalls 314/315)
+
+```c
+int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
+int setresgid(gid_t rgid, gid_t egid, gid_t sgid);
+```
+
+Get or set the real, effective, and saved group IDs.
+
+## getgroups / setgroups (syscalls 115/116)
 
 ```c
 int getgroups(int size, gid_t list[]);
-```
-
-Returns the list of supplementary group IDs for the calling process. If `size` is 0, returns the number of groups without modifying `list`.
-
-## setgroups (syscall 48)
-
-```c
 int setgroups(size_t size, const gid_t *list);
 ```
 
-Sets the supplementary group IDs. Requires `CAP_SETGID`.
+Returns or sets the list of supplementary group IDs for the calling process. If `size` is 0,
+`getgroups` returns the number of groups without modifying `list`.
 
 ## Process Credentials
 
@@ -62,11 +72,11 @@ Each process has:
 
 ## Capabilities
 
-SkyOS uses a capability-based security model alongside traditional UID/GID:
-
 ```c
-int capget(struct cap_header *header, struct cap_data *data);
-int capset(struct cap_header *header, const struct cap_data *data);
+int capget(struct cap_header *header, struct cap_data *data);   // syscall 307
+int capset(struct cap_header *header, const struct cap_data *data);   // syscall 308
 ```
 
-Capabilities include `CAP_SYS_TIME`, `CAP_NET_RAW`, `CAP_SYS_ADMIN`, etc.
+SkyOS uses a Linux-compatible capability bitmask in addition to UID/GID. Notable positions:
+`CAP_NET_RAW` (13), `CAP_SYS_ADMIN` (21), `CAP_KILL` (5), `CAP_SETPCAP` (8). See
+`docs/security/overview.md` for the full model.

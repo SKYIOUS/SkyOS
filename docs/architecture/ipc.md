@@ -1,32 +1,27 @@
 # Inter-process Communication
 
-SkyOS provides multiple IPC mechanisms designed for different use cases, from lightweight message passing to shared memory.
+SkyOS provides multiple IPC mechanisms designed for different use cases.
 
-## Message Passing
+## Sockets (AF_UNIX)
 
-The primary IPC mechanism is channel-based message passing. Channels are unidirectional and bounded, with buffer sizes negotiated at creation time. Messages are dynamically sized up to 64 KiB.
+The primary IPC mechanism is **AF_UNIX sockets** (`net/unix.rs`). They provide full socket semantics: `bind`, `connect`, `listen`, `accept`, `sendto`/`recvfrom`, `sendmsg`/`recvmsg`. The ADE desktop uses one socketpair per spawned app for its request/response transport.
 
-```rust
-pub struct Channel {
-    buffer: RingBuffer<Message>,
-    sender: Arc<Endpoint>,
-    receiver: Arc<Endpoint>,
-}
-```
+There is **no channel/RingBuffer/IPC-port subsystem** (`src/ipc/` does not exist in the kernel).
 
-Messages are sent asynchronously: `send()` returns immediately if space is available, or returns `WouldBlock` if the buffer is full. The sender can wait on a capacity notification event.
+## Pipes
+
+`vfs/pipe.rs` provides in-memory pipes exposed via `sys_pipe`, used for shell pipelines and stream IPC.
 
 ## Shared Memory
 
-For high-throughput communication, processes can share memory regions via `mmap()` with the `MAP_SHARED` flag. Shared regions are reference-counted and unmapped when all processes detach.
+Processes can share memory regions via `mmap()` (COW fork via `clone_cow()`). 
 
 ## Signals
 
-Signals provide lightweight notification between processes. Each process has a signal mask and a signal handler table. The kernel delivers signals by modifying the target process's signal queue and waking it if it was blocked in `sigwait()`.
+Signals provide notification between processes. Each process has a pending/blocked signal bitmask and a signal handler table (`syscalls/signal.rs`). The kernel delivers signals by setting the pending bit, waking the thread if blocked, and invoking handlers in the syscall postamble.
 
-## Ports
+## Other Primitives
 
-UIPC (Userspace IPC) ports are asynchronous communication endpoints identified by a 64-bit port ID. Ports support:
-- One-to-one and one-to-many communication
-- Priority-tagged messages
-- Timeouts on receive operations
+- **futex** (`SYS_FUTEX`): Userspace synchronization
+- **eventfd**: Lightweight event notification file descriptor
+- **PTY** (`pty.rs`): Terminal emulation (PtyMaster/PtySlave file descriptors)

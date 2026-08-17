@@ -1,88 +1,217 @@
-import subprocess
+"""SkyOS Unified Build System.
+
+Single entry point for building the entire SkyOS stack:
+userspace -> initrd -> kernel -> UEFI bootimage -> VDI/ISO.
+
+Usage:
+    python build_disk.py                        # full build
+    python build_disk.py --kernel-only          # kernel + bootimage only
+    python build_disk.py --userspace-only       # userspace + initrd only
+    python build_disk.py --release --iso        # release build + ISO
+"""
+
+import argparse
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
-def run_command(command, cwd=None, env=None):
-    print(f"Running: {' '.join(command)}")
-    full_env = os.environ.copy()
-    if env:
-        full_env.update(env)
-    result = subprocess.run(command, cwd=cwd, env=full_env)
-    if result.returncode != 0:
-        print(f"Error: Command failed with return code {result.returncode}")
+
+def log(step, msg):
+    print(f"  [{step}] {msg}")
+
+
+def run(cmd, cwd=None, desc=None, check=True, env=None):
+    if desc:
+        print(f"\n--- {desc} ---")
+    full_cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
+    if isinstance(cmd, list):
+        # Quote args containing spaces so paths like "C:\Program Files\..." survive shell=True
+        full_cmd = " ".join(f'"{a}"' if " " in a else a for a in cmd)
+    else:
+        full_cmd = cmd
+    result = subprocess.run(full_cmd, cwd=cwd, shell=True, env=env)
+    if check and result.returncode != 0:
+        print(f"ERROR: '{full_cmd}' failed with code {result.returncode}")
+        sys.exit(result.returncode)
+    return result.returncode == 0
+
+
+def find_nightly_cargo():
+    try:
+        r = subprocess.run(
+            ["rustup", "which", "cargo", "--toolchain", "nightly"],
+            capture_output=True, text=True, check=True
+        )
+        return r.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        nightly_bin = Path.home() / ".rustup" / "toolchains" / "nightly-x86_64-pc-windows-msvc" / "bin"
+        return str(nightly_bin / "cargo.exe")
+
+
+def ensure_nightly_wrapper(nightly_cargo):
+    nightly_rustc = nightly_cargo.replace("cargo.exe", "rustc.exe")
+    wrapper = Path(tempfile.gettempdir()) / "opencode" / "cargo-nightly-wrapper.cmd"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text(
+        f"@echo off\n"
+        f"set RUSTC={nightly_rustc}\n"
+        f"set RUSTC_WORKSPACE_WRAPPER=\n"
+        f"{nightly_cargo} %*\n"
+    )
+    return str(wrapper)
+
+
+def build_userspace(root_dir, release=False):
+    log("1/4", "Building userspace")
+    target = "x86_64-sarga.json"
+    # The sarga target has no precompiled sysroot libs, so core/alloc are
+    # built from source; -Zbuild-std is passed explicitly (the workspace
+    # .cargo/config.toml must not set a global build-std, which would break
+    # host builds like `cargo test -p libsarga`).
+    cmd = ["cargo", "build", "-Zbuild-std=core,alloc", "--target", target]
+    if release:
+        cmd.append("--release")
+    run(cmd, cwd=root_dir,
+        desc=f"Userspace ({'release' if release else 'debug'})")
+
+
+def build_initrd(root_dir):
+    log("2/4", "Building initrd")
+    script = Path(root_dir) / "build_initrd.py"
+    if not script.exists():
+        log("WARN", "build_initrd.py not found, skipping")
+        return None
+    run([sys.executable, str(script), str(root_dir)], cwd=root_dir)
+    initrd_path = Path(root_dir) / "initrd.tar"
+    if initrd_path.exists():
+        log("OK", f"initrd.tar ({initrd_path.stat().st_size / 1024:.0f} KB)")
+        return str(initrd_path)
+    return None
+
+
+def build_kernel(kernel_dir):
+    log("3/4", "Building kernel")
+    krate = Path(os.path.realpath(kernel_dir)) / "kernel"
+    if not krate.is_dir():
+        print("ERROR: kernel/ directory not found at", kernel_dir)
         sys.exit(1)
+    run(["cargo", "+nightly", "build"], cwd=str(krate),
+        desc="Kernel (nightly, debug)")
+
+
+def build_bootimage(root_dir, kernel_dir):
+    log("4/4", "Creating UEFI bootimage")
+    kernel_dir = os.path.realpath(kernel_dir)
+    nightly = find_nightly_cargo()
+    wrapper = ensure_nightly_wrapper(nightly)
+    builder_dir = Path(kernel_dir) / "builder"
+    env = {**os.environ, "RUST_BACKTRACE": "1", "CARGO_NIGHTLY": wrapper}
+
+    run(["cargo", "+stable", "build"], cwd=str(builder_dir), env=env,
+        desc="Builder (stable)")
+
+    builder_bin = builder_dir / "target" / "debug" / "builder.exe"
+    if not builder_bin.exists():
+        builder_bin = builder_dir / "target" / "debug" / "builder"
+    if not builder_bin.exists():
+        print(f"ERROR: builder binary not found at {builder_bin}")
+        sys.exit(1)
+    run([str(builder_bin)], cwd=str(builder_dir), env=env)
+
+    triple = os.environ.get("VAHI_TARGET_TRIPLE", "x86_64-vahi")
+    uefi = Path(kernel_dir) / "target" / triple / "debug" / "bootimage-vahi_kernel.bin"
+    if not uefi.exists():
+        print(f"ERROR: UEFI image not found at {uefi}")
+        sys.exit(1)
+    output = Path(root_dir) / "skyos_uefi.img"
+    shutil.copy2(str(uefi), str(output))
+    log("OK", f"skyos_uefi.img ({output.stat().st_size / 1024:.0f} KB)")
+    return str(output)
+
+
+def build_vdi(uefi_path, root_dir):
+    log("OPT", "Creating VDI")
+    output = Path(root_dir) / "skyos.vdi"
+    output.unlink(missing_ok=True)
+
+    vbox = shutil.which("VBoxManage") or r"C:\Program Files\Oracle\VirtualBox\VBoxManage"
+    if not shutil.which(vbox) and not Path(vbox).exists():
+        log("SKIP", "VBoxManage not found")
+        return None
+
+    try:
+        run([vbox, "convertfromraw", uefi_path, str(output), "--format", "VDI"])
+        run([vbox, "modifymedium", "disk", str(output), "--resize", "64"])
+        log("OK", f"skyos.vdi ({output.stat().st_size / 1024 / 1024:.0f} MB)")
+        return str(output)
+    except Exception as e:
+        log("WARN", f"VDI failed: {e}")
+        return None
+
+
+def build_iso(uefi_path, root_dir, version="0.6.0"):
+    log("OPT", "Creating ISO")
+    script = Path(root_dir) / "scripts" / "make_iso.py"
+    if not script.exists():
+        log("SKIP", "scripts/make_iso.py not found")
+        return None
+    run([sys.executable, str(script), version], cwd=root_dir)
+    iso_path = Path(root_dir) / "release" / f"skyos-{version}.iso"
+    if iso_path.exists():
+        log("OK", f"ISO ({iso_path.stat().st_size / 1024 / 1024:.0f} MB)")
+        return str(iso_path)
+    return None
+
 
 def main():
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    kernel_dir = os.path.join(root_dir, "kernel")
-    if not os.path.isdir(kernel_dir):
-        print("ERROR: kernel/ directory not found at", kernel_dir)
-        print("The kernel lives in a separate repo. Build it there or copy it here.")
-        sys.exit(1)  # ponytail: graceful message instead of cryptic cargo crash
-    
-    print("--- Vahi Kernel Build System ---")
-    
-    # 1. Clean up old build artifacts if any
-    print("Cleaning old images...")
-    for ext in ["_uefi.img", ".vdi"]:
-        path = os.path.join(root_dir, f"vahi{ext}")
-        if os.path.exists(path):
-            os.remove(path)
-    
-    target_uefi = os.path.join(root_dir, "target", "vahi-uefi.img")
-    if os.path.exists(target_uefi):
-        os.remove(target_uefi)
+    parser = argparse.ArgumentParser(description="SkyOS Build System")
+    parser.add_argument("--kernel-only", action="store_true",
+                        help="Build kernel + bootimage only")
+    parser.add_argument("--userspace-only", action="store_true",
+                        help="Build userspace + initrd only")
+    parser.add_argument("--no-vdi", action="store_true",
+                        help="Skip VDI conversion")
+    parser.add_argument("--iso", action="store_true",
+                        help="Create bootable ISO")
+    parser.add_argument("--version", default="0.6.0",
+                        help="Version string for ISO")
+    parser.add_argument("--release", action="store_true",
+                        help="Release mode (optimized)")
+    args = parser.parse_args()
 
-    # 2. Build the kernel and create bootimage using the new builder
-    print("Building kernel...")
-    run_command(["cargo", "+nightly", "build"], cwd=kernel_dir)
-    
-    print("Running image builder...")
-    run_command(["cargo", "+nightly", "run", "--manifest-path", "builder/Cargo.toml"], cwd=root_dir, env={"RUST_BACKTRACE": "1"})
-    
-    # 3. Locate the output file
-    target_triple = os.environ.get("VAHI_TARGET_TRIPLE", "x86_64-vahi")
-    uefi_path = os.path.join(root_dir, "target", target_triple, "debug", "bootimage-vahi_kernel.bin")
-    
-    if not os.path.exists(uefi_path):
-        print(f"Error: Could not find UEFI image at {uefi_path}")
-        sys.exit(1)
-    
-    # 4. Copy UEFI to root
-    output_uefi = os.path.join(root_dir, "vahi_uefi.img")
-    shutil.copy2(uefi_path, output_uefi)
-    print(f"SUCCESS: Created UEFI disk image at {output_uefi}")
-    
-    # 5. VirtualBox VDI from UEFI image
-    output_vdi = os.path.join(root_dir, "vahi.vdi")
-    print(f"Converting {output_uefi} to {output_vdi}...")
-    if os.path.exists(output_vdi):
-        try:
-            os.remove(output_vdi)
-        except Exception as e:
-            print(f"Warning: Could not remove old VDI (is VirtualBox running?): {e}")
-    
-    vbox_path = shutil.which("VBoxManage") or r"C:\Program Files\Oracle\VirtualBox\VBoxManage"
-    try:
-        run_command([vbox_path, "convertfromraw", output_uefi, output_vdi, "--format", "VDI"])
-        print(f"SUCCESS: Created VirtualBox disk at {output_vdi}")
-        
-        # Resize to 64MB to satisfy some picky firmwares
-        print("Resizing VDI to 64MB...")
-        r = subprocess.run([vbox_path, "modifymedium", "disk", output_vdi, "--resize", "64"])
-        if r.returncode != 0:
-            print(f"Warning: VDI resize returned {r.returncode} (non-fatal)")
-        else:
-            print("Resize finished.")
-    except Exception as e:
-        print("Warning: VBoxManage conversion failed.")
-        print(f"Error detail: {e}")
+    root = Path(__file__).parent.resolve()
+    kernel = root / "kernel"
 
-    print("\nTo run with QEMU (UEFI):")
-    print(f'  qemu-system-x86_64 -bios "OVMF.fd" -drive format=raw,file="{output_uefi}" -m 512M -smp 2')
-    print("  (Download OVMF.fd from https://github.com/clearlinux/common/raw/master/OVMF.fd if missing)")
-    print("\nFor VirtualBox: Use vahi.vdi with EFI enabled in System > Motherboard settings.")
+    print("=== SkyOS Build System ===")
+    print(f"  Root:   {root}")
+    print(f"  Kernel: {kernel}")
+    print(f"  Mode:   {'release' if args.release else 'debug'}")
+    print()
+
+    if not args.kernel_only:
+        build_userspace(root, release=args.release)
+        initrd = build_initrd(root)
+        if initrd:
+            dst = kernel / "kernel" / "initrd.tar"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(initrd, str(dst))
+
+    if not args.userspace_only:
+        build_kernel(kernel)
+        uefi = build_bootimage(root, kernel)
+
+        if not args.no_vdi:
+            build_vdi(uefi, root)
+
+        if args.iso:
+            build_iso(uefi, root, args.version)
+
+    print("\n=== Build Complete ===")
+    print("  qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2")
+
 
 if __name__ == "__main__":
     main()

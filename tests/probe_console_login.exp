@@ -1,0 +1,250 @@
+#!/usr/bin/expect -f
+# Console-login probe (Phase A): the console getty path to a root/skyos
+# session, driven over the SERIAL CONSOLE - the path that works while the
+# GUI (login-manager) hangs. Contrast with qemu_gui_login.exp, which drives
+# login-manager via the QEMU monitor; this probe needs no GUI at all for
+# the login half (the getty reads the console), and uses the monitor only
+# for the final Esc because ade reads keys via the GUI pipeline.
+#
+# Flow: boot -> getty 'login:' -> root/skyos over the serial console ->
+# sash (root's shell per /etc/passwd) -> 'ade' at the sash prompt ->
+# '[ade] session established' on the inherited console fd -> Esc (via
+# monitor sendkey, the byte-deliverable session-end path) ->
+# '[ade] session ended'.
+#
+# PER-CHECK AUDIT - every pattern verified against sources:
+#   1 boot_login       login:            REAL  login/src/main.rs:212
+#   2 vahid_ready      \[vahid\] ready   REAL  vahid/src/main.rs:108 (healthy
+#                                            sleep loop, spawned before the
+#                                            getty)
+#   3 password_prompt  Password:         REAL  login/src/main.rs:132
+#   4 shell_prompt     sash\[            REAL  root's shell /bin/sash (passwd,
+#                                            build_initrd.py PASSWD_CONTENT);
+#                                            sash PS1 "sash[\w]> "
+#   5 ade_established  \[ade\] session established
+#                                            REAL  ade/src/main.rs:73
+#   6 ade_window_fail  \[ade\] failed to create window
+#                                            REAL  ade/src/main.rs:59 (the GUI
+#                                            hang evidence arm)
+#   7 kbd_irq1         \[KBD\] IRQ1 fired!
+#                                            REAL  kernel one-shot keyboard
+#                                            routing marker (gui_login.exp
+#                                            audit entry 12)
+#                                            Airtight (Aug 12, 2026):
+#                                            expect -timeout 0 absent-check
+#                                            before the sendkey (same leg as
+#                                            gui_login.exp 2b).
+#   8 ade_ended        \[ade\] session ended
+#                                            REAL  ade/src/main.rs:151 (Esc on
+#                                            empty desktop -> a11y Esc arm ->
+#                                            request_end -> loop exit)
+#
+# Usage: expect tests/probe_console_login.exp <iso_path> [timeout_seconds]
+
+set iso [lindex $argv 0]
+set timeout [lindex $argv 1]
+if {$timeout == ""} { set timeout 180 }
+set logfile "probe_console_login_log.txt"
+
+
+spawn qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -cdrom "$iso" \
+    -m 512M -smp 2 \
+    -nographic -no-reboot \
+    -serial mon:stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+
+# Keep the whole boot in the expect buffer (default match_max is 2000
+# bytes): the '[vahid] ready' marker prints early (init spawns vahid
+# first) and this probe greps the ACCUMULATED buffer after 'login:', so
+# without the bump the marker would have rolled out. Must be set AFTER
+# spawn - match_max targets the current spawn_id.
+match_max 1000000
+
+# Ctrl-A C toggles the serial console <-> QEMU monitor on mon:stdio. The
+# login half types on the serial console directly; only the logout Esc
+# needs the monitor (ade reads SYS_GUI_GET_KEY, not the console).
+proc monitor_cmd {cmd} {
+    send "\x01c"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: QEMU monitor not reachable\n"; exit 1 }
+    }
+    send "$cmd\r"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: monitor command '$cmd' not acknowledged\n"; exit 1 }
+    }
+    send "\x01c"
+}
+
+proc sendkey_seq {keys} {
+    monitor_cmd "sendkey $keys"
+}
+
+# The password send is wrapped in log_user 0/1 so expect does not echo the
+# keystrokes into the CI log (the guest never echoes - the kernel serial is
+# TX-only and login's read_password clears ECHO).
+proc send_password {pw} {
+    log_user 0
+    send "$pw\r"
+    log_user 1
+}
+
+set pass_count 0
+set fail_count 0
+
+# 1. Boot: the console getty's login: prompt - the path that works while
+#    login-manager (GUI) hangs.
+send_user "=== 1. boot to console getty ===\n"
+expect -timeout 90 {
+    -re {login: } {
+        incr pass_count
+        send_user "PASS: console getty login prompt\n"
+    }
+    "=== KERNEL PANIC ===" {
+        incr fail_count
+        send_user "FAIL: kernel panicked during boot\n"
+        exit 1
+    }
+    timeout {
+        incr fail_count
+        send_user "FAIL: boot timeout - no 'login:' (console path)\n"
+        exit 1
+    }
+    eof {
+        incr fail_count
+        send_user "FAIL: QEMU exited during boot\n"
+        exit 1
+    }
+}
+
+# 2. vahid-healthy: the device manager reached its sleep loop before the
+#    getty (init spawns vahid first). Same accumulated-buffer grep as the
+#    shell-test and GUI-gate harnesses.
+if {[regexp -- {\[vahid\] ready} $expect_out(buffer)]} {
+    incr pass_count
+    send_user "PASS: vahid_ready - device manager healthy in accumulated boot log\n"
+} else {
+    incr fail_count
+    send_user "FAIL: vahid_ready - '\[vahid] ready' missing from accumulated boot log\n"
+    exit 1
+}
+
+# 3. Console login: root / skyos over the serial console.
+send_user "=== 2. console login root/skyos ===\n"
+send "root\r"
+expect -timeout 20 {
+    -re {Password: } {
+        incr pass_count
+        send_user "PASS: password prompt\n"
+    }
+    timeout { send_user "FAIL: no Password: prompt\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited at password prompt\n"; exit 1 }
+}
+send_password "skyos"
+
+# 4. Root's shell is sash (passwd root:...:/bin/sash), so the next serial
+#    marker is the sash prompt - the console path reached a live session.
+expect -timeout 20 {
+    -re {sash\[} {
+        incr pass_count
+        send_user "PASS: console login landed at sash (getty path works)\n"
+    }
+    -re {Login incorrect} {
+        send_user "FAIL: bad credentials - console login rejected\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: no sash prompt after skyos (wrong password or hang)\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during login\n"; exit 1 }
+}
+
+# 5. Launch ade from the console shell: the console path to the desktop
+#    session. ade prints its session marker on the inherited console fd.
+send_user "=== 3. launch ade from console shell ===\n"
+send "ade\r"
+expect -timeout 30 {
+    -re {\[ade\] session established} {
+        incr pass_count
+        send_user "PASS: ade session established via console path\n"
+    }
+    -re {not found|ade:} {
+        send_user "FAIL: sash could not exec ade (check PATH / initrd)\n"
+        exit 1
+    }
+    -re {\[ade\] failed to create window} {
+        incr fail_count
+        send_user "FAIL: ade could not create a window from the console path (GUI hang)\n"
+        exit 1
+    }
+    timeout {
+        incr fail_count
+        send_user "FAIL: no '\[ade] session established' after launching ade\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during ade launch\n"; exit 1 }
+}
+
+# 6. Routing probe: ade reads keys via the GUI pipeline (SYS_GUI_GET_KEY),
+#    so the logout Esc must go through the monitor. Prove the path is live
+#    first. [KBD] IRQ1 fired! is one-shot per boot, so this sendkey must be
+#    the FIRST of the boot (the login half types over serial, not sendkey)
+#    - otherwise a stale buffered marker would false-PASS.
+#    Airtight (Aug 12, 2026): the expect -timeout 0 absent-check below
+#    implements that guarantee - the marker must be absent from the buffer
+#    immediately before the sendkey, then appear after it.
+send_user "=== 4. routing probe: \[KBD\] IRQ1 fired! ===\n"
+# Airtight ordering (Aug 12, 2026): IRQ1 fired! is one-shot per boot, so a
+# stray IRQ1 from early boot (PS/2 controller probe) would linger in the
+# expect buffer (gate.exp raises match_max to 1000000) and false-PASS this
+# probe by matching the STALE byte. Prove the marker is ABSENT right before
+# the probe key - `expect -timeout 0` matches immediately if a stale copy is
+# buffered, otherwise the timeout arm fires instantly - then require it
+# after the sendkey. Buffer position at probe time is the stream's byte
+# offset, so this is the same "appears only after this point" guarantee a
+# log-file offset check would give.
+expect -timeout 0 {
+    {\[KBD\] IRQ1 fired!} {
+        send_user "FAIL: stray IRQ1 marker already present before the probe sendkey - routing claim unproven\n"
+        exit 1
+    }
+    timeout { }
+}
+
+sendkey_seq "shift"
+expect -timeout 10 {
+    {\[KBD\] IRQ1 fired!} {
+        incr pass_count
+        send_user "PASS: sendkey reached IRQ1 (kernel keyboard path live)\n"
+    }
+    timeout {
+        send_user "FAIL: \[KBD] IRQ1 fired! never appeared - sendkey routing broken\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during routing probe\n"; exit 1 }
+}
+
+# 7. Esc on the empty ade desktop ends the session - the byte-deliverable
+#    session-end path (0x1B, the one distinct control byte the stream
+#    carries). ade has no windows open after a fresh login.
+send_user "=== 5. esc logout on empty desktop ===\n"
+sendkey_seq "esc"
+expect -timeout 20 {
+    {\[ade\] session ended} {
+        incr pass_count
+        send_user "PASS: session ended (Esc logout)\n"
+    }
+    timeout {
+        send_user "FAIL: '\[ade] session ended' never appeared\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited before session end\n"; exit 1 }
+}
+
+send_user "\nConsole login probe: $pass_count passed, $fail_count failed\n"
+if {$fail_count > 0} { exit 1 }
+exit 0

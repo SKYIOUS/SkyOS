@@ -1,22 +1,52 @@
 //! Application launcher — fork + execve + window creation.
+//!
+//! Every launch funnels through [`spawn`]; the [`SpawnKind`] discriminates
+//! the child setup (pty slave → sash, IPC socketpair → `--ipc-fd`, plain
+//! exec for the explorer's detached `/bin/skyfiles`). One registration
+//! sequence runs for every forked pid: lifecycle + permissions + running
+//! mark, plus the IPC transport when a socketpair exists.
 
-use crate::util::app_registry::AppInfo;
 use crate::core::desktop::Desktop;
-use crate::core::window::{AppWindow, VisualFlags, WindowState};
+use crate::core::geometry::Rect;
+use crate::core::window::AppWindow;
+use crate::util::app_catalog::AppInfo;
 
-pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
-    if path == "/bin/skyfiles" {
-        desktop.spawn_explorer();
-        return;
-    }
-    spawn_app_at(
-        desktop,
-        path,
-        title,
+#[derive(Clone, Copy)]
+enum SpawnKind {
+    /// External binary over the socket IPC (gets `--ipc-fd` argv).
+    External,
+    /// Kernel pty; sash runs on the slave side.
+    Terminal,
+    /// In-process explorer window; `/bin/skyfiles` forks detached.
+    Explorer(u32),
+}
+
+/// Cascade geometry for a new floating window: offsets grow with the window
+/// count so windows don't stack exactly on top of each other.
+fn cascade_geom(desktop: &Desktop) -> Rect {
+    Rect::new(
         80 + desktop.wm.len() as i32 * 30,
         40 + desktop.wm.len() as i32 * 20,
         520,
         360,
+    )
+}
+
+pub(crate) fn spawn_app(desktop: &mut Desktop, path: &str, title: &str) {
+    if path == "/bin/skyfiles" {
+        spawn_explorer(desktop);
+        return;
+    }
+    if path == "/bin/sash" {
+        spawn_terminal(desktop);
+        return;
+    }
+    spawn(
+        desktop,
+        path,
+        title,
+        SpawnKind::External,
+        cascade_geom(desktop),
     );
 }
 
@@ -24,29 +54,38 @@ pub(crate) fn spawn_app_from_registry(desktop: &mut Desktop, app: &AppInfo) {
     let path = app.executable;
     let title = app.name;
     if path == "/bin/skyfiles" {
-        desktop.spawn_explorer();
+        spawn_explorer(desktop);
+        return;
+    }
+    if path == "/bin/sash" {
+        spawn_terminal(desktop);
         return;
     }
     if path.is_empty() {
         // About dialog or similar — handled in launch_app
         return;
     }
-    spawn_app_at(
+    spawn(
         desktop,
         path,
         title,
-        80 + desktop.wm.len() as i32 * 30,
-        40 + desktop.wm.len() as i32 * 20,
-        520,
-        360,
+        SpawnKind::External,
+        cascade_geom(desktop),
     );
     desktop.app_reg.record_launch(app.id);
-    desktop
-        .services
-        .session
-        .record_app_launch(app.id.0 as u64);
 }
 
+pub(crate) fn spawn_terminal(desktop: &mut Desktop) {
+    spawn(
+        desktop,
+        "/bin/sash",
+        "Terminal",
+        SpawnKind::Terminal,
+        cascade_geom(desktop),
+    );
+}
+
+/// External binary at an explicit position (used by the launcher selftests).
 pub(crate) fn spawn_app_at(
     desktop: &mut Desktop,
     path: &str,
@@ -56,68 +95,169 @@ pub(crate) fn spawn_app_at(
     pw: u32,
     ph: u32,
 ) {
-    let w = pw;
-    let h = ph;
-    let x = px;
-    let y = py;
-    let mut app_win = AppWindow {
-        x,
-        y,
-        w,
-        h,
-        prev_x: x,
-        prev_y: y,
-        prev_w: w,
-        prev_h: h,
-        title: alloc::string::String::from(title),
-        content: alloc::vec::Vec::new(),
-        scroll: 0,
-        pid: None,
-        focused: true,
-        dragging: false,
-        drag_ox: 0,
-        drag_oy: 0,
-        state: WindowState::Normal,
-        prev_state: WindowState::Normal,
-        flags: VisualFlags::new(),
-        selection: None,
-        anim: None,
-        closing: false,
-        anim_opacity: 0,
-        always_on_top: false,
-        explorer_id: None,
-    };
-    app_win.content.push(alloc::format!("> {}", path));
-    app_win.content.push(alloc::string::String::new());
+    spawn(
+        desktop,
+        path,
+        title,
+        SpawnKind::External,
+        Rect::new(px, py, pw, ph),
+    );
+}
 
-    if !path.is_empty() {
+pub(crate) fn spawn_explorer(desktop: &mut Desktop) {
+    let id = desktop.explorers.len() as u32;
+    let mut explorer = crate::util::explorer::ExplorerState::new(id, "/home");
+    explorer.refresh();
+    desktop.explorers.push(explorer);
+    spawn(
+        desktop,
+        "/bin/skyfiles",
+        "File Explorer",
+        SpawnKind::Explorer(id),
+        Rect::new(60, 40, 640, 440),
+    );
+}
+
+/// The single launch path: build the window, fork, exec the child per
+/// `kind`, register the pid, then present the window (fade-in, notify).
+fn spawn(desktop: &mut Desktop, path: &str, title: &str, kind: SpawnKind, geo: Rect) {
+    let (master, slave) = match kind {
+        SpawnKind::Terminal => match libsarga::io::openpty() {
+            Ok(v) => v,
+            Err(_) => return,
+        },
+        _ => (-1, -1),
+    };
+    let ipc_pair = match kind {
+        SpawnKind::External if !path.is_empty() => libsarga::net::socketpair(
+            libsarga::net::SocketDomain::Unix as u64,
+            libsarga::net::SocketType::Stream as u64,
+            0,
+        )
+        .ok(),
+        _ => None,
+    };
+
+    let mut app_win = AppWindow::new(geo.x, geo.y, geo.w, geo.h, title);
+    match kind {
+        SpawnKind::External => {
+            app_win
+                .surface_mut()
+                .push_line(alloc::format!("> {}", path));
+            app_win
+                .surface_mut()
+                .push_line(alloc::string::String::new());
+        }
+        SpawnKind::Terminal | SpawnKind::Explorer(_) => {
+            app_win
+                .surface_mut()
+                .push_line(alloc::string::String::new());
+        }
+    }
+    if let SpawnKind::Explorer(id) = kind {
+        app_win.explorer_id = Some(id);
+    }
+
+    // Empty path (test scaffolding) or an explorer fork failure still leaves
+    // a window behind; only a terminal without a pty aborts the whole spawn.
+    if kind_should_fork(kind, path) {
         match libsarga::process::fork() {
             Ok(0) => {
-                let _ = libsarga::process::execve(path, &[path], &[]);
+                // Child: set up its world, then exec. Exec failure exits.
+                match kind {
+                    SpawnKind::Terminal => {
+                        // pty slave becomes stdin/stdout/stderr, then sash.
+                        let _ = libsarga::io::dup2(slave, 0);
+                        let _ = libsarga::io::dup2(slave, 1);
+                        let _ = libsarga::io::dup2(slave, 2);
+                        let _ = libsarga::io::close(master);
+                        let _ = libsarga::io::close(slave);
+                        let _ = libsarga::process::execve(path, &[path], &[]);
+                    }
+                    SpawnKind::External => match ipc_pair {
+                        Some((server_fd, client_fd)) => {
+                            let _ = libsarga::io::close(server_fd);
+                            let fd_arg = alloc::format!("{}", client_fd);
+                            let argv = [path, "--ipc-fd", fd_arg.as_str()];
+                            let _ = libsarga::process::execve(path, &argv, &[]);
+                        }
+                        None => {
+                            let _ = libsarga::process::execve(path, &[path], &[]);
+                        }
+                    },
+                    SpawnKind::Explorer(_) => {
+                        let _ = libsarga::process::execve(path, &[path], &[]);
+                    }
+                }
                 libsarga::process::exit(1);
             }
             Ok(pid) => {
                 app_win.pid = Some(pid);
-                let app_idx = desktop
-                    .app_reg
-                    .find_by_exec(path)
-                    .map(|id| id.0)
-                    .unwrap_or(0);
-                desktop.lifecycle.register(pid, app_idx);
-                app_win
-                    .content
-                    .push(alloc::format!("[launched {} pid={}]", title, pid));
+                // One registration sequence for every spawned process.
+                desktop.session.lifecycle.register(pid);
+                desktop
+                    .permissions
+                    .register(pid, crate::sec::perms::default_grant());
+                desktop.session.lifecycle.mark_running(pid);
+                match kind {
+                    SpawnKind::Terminal => {
+                        let _ = libsarga::io::close(slave);
+                        // The seeded surface (first empty line) rides along.
+                        app_win.attach_terminal(master);
+                    }
+                    SpawnKind::External => {
+                        if let Some((server_fd, client_fd)) = ipc_pair {
+                            let _ = libsarga::io::close(client_fd);
+                            desktop.ipc_transport.register(pid, server_fd);
+                        }
+                        app_win.surface_mut().push_line(alloc::format!(
+                            "[launched {} pid={}]",
+                            title,
+                            pid
+                        ));
+                    }
+                    SpawnKind::Explorer(_) => {}
+                }
             }
             Err(e) => {
-                app_win.content.push(alloc::format!("[fork failed: {}]", e));
+                match kind {
+                    SpawnKind::Terminal => {
+                        // No window without a pty; free the fds and bail.
+                        let _ = libsarga::io::close(master);
+                        let _ = libsarga::io::close(slave);
+                        return;
+                    }
+                    SpawnKind::External => {
+                        if let Some((server_fd, client_fd)) = ipc_pair {
+                            let _ = libsarga::io::close(server_fd);
+                            let _ = libsarga::io::close(client_fd);
+                        }
+                        app_win
+                            .surface_mut()
+                            .push_line(alloc::format!("[fork failed: {}]", e));
+                    }
+                    SpawnKind::Explorer(_) => {}
+                }
             }
         }
     }
+
     let id = desktop.wm.create(app_win);
     if let Some(w) = desktop.wm.lookup_mut(id) {
         w.flags.opacity = 0;
         w.animate_to(w.x, w.y, w.w, w.h);
     }
-    desktop.services.notify("App Launched", title, 1, 120);
+    desktop
+        .services
+        .notify("App Launched", title, 1, 120, desktop.clock_ticks);
     desktop.damage.mark_full();
+}
+
+/// Whether a child process should be forked at all: every kind except an
+/// external app with an empty executable path (test scaffolding) forks.
+fn kind_should_fork(kind: SpawnKind, path: &str) -> bool {
+    match kind {
+        SpawnKind::External => !path.is_empty(),
+        SpawnKind::Terminal | SpawnKind::Explorer(_) => true,
+    }
 }

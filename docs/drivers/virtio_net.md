@@ -7,32 +7,36 @@ The VirtIO network driver provides networking for virtualized environments (QEMU
 VirtIO is a paravirtualized I/O framework. The guest OS communicates with the host through virtqueues: circular buffers of descriptors shared between guest and host.
 
 ```rust
-pub struct VirtQueue {
-    descriptors: DmaRing<VirtqDesc>,
-    available: DmaRing<VirtqAvail>,
-    used: DmaRing<VirtqUsed>,
-    num_free: u16,
-    free_head: u16,
+pub struct VirtIOQueue {
+    descriptors: VirtqDesc,   // descriptor ring
+    available: VirtqAvail,
+    used: VirtqUsed,
+    // ...
 }
 ```
 
-## Driver Initialization
+## Driver Implementation
 
-1. Reset the VirtIO device and negotiate features
-2. Allocate virtqueues for transmit and receive
-3. Provide receive buffers to the device
-4. Set MAC address and enable the device
+The driver lives at `kernel/kernel/src/drivers/net/virtio.rs`. Key types:
 
 ```rust
-pub fn init_virtio_net(pci: &PciDevice) -> Result<VirtioNetDriver, DriverError> {
-    let mut device = VirtioDevice::new(pci)?;
-    device.negotiate_features(VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)?;
-    let rx_queue = device.setup_queue(0, RX_QUEUE_SIZE)?;
-    let tx_queue = device.setup_queue(1, TX_QUEUE_SIZE)?;
-    device.finalize()?;
-    Ok(VirtioNetDriver { device, rx_queue, tx_queue })
+pub struct VirtIONet { /* virtqueue rings + device regs */ }
+impl VirtIONet {
+    pub fn new(base_addr: u16) -> Self;                 // MMIO BAR base
+    pub fn mac_address(&self) -> [u8; 6];
+    pub fn send_packet(&mut self, data: &[u8]);
+    pub fn receive_packet(&mut self) -> Option<Vec<u8>>;
 }
+pub struct VirtIONetDevice;  // impl smoltcp Device trait (RxToken/TxToken)
 ```
+
+The driver uses the **legacy I/O port transport** (`x86_64::Port` at the device's base I/O address) and adapts to smoltcp's `Device` trait for the net feature. Vendor/device IDs `0x1AF4:0x1000` identify VirtIO net devices during PCI enumeration.
+
+## Initialization
+
+1. `VirtIONet::new(io_base)` reads the VirtIO registers at the device's base I/O port
+2. `VirtIONetDevice` wraps the driver for smoltcp's `Device` trait
+3. smoltcp drives it through `RxToken`/`TxToken`
 
 ## Packet Transmission
 

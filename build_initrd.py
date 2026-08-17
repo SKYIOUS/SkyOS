@@ -39,6 +39,7 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/sysinfo':       'sysinfo',
         'bin/sysmon':        'sysmon',
         'bin/ade':           'ade',
+        'bin/skysettings':   'sargasettings',
         'bin/aicli':         'aicli',
         'bin/skystore':      'skystore',
         'bin/spkg':          'spkg',
@@ -51,6 +52,7 @@ def build_initrd(root_dir: str, output_path: str):
         'bin/pipe_signal_test':    'pipe_signal_test',
         'bin/perm_test':           'perm_test',
         'bin/dac_test':            'dac_test',
+        'bin/ipc_echo':            'ipc_echo',
     }
     for b in coreutils_bins:
         binaries[f'bin/{b}'] = b
@@ -172,7 +174,8 @@ HOSTNAME_CONTENT = "skyos\n"
 PASSWD_CONTENT = """root:x:0:0:root:/home/root:/bin/sash
 """
 
-SHADOW_CONTENT = """root:$6$rounds=5000$usesalt$:12000:0:99999:7:::
+# Dev login: user "root", password "skyos" (PBKDF2-HMAC-SHA256, salt SKYOSDESKTOPSALT, 10000 iters; salt must be 16 bytes for libsarga verify_password).
+SHADOW_CONTENT = """root:PBKDF2-534b594f534445534b544f5053414c54:49a40924d5952ca3cb66bc0200f2be5e063bf251704965667f02d8ee2b3ef252:10000:12000:0:99999:7:::
 """
 
 GROUP_CONTENT = """root:x:0:root
@@ -192,6 +195,11 @@ enabled = false
 INIT_TOML_CONTENT = """hostname = "skyos"
 
 [[service]]
+name = "vahid"
+exec = "/bin/vahid"
+respawn = true
+
+[[service]]
 name = "login-manager"
 exec = "/bin/login-manager"
 respawn = true
@@ -199,6 +207,11 @@ respawn = true
 [[service]]
 name = "svc"
 exec = "/bin/svc"
+respawn = true
+
+[[service]]
+name = "getty"
+exec = "/bin/login"
 respawn = true
 """
 

@@ -90,12 +90,10 @@ impl Widget for Slider {
     }
 
     fn handle_click(&mut self, x: i32, y: i32, pressed: bool) -> bool {
-        if y >= self.y && y < self.y + self.height as i32 {
-            if pressed {
-                self.dragging = true;
-                self.value = self.x_to_value(x as f32);
-                return true;
-            }
+        if y >= self.y && y < self.y + self.height as i32 && pressed {
+            self.dragging = true;
+            self.value = self.x_to_value(x as f32);
+            return true;
         }
         if !pressed {
             self.dragging = false;

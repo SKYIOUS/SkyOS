@@ -8,7 +8,7 @@
 #   3. sash          — shell
 #   4. init          — init process
 #   5. svc           — service manager
-#   6. skypkg        — package manager (needed for repo)
+#   6. spkg          — package manager (needed for repo)
 #   7. skybuild      — build tool (self-referential)
 #   8. terminal, mixer, clock — GUI applications
 #   9. repo          — generate local package repository
@@ -64,8 +64,8 @@ build_pkg svc
 install_pkg svc
 
 # Phase 5: Package management
-build_pkg skypkg
-install_pkg skypkg
+build_pkg spkg
+install_pkg spkg
 
 # Phase 6: Build tool
 build_pkg skybuild
@@ -90,4 +90,4 @@ skybuild repo "$REPO_DIR"
 echo ""
 echo "=== Build Complete ==="
 echo "Packages are in: $REPO_DIR"
-echo "To install from repo: skypkg install <name>"
+echo "To install from repo: spkg install <name>"

@@ -4,21 +4,13 @@ This page documents security features planned for future implementation.
 
 ## ASLR (Address Space Layout Randomization)
 
-ASLR randomizes the base addresses of memory regions in each process:
-- Stack base: Random offset within a 8 MiB range
-- Heap base: Random offset within a 4 GiB range
-- mmap base: Random offset within a 1 TiB range
-- Executable base (PIE): Random offset within a 4 GiB range
-- vDSO: Random address
+Partially implemented. Stack ASLR is real: `setup_user_stack()` in `task/process.rs` randomizes the stack base within a 64 MiB window below `0x7FFF_F000_0000` using RDTSC-based entropy.
 
-Implementation approach:
-```rust
-pub fn randomize_layout(process: &mut Process) {
-    let entropy = generate_entropy(64);
-    process.mmap_base = MMAP_MIN_ADDR + (entropy & 0x3FFFFF) * PAGE_SIZE;
-    process.stack_base = STACK_MAX_ADDR - (entropy >> 22 & 0x7FF) * PAGE_SIZE;
-}
-```
+Still planned:
+- Heap base randomization
+- mmap base randomization
+- Executable base (PIE) randomization
+- vDSO randomization
 
 ## KASLR (Kernel ASLR)
 
@@ -26,7 +18,7 @@ KASLR randomizes the kernel's base virtual address at boot time. The kernel imag
 
 ## Stack Canaries
 
-Compiler-inserted canary values on the stack detect buffer overflow:
+Already implemented — the kernel builds with `-Z stack-protector=strong` (both profiles), with `__stack_chk_guard`/`__stack_chk_fail` provided by the kernel. The compiler inserts canary checks:
 
 ```rust
 // Compiler generates:
@@ -46,7 +38,7 @@ Forward-edge CFI validates indirect function calls against a valid target list. 
 
 ## Mandatory Access Control (MAC)
 
-A SELinux-inspired MAC framework will allow system-wide security policies:
+A rule-based MAC (LSM) framework is already implemented — `security.rs` hooks file/socket/exec/mount/kill decisions. Future work extends it toward a SELinux-style policy engine:
 - Type enforcement for process-to-resource access
 - Role-based access control (RBAC)
 - Multi-level security (MLS)
@@ -54,7 +46,7 @@ A SELinux-inspired MAC framework will allow system-wide security policies:
 
 ## Audit Subsystem
 
-Comprehensive security event logging:
+A basic audit log already exists — `audit_log()` in `syscalls/mod.rs` records capability denials (mount, swapon/swapoff, chmod, kill, etc.). Future work adds comprehensive event logging:
 - Syscall audit trail (configurable per syscall)
 - File access monitoring
 - Process creation and termination tracking

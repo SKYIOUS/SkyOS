@@ -32,15 +32,18 @@ SkyOS defends against:
 
 - Hardware-enforced memory protection (paging, NX)
 - Process isolation (separate address spaces)
-- Capability-based resource access
+- Linux-compatible capability bitmask + per-object security descriptors/ACLs
+  (`objects/security.rs`)
+- Rule-based mandatory access control (LSM) with hooks in open/mkdir/socket/kill/mount/execve
+- Audit logging (`audit_log` on denied privileged operations)
 - Kernel memory protection (SMEP, SMAP)
 - Interrupt stack isolation (IST)
+- Driver isolation via kext `DriverObject` crash detection/restart
 
 ## Planned Security Features
 
 - ASLR and KASLR
 - Stack canaries
 - Control Flow Integrity
-- Signed kernel modules
-- Audit subsystem
-- Mandatory Access Control
+- Signed kernel modules (currently all drivers are built into the kernel)
+- Capability revocation

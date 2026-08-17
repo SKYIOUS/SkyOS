@@ -627,6 +627,7 @@ fn user_main() -> i32 {
 
         // Handle keyboard
         while let Some(k) = win.get_key() {
+            let k = k as u8;
             match k {
                 0x0E => {
                     // Ctrl+N — new tab
@@ -714,12 +715,11 @@ fn user_main() -> i32 {
 
         // Read from all PTYs
         let n_pages = pages.len();
-        for i in 0..n_pages {
-            let fd = pages[i].master_fd;
+        for page in pages.iter_mut().take(n_pages) {
+            let fd = page.master_fd;
             loop {
                 match read(fd, &mut read_buf) {
                     Ok(n) if n > 0 => {
-                        let page = &mut pages[i];
                         let term = &mut page.term;
                         let parser = &mut page.parser;
                         for &b in &read_buf[..n] {

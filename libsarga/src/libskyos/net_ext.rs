@@ -60,10 +60,10 @@ pub fn resolve(name: &str) -> Option<Ipv4Addr> {
 pub fn socket(domain: u64, type_: u64, protocol: u64) -> i64 {
     let ret =
         unsafe { crate::syscall::syscall3(crate::syscall::SYS_SOCKET, domain, type_, protocol) };
-    if (ret as i64) >= 0 {
-        ret as i64
+    if ret >= 0 {
+        ret
     } else {
-        -(ret as i64)
+        -ret
     }
 }
 
@@ -83,10 +83,10 @@ pub fn sendto(fd: i64, buf: &[u8], addr: &SocketAddrV4) -> i64 {
             8,
         )
     };
-    if (ret as i64) >= 0 {
-        ret as i64
+    if ret >= 0 {
+        ret
     } else {
-        -(ret as i64)
+        -ret
     }
 }
 
@@ -104,12 +104,12 @@ pub fn recvfrom(fd: i64, buf: &mut [u8]) -> (i64, Option<SocketAddrV4>) {
             &mut addrlen as *mut u32 as u64,
         )
     };
-    if (ret as i64) < 0 {
-        return (ret as i64, None);
+    if ret < 0 {
+        return (ret, None);
     }
     let ip = Ipv4Addr([raw[4], raw[5], raw[6], raw[7]]);
     let port = u16::from_be_bytes([raw[2], raw[3]]);
-    (ret as i64, Some(SocketAddrV4 { ip, port }))
+    (ret, Some(SocketAddrV4 { ip, port }))
 }
 
 /// Connect a socket to a remote address.
@@ -126,9 +126,9 @@ pub fn connect(fd: i64, addr: &SocketAddrV4) -> i64 {
             8,
         )
     };
-    if (ret as i64) >= 0 {
+    if ret >= 0 {
         0
     } else {
-        -(ret as i64)
+        -ret
     }
 }

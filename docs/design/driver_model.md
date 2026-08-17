@@ -1,48 +1,27 @@
 # Driver Model and Framework
 
-The SkyOS driver framework provides a structured approach to hardware device support.
+The SkyOS driver framework (`kernel/kernel/src/drivers/`) provides hardware device support. Drivers are compiled into the kernel; there is no loadable-module mechanism.
+
+## Driver Interfaces
+
+There is no single `DeviceDriver` trait. Hardware support is split across three interfaces:
+
+1. **`BlockDevice`** (`drivers/block/mod.rs`) — sector-addressable storage (`read_sector`/`write_sector`/`sector_count`). Registered via `register_block_device`, which wraps the device in a `BlockCache`. Mounted by VFS filesystems.
+2. **`VfsNode`** (`vfs/mod.rs`) — character/device nodes integrated into the VFS tree (framebuffer, input, etc.).
+3. **Kext framework** (`kext/`) — a Nub/Family registry for PCI/USB/platform device discovery (see `docs/api/driver_api.md`).
 
 ## Driver Lifecycle
 
-Drivers go through these stages:
-
-1. **Registration**: Driver calls `register_driver()` during kernel module initialization
-2. **Probe**: The driver framework matches drivers against discovered hardware devices
-3. **Init**: The driver allocates resources, sets up MMIO, and registers interrupt handlers
-4. **Operation**: The driver handles I/O requests and interrupts
-5. **Shutdown**: The driver releases resources and unregisters interrupts
-6. **Unregistration**: The driver is removed from the driver registry
+1. **Discovery**: PCI bus enumeration (`pci/`) finds devices and creates nubs (`PciDeviceNub`, `UsbDeviceNub`, `PlatformDeviceNub`). ACPI provides interrupt routing and power info (`kernel/kernel/src/acpi.rs`).
+2. **Matching**: `DriverFamily` implementations (`NetFamily`, `StorageFamily`, `GraphicsFamily`) match nubs by PCI class code.
+3. **Initialization**: `drivers::init()` boots serial and RTC; each subsystem (storage, net, graphics, gpu, usb, input, audio) initializes what it finds.
+4. **Operation**: Block devices serve VFS filesystem requests; char devices handle reads/writes; net drivers adapt to smoltcp's `Device` trait.
+5. **Shutdown**: `drivers::cleanup()` (serial/RTC) plus subsystem cleanup.
 
 ## Device Discovery
 
-PCI devices are discovered during boot through bus enumeration. ACPI tables provide additional device information and power management capabilities.
-
-```rust
-pub fn enumerate_pci_bus() -> Vec<PciDevice> {
-    let mut devices = Vec::new();
-    for bus in 0..256 {
-        for slot in 0..32 {
-            for func in 0..8 {
-                if let Some(device) = probe_pci_function(bus, slot, func) {
-                    devices.push(device);
-                }
-            }
-        }
-    }
-    devices
-}
-```
-
-## Driver Types
-
-Drivers can be:
-- **Built-in**: Compiled directly into the kernel binary
-- **Loadable modules**: Loaded at runtime from ELF shared objects (future)
+PCI devices are found via legacy configuration-port enumeration (`pci::enumerate_pci`), which walks buses and slots (recursively for bridges). Each function is probed; `vendor_id == 0xFFFF` means "absent". The kext framework turns discovered functions into nubs.
 
 ## DMA Support
 
-The framework provides DMA API for:
-- Allocation of DMA-capable buffers (contiguous physical memory)
-- Bus address translation (IOMMU if available)
-- Cache synchronization for coherent DMA
-- Scatter-gather list construction
+There is no centralized DMA API. Drivers access device memory through the physical-memory offset (`memory::physical_memory_offset()`) and I/O ports; block/network drivers manage their own buffers (e.g. the VirtIO queue rings in `drivers/net/virtio.rs`). No IOMMU/scatter-gather abstraction exists.

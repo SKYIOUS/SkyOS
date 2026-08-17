@@ -2,8 +2,6 @@
 //!
 //! Provides version comparison functionality for update checking.
 
-use alloc::string::String;
-
 /// Represents a semantic version (major.minor.patch)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
@@ -59,10 +57,11 @@ impl Version {
     pub fn is_less_than(&self, other: &Version) -> bool {
         self.compare(other) < 0
     }
+}
 
-    /// Convert to string
-    pub fn to_string(&self) -> String {
-        alloc::format!("{}.{}.{}", self.major, self.minor, self.patch)
+impl core::fmt::Display for Version {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
     }
 }
 

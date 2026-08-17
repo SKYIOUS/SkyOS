@@ -1,60 +1,28 @@
 # Memory Allocator Tests
 
-The memory subsystem has dedicated test suites for each allocator component.
+Memory allocator logic is tested two ways: host-side algorithm suites and in-kernel self-tests.
 
-## Page Frame Allocator Tests
+## Host-Side Buddy Allocator Suite
 
-```rust
-#[test_case]
-fn test_frame_alloc_exhaustion() {
-    // Allocate all frames, then verify allocation fails
-    let mut allocated = Vec::new();
-    while let Some(frame) = frame_alloc::allocate() {
-        allocated.push(frame);
-    }
-    assert!(frame_alloc::allocate().is_none());
+`tests/skyos-test-core/src/suites/kernel_alloc.rs` reimplements the kernel buddy algorithm and validates:
 
-    // Free all frames, verify allocation works again
-    for frame in allocated.drain(..) {
-        frame_alloc::deallocate(frame);
-    }
-    assert!(frame_alloc::allocate().is_some());
-}
-```
+- Single-page allocation
+- Allocate/free with buddy coalescing
+- Large block allocation (128 pages)
+- Exhaustion (allocation fails when out of memory)
+- Fragmentation (allocation succeeds after scattered frees)
+- Merge chains (freeing all pages coalesces back to one block)
 
-## Slab Allocator Tests
-
-- Single allocation and deallocation
-- Interleaved allocation patterns
-- Maximum capacity stress test
-- Alignment verification for all sizes (8, 16, 32, 64, ..., 2048)
-- Concurrent allocation from multiple threads
-
-## Buddy Allocator Tests
-
-- Power-of-two size allocation
-- Splitting and coalescing verification
-- Maximum allocatable block (entire heap)
-- Large fragmentation test
-
-## Virtual Memory Tests
-
-- Page table creation and mapping
-- Page protection changes (read/write/execute/none)
-- Large mapping (huge pages)
-- Mapping cleanup on process exit
-- Guard page protection
-
-## Memory Leak Detection
-
-The test framework tracks all allocations and verifies that:
-- All allocated memory is freed during cleanup
-- No double-frees occur
-- Free list integrity is maintained
-- Reference counts for shared mappings are correct
-
-## Running
+Run:
 
 ```bash
-cargo test --lib memory
+cargo run --manifest-path tests/skyos-test/Cargo.toml -- run --category kernel::alloc
 ```
+
+## Kernel Self-Test
+
+The kernel `self_test` feature registers allocator invariants that run at boot (e.g. `vfs::page_cache_basic` in `kernel/kernel/src/tests/new_features.rs`). Output is TAP; any `not ok` fails CI. See `docs/testing/unit_tests.md`.
+
+## Slab / Virtual Memory Tests
+
+No dedicated slab or VM test suite exists beyond the boot-time self-tests. There is no `cargo test --lib memory`.

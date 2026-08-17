@@ -1,0 +1,134 @@
+# Kernel GUI modifier delivery - A1..A4 (Design A), generated patch
+#
+# Source spec: ade/docs/kernel-gui-modifier-delivery.md (Design A).
+# Host-pinned bit layout (tests/test_login_flow.py::TestKernelKeyContract):
+#   low byte = char; bit8 = alt; bit9 = ctrl; bit10 = shift; bit11 = super.
+#   Ctrl+Alt+Backspace chord = 0x08 | (1<<8) | (1<<9) = 0x0308.
+#
+# A1: ctrl/shift tracker arms in gui_refresh_task (kernel/src/main.rs).
+# A2: Compositor ctrl_held/shift_held fields + init + 2 forward sites
+#     (kernel/src/gui/mod.rs).
+# A3: Window key_events VecDeque<u8> -> VecDeque<u16>, signature gains the
+#     four held-modifier bools, packing in the non-terminal Unicode arm
+#     (kernel/src/gui/window.rs).
+# A4: NO syscall change - sys_gui_get_key already does .map(|k| k as u64);
+#     u16 -> u64 is lossless (kernel/src/syscalls/mod.rs, untouched).
+#
+# Landing step: git apply --check passed; run a kernel `cargo check` after
+# applying - the two A2 forward sites rely on two-phase borrows
+# (self.windows[idx].handle_keyboard(key, self.alt_held, ...)), the canonical
+# xs[i].method(xs.field) pattern that compiles, but apply cannot prove types.
+# The packing debug_assert!(c as u32 <= 0xFF) pins the low-byte-char
+# assumption; US104 emits no char >= 0x100 today.
+#
+# Generate: python3 gen_kernel_patch.py
+# Verify:  cd 'SKYIOUS KERNEL' && git apply --check kernel-gui-modifier-delivery.patch
+#          (LF patch; verified against the CRLF worktree on Aug 12, 2026)
+# Apply:   git apply kernel-gui-modifier-delivery.patch
+
+diff --git a/kernel/src/main.rs b/kernel/src/main.rs
+--- a/kernel/src/main.rs
++++ b/kernel/src/main.rs
+@@ -439,6 +439,12 @@
+                 match scancode {
+                     0x38 => { comp.alt_held = true; }      // Left Alt make
+                     0xB8 => { comp.alt_held = false; }      // Left Alt break
++                    0x1D => { comp.ctrl_held = true; }     // Left Ctrl make
++                    0x9D => { comp.ctrl_held = false; }    // Left Ctrl break
++                    0x2A => { comp.shift_held = true; }    // Left Shift make
++                    0xAA => { comp.shift_held = false; }   // Left Shift break
++                    0x36 => { comp.shift_held = true; }    // Right Shift make
++                    0xB6 => { comp.shift_held = false; }   // Right Shift break
+                     0xE0 => { /* Extended prefix â€” next byte is the real scancode */ }
+                     0x5B => { comp.super_held = true; }     // Left Win make (after 0xE0)
+                     0xDB => { comp.super_held = false; }    // Left Win break (after 0xE0)
+diff --git a/kernel/src/gui/mod.rs b/kernel/src/gui/mod.rs
+--- a/kernel/src/gui/mod.rs
++++ b/kernel/src/gui/mod.rs
+@@ -49,6 +49,8 @@
+     pub notifications: Vec<Notification>,
+     pub alt_held: bool,
+     pub super_held: bool,
++    pub ctrl_held: bool,
++    pub shift_held: bool,
+     pub alt_tab_active: bool,
+     pub alt_tab_index: usize,
+     pub context_menu: ContextMenu,
+@@ -135,6 +137,8 @@
+             notifications: Vec::new(),
+             alt_held: false,
+             super_held: false,
++            ctrl_held: false,
++            shift_held: false,
+             alt_tab_active: false,
+             alt_tab_index: 0,
+             context_menu: ContextMenu {
+@@ -593,7 +597,10 @@
+                 }
+                 // Forward RawKey to focused window for non-character keys
+                 if let Some(idx) = self.focused_window() {
+-                    self.windows[idx].handle_keyboard(key);
++                    self.windows[idx].handle_keyboard(
++                        key, self.alt_held, self.ctrl_held,
++                        self.shift_held, self.super_held,
++                    );
+                 }
+             }
+             pc_keyboard::DecodedKey::Unicode(c) => {
+@@ -667,7 +674,10 @@
+                 }
+ 
+                 if let Some(idx) = self.focused_window() {
+-                    self.windows[idx].handle_keyboard(key);
++                    self.windows[idx].handle_keyboard(
++                        key, self.alt_held, self.ctrl_held,
++                        self.shift_held, self.super_held,
++                    );
+                 }
+             }
+         }
+diff --git a/kernel/src/gui/window.rs b/kernel/src/gui/window.rs
+--- a/kernel/src/gui/window.rs
++++ b/kernel/src/gui/window.rs
+@@ -23,7 +23,9 @@
+     pub saved_rect: Option<(usize, usize, usize, usize)>,
+     pub terminal: Option<crate::gui::terminal::TerminalWidget>,
+     pub file_manager: Option<crate::gui::filemanager::FileManagerWidget>,
+-    pub key_events: VecDeque<u8>,
++    /// Low byte = char; bits 8..11 = alt/ctrl/shift/super held. 0 never
++    /// queued (reserved: "empty" at the syscall).
++    pub key_events: VecDeque<u16>,
+     pub dirty: bool,
+ }
+ 
+@@ -187,7 +189,14 @@
+         }
+     }
+ 
+-    pub fn handle_keyboard(&mut self, key: pc_keyboard::DecodedKey) {
++    pub fn handle_keyboard(
++        &mut self,
++        key: pc_keyboard::DecodedKey,
++        alt: bool,
++        ctrl: bool,
++        shift: bool,
++        super_: bool,
++    ) {
+         if let Some(ref mut term) = self.terminal {
+             match key {
+                 pc_keyboard::DecodedKey::Unicode(c) => {
+@@ -204,7 +213,13 @@
+         } else {
+             match key {
+                 pc_keyboard::DecodedKey::Unicode(c) => {
+-                    self.key_events.push_back(c as u8);
++                    debug_assert!(c as u32 <= 0xFF);
++                    let mut bits = 0u16;
++                    if alt { bits |= 1 << 8; }
++                    if ctrl { bits |= 1 << 9; }
++                    if shift { bits |= 1 << 10; }
++                    if super_ { bits |= 1 << 11; }
++                    self.key_events.push_back(bits | c as u16);
+                 }
+                 pc_keyboard::DecodedKey::RawKey(_k) => {}
+             }

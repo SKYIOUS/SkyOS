@@ -4,7 +4,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use libsarga::posix::{WNOHANG, WUNTRACED};
+use libsarga::posix::WUNTRACED;
 use libsarga::println;
 use libsarga::signal::*;
 
@@ -80,6 +80,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
 
     if pid == 0 {
         // Child process
+        crate::reset_sigint_for_child();
         apply_redirections(cmd);
         if let Some(fd) = stdin {
             unsafe { libsarga::syscall::syscall2(33, fd as u64, 0) };
@@ -116,7 +117,7 @@ fn execute_command(cmd: &Command, stdin: Option<i64>, stdout: Option<i64>, bg: b
             }
             if r as u64 == pid {
                 if WIFSTOPPED(st) {
-                    let sig = WSTOPSIG(st);
+                    let _sig = WSTOPSIG(st);
                     crate::add_stopped_job(pid, "");
                     println!("\n[{}] {} Stopped", 0, pid);
                     return 0;
@@ -197,10 +198,16 @@ fn do_glob(pattern: &str) -> Vec<String> {
         }
         let mut offset = 0;
         while offset < n as usize {
+            if offset + 20 > n as usize {
+                break;
+            }
             let reclen_bytes = &buf[offset + 16..offset + 18];
             let reclen = u16::from_ne_bytes([reclen_bytes[0], reclen_bytes[1]]) as usize;
             let namelen_bytes = &buf[offset + 18..offset + 20];
             let namelen = u16::from_ne_bytes([namelen_bytes[0], namelen_bytes[1]]) as usize;
+            if offset + 20 + namelen > n as usize {
+                break;
+            }
             let name = core::str::from_utf8(&buf[offset + 20..offset + 20 + namelen]).unwrap_or("");
             if name != "." && name != ".." && glob_match(pat, name) {
                 let full = if dir == "." {
@@ -222,74 +229,8 @@ fn do_glob(pattern: &str) -> Vec<String> {
 }
 
 fn glob_match(pattern: &str, name: &str) -> bool {
-    let p: Vec<char> = pattern.chars().collect();
-    let n: Vec<char> = name.chars().collect();
-    glob_match_inner(&p, &n, 0, 0)
-}
-
-fn glob_match_inner(p: &[char], n: &[char], pi: usize, ni: usize) -> bool {
-    if pi >= p.len() {
-        return ni >= n.len();
-    }
-    match p[pi] {
-        '*' => {
-            if pi + 1 >= p.len() {
-                return true;
-            }
-            let mut j = ni;
-            while j <= n.len() {
-                if glob_match_inner(p, n, pi + 1, j) {
-                    return true;
-                }
-                j += 1;
-            }
-            false
-        }
-        '?' => ni < n.len() && glob_match_inner(p, n, pi + 1, ni + 1),
-        '[' => {
-            // Character class [...]
-            if ni >= n.len() {
-                return false;
-            }
-            let c = n[ni];
-            let mut j = pi + 1;
-            if j >= p.len() {
-                return false;
-            }
-            let negate = if p[j] == '!' {
-                j += 1;
-                true
-            } else {
-                false
-            };
-            let mut matched = false;
-            while j < p.len() && p[j] != ']' {
-                if j + 2 < p.len() && p[j + 1] == '-' && p[j + 2] != ']' {
-                    if c >= p[j] && c <= p[j + 2] {
-                        matched = true;
-                    }
-                    j += 3;
-                } else {
-                    if c == p[j] {
-                        matched = true;
-                    }
-                    j += 1;
-                }
-            }
-            if negate {
-                matched = !matched;
-            }
-            if !matched {
-                return false;
-            }
-            // Skip to after ]
-            while j < p.len() && p[j] != ']' {
-                j += 1;
-            }
-            glob_match_inner(p, n, j + 1, ni + 1)
-        }
-        c => ni < n.len() && n[ni] == c && glob_match_inner(p, n, pi + 1, ni + 1),
-    }
+    // ponytail: glob-matcher treats '/' as a separator in `*`; entry names never contain it
+    glob_matcher::glob_match(pattern, name)
 }
 
 fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
@@ -306,14 +247,19 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
 
     for (i, cmd) in commands.iter().enumerate() {
         let mut pipe_write: Option<i64> = None;
+        let mut pipe_read: Option<i64> = None;
 
         if i < n - 1 {
             let mut fds = [0i64; 2];
             let r = unsafe { libsarga::syscall::syscall1(22, fds.as_mut_ptr() as u64) };
             if r != 0 {
                 println!("sash: pipe failed");
+                if let Some(fd) = prev_read {
+                    let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
+                }
                 return -1;
             }
+            pipe_read = Some(fds[0]);
             pipe_write = Some(fds[1]);
         }
 
@@ -326,6 +272,12 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
             Ok(p) => p,
             Err(_) => {
                 println!("sash: fork failed");
+                if let Some(fd) = prev_read {
+                    let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
+                }
+                if let Some(fd) = pipe_write {
+                    let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
+                }
                 return -1;
             }
         };
@@ -363,7 +315,7 @@ fn execute_pipeline(commands: &[Command], bg: bool) -> i64 {
         }
 
         children.push(pid);
-        prev_read = if i < n - 1 { stdin } else { None };
+        prev_read = pipe_read;
     }
 
     if bg {
@@ -441,7 +393,9 @@ pub fn capture_output(cmd_str: &str) -> String {
         unsafe {
             libsarga::syscall::syscall1(1, 1);
         }
-        loop {}
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     let _ = unsafe { libsarga::syscall::syscall1(3, fds[1] as u64) };

@@ -5,9 +5,9 @@ This page describes the process for submitting pull requests to the SkyOS projec
 ## Before Submitting
 
 1. Ensure your code compiles: `cargo check --release`
-2. Run the test suite: `cargo test --lib`
+2. Run host-side suites: `cargo run --manifest-path tests/skyos-test/Cargo.toml -- run`
 3. Run the linter: `cargo clippy --all-targets`
-4. Run integration tests: `cargo test --test integration`
+4. Run the boot gate: `./tests/qemu_boot.sh`
 5. Review your changes with `git diff` to ensure no unintended changes
 
 ## PR Guidelines

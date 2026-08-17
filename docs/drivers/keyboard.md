@@ -1,51 +1,33 @@
 # Keyboard Driver
 
-The PS/2 keyboard driver handles scancode translation and input event generation.
+The keyboard driver handles scancode input and distribution to the shell and GUI.
+
+## Scancode Capture
+
+PS/2 IRQ1 pushes raw scancodes into the driver. The entry point is `kernel/kernel/src/keyboard.rs` (`handle_scancode`), which forwards to `task/keyboard.rs`.
+
+## Scancode Queues (`task/keyboard.rs`)
+
+```rust
+pub fn add_scancode(scancode: u8);        // push to both queues, wake the stream
+pub fn try_pop_scancode() -> Option<u8>;  // non-blocking pop for the GUI compositor
+pub struct ScancodeStream;                // async Stream<Item = u8> for the shell
+```
+
+Every scancode is pushed to **two** queues:
+- `SCANCODE_QUEUE` — consumed by the shell via the async `ScancodeStream` (registered with a `Waker` so the executor wakes on input)
+- `GUI_SCANCODE_QUEUE` — polled non-blockingly by the GUI/compositor via `try_pop_scancode`
+
+If the shell queue is full, the scancode is dropped with a warning.
+
+## Scancode Decoding
+
+Decoding to keys is done with the `pc_keyboard` crate by consumers (the compositor and window input handler), e.g. `pc_keyboard::DecodedKey::RawKey(...)` / `Unicode(...)`. Modifier keys (alt, etc.) are tracked by the compositor to enable shortcuts (e.g. Alt+F4).
 
 ## Scancode Sets
 
-The driver supports scancode set 1 (default after reset). Each key press generates a make code, and each release generates a break code (0x80 + make code).
+Scancodes are the standard PS/2 set-1 make/break codes produced by the 8042 keyboard device (break code = 0x80 + make code). No in-kernel keymap table exists; decoding is deferred to `pc_keyboard`.
 
-```rust
-pub enum KeyEvent {
-    Pressed { key: KeyCode, modifiers: ModifierState },
-    Released { key: KeyCode, modifiers: ModifierState },
-}
-```
+## LED / Typematic
 
-## Modifier Tracking
-
-The driver maintains modifier state:
-
-```rust
-pub struct ModifierState {
-    pub shift: bool,
-    pub ctrl: bool,
-    pub alt: bool,
-    pub gui: bool,  // Windows/Command key
-    pub caps_lock: bool,
-    pub num_lock: bool,
-    pub scroll_lock: bool,
-}
-```
-
-## Keyboard Layout
-
-The driver includes a basic US QWERTY layout. Layout support is implemented through a keymap table that maps scancodes to character values based on modifier state. Future versions will support loadable keymap files.
-
-## Special Keys
-
-Extended scancodes (prefixed with 0xE0) are handled for:
-- Arrow keys
-- Home/End/Page Up/Page Down
-- Insert/Delete
-- Application keys (menu, sleep, power)
-- Multimedia keys (volume, play/pause)
-
-## Typematic Rate
-
-The driver configures the keyboard's typematic delay (0.5s) and repeat rate (30 characters/second). These can be adjusted through the `ioctl()` syscall.
-
-## LED Synchronization
-
-The driver updates keyboard LEDs (Caps Lock, Num Lock, Scroll Lock) by sending the `0xED` command with the LED state byte whenever the modifier state changes.
+No LED synchronization or typematic configuration is performed by the driver; the 8042 self-test/defaults are set during `ps2::init()` (see `docs/drivers/ps2.md`).

@@ -1,11 +1,99 @@
 #!/usr/bin/expect -f
 # QEMU integration test: boots ISO, logs in, runs commands, checks output.
 # Usage: expect qemu_shell_test.exp <iso_path> [timeout_seconds]
+#
+# Dev credentials are baked into the initrd shadow by build_initrd.py
+# ("Dev login: user 'root', password 'skyos'").
+# All patterns are matched with -re (regex): expect's default glob matching
+# treats '|' as a literal character, so alternation silently never matched.
+#
+# PER-CHECK AUDIT (Aug 8, 2026) — every pattern verified against sources and
+# build_initrd.py, since the unmasked integration job gates PRs:
+#
+#   1 boot_login      "login:"          REAL  login/src/main.rs:102
+#   2 password_prompt "Password:"       REAL  login/src/main.rs:132
+#   3 shell_prompt    sash\[             REAL  sash default PS1 "sash[\w]> "
+#   4 ls_output       bin                REAL  initrd has bin/ (build_initrd.py)
+#   5 uname_output    Vahi|sarga-os      REAL  kernel sys_uname fills sysname="Vahi",
+#                                            nodename="sarga-os"; output is
+#                                            "Vahi sarga-os 0.3.0 ...". The old
+#                                            pattern "SkyOS|sarga" was DEAD: as a
+#                                            glob (expect's default), '|' is a
+#                                            literal, so it never matched anything.
+#   6 echo_output     HELLO_TEST         REAL  coreutils/src/echo.rs
+#   7 binaries        (?=.*\yinit\y)    REAL  all in the initrd binary map
+#                      (?=.*\ycat\y)           One zero-width lookahead asserts
+#                      (?=.*\ymkdir\y)         all three without consuming the
+#                                            buffer (sequential checks would eat
+#                                            'cat' before its turn). A plain
+#                                            alternation is vacuous — the leftover
+#                                            prompt "sash[...]> " matches "sash"
+#                                            before ls output arrives; sash is
+#                                            skipped since the shell proves it.
+#                                            Tcl ARE uses \\y (not \\b) for word
+#                                            boundaries.
+#  8 futex_test      /bin/futex_test    REAL  tests/thread_test builds it; the
+#                                            final line "PASS: cross-process futex
+#                                            wake succeeded" asserts the real
+#                                            path (the trivial "Test 1: ... PASS"
+#                                            line is not enough). The old
+#                                            "timeout 10" wrapper was DEAD:
+#                                            no timeout binary exists (not in
+#                                            coreutils_bins, no timeout.rs, not in
+#                                            sash builtins) - the command failed
+#                                            before futex_test ever ran.
+#   9 perm_test       /bin/perm_test     REAL  tests/thread_test builds it; prints
+#                                            "PASS: all permissions" on success.
+#                                            Same dead "timeout 10" wrapper removed.
+#  10 proc_output     proc|sys via ls /ctl REAL ctlFS replaced /proc + /sys
+#                                            (kernel/src/vfs/mod.rs mounts CtlFs at
+#                                            /ctl; ctlfs.rs has proc/ and sys/ dirs).
+#                                            The old "ls /proc" -> "self|uptime"
+#                                            was DEAD: /proc is an empty initrd
+#                                            directory, no self/uptime entries exist.
+#  11 ps_output       init|PID           REAL  ps.rs always prints the header and
+#                                            the init row (sysinfo + fallback arms).
+#  12 ctl_proc_list    PID\s+CWD\s+100   REAL  /ctl/proc/list (kernel/src/vfs/ctlfs.rs)
+#                                            prints a "PID CWD" header then one row
+#                                            per PROCESS_TABLE entry. cat (coreutils/
+#                                            src/cat.rs) opens + reads it; ps.rs uses
+#                                            the same read path. Asserting "pid 1"
+#                                            would be DEAD: user PIDs start at 100
+#                                            (kernel/src/task/process.rs NEXT_PROCESS_ID
+#                                            = 100), so init is always pid 100.
+#  13 mistype_reject   Login incorrect      REAL  login/src/main.rs:121 (console
+#                                            getty bad-creds print_str). Then a
+#                                            fresh "login:" prompt WITHOUT
+#                                            "[init] starting service: getty" between
+#                                            them — proving the getty re-prompts in
+#                                            place instead of exiting (the
+#                                            MAX_RESPAWNS guard).
+#  14 vahid_ready   \[vahid\] ready       REAL  vahid/src/main.rs:108 (single
+#                                            print_str; stable end of the
+#                                            healthy path, printed before the
+#                                            getty's login prompt - init spawns
+#                                            vahid first). Grepped from the
+#                                            accumulated expect buffer after
+#                                            'login:' (match_max raised so the
+#                                            early marker survives).
+#  15 mem_marker    \[login\] mem free=  REAL  login/src/main.rs (getty
+#                                            user_main startup, before the
+#                                            login loop: ctlFS /ctl/sys/mem/free
+#                                            buddy free-page read; the same
+#                                            marker login-manager prints before
+#                                            Window::create - the shell job
+#                                            collects the same OOM evidence the
+#                                            GUI gate does). Prints once per
+#                                            boot (the getty never exits).
 
 set iso [lindex $argv 0]
 set timeout [lindex $argv 1]
 if {$timeout == ""} { set timeout 120 }
 set logfile "qemu_integration_log.txt"
+# The logfile only takes effect when log_file activates it: without
+# this call the CI Verify step greps a file that is never written
+# (grep exits 2 -> the gate passes silently, vacuous green).
+log_file -noappend $logfile
 
 spawn qemu-system-x86_64 \
     -bios OVMF.fd \
@@ -15,13 +103,23 @@ spawn qemu-system-x86_64 \
     -serial mon:stdio \
     -device e1000,netdev=net0 -netdev user,id=net0
 
+# Keep the whole boot in the expect buffer (default match_max is 2000
+# bytes): the vahid-healthy check after 'login:' greps the ACCUMULATED log,
+# and '[vahid] ready' prints early in the boot (vahid is spawned first), so
+# without this bump the marker would have rolled out of the buffer by the
+# time the login prompt arrives.
+match_max 1000000
+
 set pass_count 0
 set fail_count 0
 
 proc check {name pattern action} {
     global pass_count fail_count
+    # expect_out is set by `expect` in THIS proc's scope; the caller greps
+    # the accumulated buffer after check returns, so it must be global.
+    global expect_out
     expect {
-        $pattern {
+        -re $pattern {
             set pass_count [expr {$pass_count + 1}]
             send_user "PASS: $name\n"
             eval $action
@@ -44,49 +142,132 @@ proc check {name pattern action} {
 send_user "=== Test 1: Boot to login prompt ===\n"
 check "boot_login" "login:" { }
 
-# Login as root
+# vahid-healthy assertion (Aug 10, 2026): the device manager must have
+# reached its healthy sleep loop BEFORE the console login came up (init
+# spawns vahid first). '[vahid] ready' is the stable end of vahid's healthy
+# path (vahid/src/main.rs:108). The check greps the accumulated expect
+# buffer from spawn (match_max 1000000 above, set at the top of the
+# harness), so a missing marker fails the
+# shell-interaction job exactly like it fails the GUI gate.
+if {[regexp -- {\[vahid\] ready} $expect_out(buffer)]} {
+    set pass_count [expr {$pass_count + 1}]
+    send_user "PASS: vahid_ready - device manager healthy in accumulated boot log\n"
+} else {
+    set fail_count [expr {$fail_count + 1}]
+    send_user "FAIL: vahid_ready - '\[vahid\] ready' missing from accumulated boot log\n"
+    exit 1
+}
+
+# Memory-pressure marker (Aug 12, 2026): the console getty prints the same
+# '[login] mem free=N pages' ctlFS read at startup that login-manager does
+# (login/src/main.rs, before the login loop; kernel buddy allocator free
+# count via /ctl/sys/mem/free). Grepped from the accumulated buffer like
+# vahid_ready, so the shell-interaction job collects the same per-boot OOM
+# evidence the GUI gate does (kernel-gui-window-fix.md Option 1 vs 2: free
+# near zero = persistent OOM -> Option 2; plenty free = transient -> Option 1).
+if {[regexp -- {\[login\] mem free=} $expect_out(buffer)]} {
+    set pass_count [expr {$pass_count + 1}]
+    send_user "PASS: mem_marker - getty printed the boot-time memory-pressure marker\n"
+} else {
+    set fail_count [expr {$fail_count + 1}]
+    send_user "FAIL: mem_marker - '\[login\] mem free=' missing from accumulated boot log\n"
+    exit 1
+}
+
+# Login as root / skyos. The password send is wrapped in log_user 0/1 so
+# expect does not echo the keystrokes into the CI log (the harness itself
+# was the leak — the guest never echoes: the kernel serial is TX-only and
+# login/read_line reads without writing back). Username is public; the
+# password is not.
+proc send_password {pw} {
+    log_user 0
+    send "$pw\r"
+    log_user 1
+}
+
 send "root\r"
 check "password_prompt" "Password:" { }
+# --- mistype re-prompt probe (Aug 10, 2026) ---
+# Submit a wrong password to prove the getty re-prompts in place
+# (login/src/main.rs loops on bad credentials; "Login incorrect" is
+# the console announce). The fresh "login:" must arrive WITHOUT a
+# "[init] starting service: getty" marker — the MAX_RESPAWNS guard.
+send_password "not-the-password"
+check "mistype_reject" "Login incorrect" { }
+expect {
+    "login: " { send_user "PASS: re-prompted in place (no getty respawn)\n" }
+    {\[init\] starting service: getty} {
+        send_user "FAIL: getty respawned after mistype (must re-prompt, not exit)\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: no fresh login prompt after mistype\n"
+        exit 1
+    }
+    eof {
+        send_user "FAIL: QEMU exited during re-prompt\n"
+        exit 1
+    }
+}
+# --- end mistype probe ---
+# Re-submit root + correct password after the mistype cleared the buffer.
 send "root\r"
-check "shell_prompt" {[$#] } { }
+check "password_prompt" "Password:" { }
+send_password "skyos"
+check "shell_prompt" {sash\[} { }
 
 # Test 2: ls /
 send_user "\n=== Test 2: ls / ===\n"
 send "ls /\r"
 check "ls_output" "bin" { }
 
-# Test 3: uname -a
+# Test 3: uname -a — kernel fills sysname="Vahi" / nodename="sarga-os"
+# (kernel/src/syscalls/mod.rs sys_uname); "SkyOS" is dead.
 send_user "\n=== Test 3: uname -a ===\n"
 send "uname -a\r"
-check "uname_output" "SkyOS|sarga" { }
+check "uname_output" "Vahi|sarga-os" { }
 
 # Test 4: echo
 send_user "\n=== Test 4: echo ===\n"
 send "echo HELLO_TEST\r"
 check "echo_output" "HELLO_TEST" { }
 
-# Test 5: ls /bin (check binary list)
+# Test 5: ls /bin (check binary list). One zero-width lookahead asserts all
+# three names are present without consuming the buffer (sequential checks
+# would eat 'cat' before its turn). Tcl ARE word boundary is \\y, not \\b;
+# sash is skipped - the running shell already proves it.
 send_user "\n=== Test 5: ls /bin ===\n"
 send "ls /bin\r"
-check "binaries" "sash|init|ls|cat|mkdir" { }
+check "binaries" {(?=.*\yinit\y)(?=.*\ycat\y)(?=.*\ymkdir\y)} { }
 
-# Test 6: /bin/futex_test
+# Test 6: /bin/futex_test (no "timeout 10" wrapper — no timeout binary
+# exists; the test self-terminates and the expect timeout bounds a hang).
 send_user "\n=== Test 6: futex_test ===\n"
-send "timeout 10 /bin/futex_test\r"
-check "futex_test_pass" "PASS|OK" { }
+send "/bin/futex_test\r"
+check "futex_test_pass" "PASS: cross-process" { }
 
-# Test 7: /bin/perm_test
+# Test 7: /bin/perm_test (same dead "timeout" wrapper removed).
 send_user "\n=== Test 7: perm_test ===\n"
-send "timeout 10 /bin/perm_test\r"
-check "perm_test_pass" "PASS" { }
+send "/bin/perm_test\r"
+check "perm_test_pass" "PASS: all permissions" { }
 
-# Test 8: Check /proc filesystem
-send_user "\n=== Test 8: ls /proc ===\n"
-send "ls /proc\r"
-check "proc_output" "self|uptime" { }
+# Test 8: Check ctlFS (replaced /proc + /sys; mounted at /ctl).
+send_user "\n=== Test 8: ls /ctl ===\n"
+send "ls /ctl\r"
+check "proc_output" "proc|sys" { }
 
-# Test 9: ps
-send_user "\n=== Test 9: ps ===\n"
+# Test 9: cat /ctl/proc/list — explicit ctlFS smoke check through a known
+# file (replaces the /proc that no longer exists). Asserts the PID header
+# AND init's row. init is pid 100 (user PIDs start at 100, NEXT_PROCESS_ID
+# in kernel/src/task/process.rs); PROCESS_TABLE is a BTreeMap so rows are
+# pid-ascending and init (100) is always the first data row: "   100 /".
+# \\s+ spans CR/LF, so the check survives either serial line ending.
+send_user "\n=== Test 9: cat /ctl/proc/list ===\n"
+send "cat /ctl/proc/list\r"
+check "ctl_proc_list" {PID\s+CWD\s+100} { }
+
+# Test 10: ps
+send_user "\n=== Test 10: ps ===\n"
 send "ps\r"
 check "ps_output" "init|PID" { }
 

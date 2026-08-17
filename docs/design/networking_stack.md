@@ -1,54 +1,26 @@
 # Network Stack Architecture
 
-The SkyOS network stack is a modular, multi-layer implementation designed for both performance and simplicity.
+The SkyOS network stack is built on the **smoltcp** library (feature `net`). There is no in-house TCP/IP implementation.
 
-## Layer Structure
+## Architecture
 
-The network stack follows the traditional layered model:
+- **Drivers** (`kernel/kernel/src/drivers/net/`): e1000 (`e1000.rs`) and VirtIO net (`virtio.rs`) adapt the NIC to smoltcp's `phy::Device` trait via `RxToken`/`TxToken` implementations.
+- **Interfaces**: The `net` module registers the driver device as the interface (IP configuration, MAC address).
+- **Protocols**: smoltcp provides ARP, IPv4/IPv6, TCP, UDP, ICMP, and DHCP (via the `socket-dhcpv4` feature for the management interface).
+- **Sockets**: The kernel socket API (syscalls 41–54) maps onto smoltcp socket types (TCP, UDP, ICMP). Sockets are tracked in the process fd table as `FileDescriptor::Socket`. See `docs/socket-api.md`.
 
-1. **Physical Layer**: Drivers (e1000, VirtIO-net) handle DMA and interrupt processing
-2. **Link Layer**: Ethernet framing and ARP for address resolution
-3. **Network Layer**: IPv4 routing and packet forwarding
-4. **Transport Layer**: TCP connection management and UDP datagram delivery
-5. **Socket Layer**: BSD socket API mapping to transport protocols
+## Syscall Surface
 
-## Socket API
-
-The socket API maps to the VFS layer. Sockets are represented as special file descriptors:
-
-```rust
-pub enum SocketDomain { IPv4, IPv6, Unix }
-pub enum SocketType { Stream, Dgram, Raw }
-pub enum SocketProtocol { Tcp, Udp, Icmp }
-```
-
-## TCP Implementation
-
-The TCP implementation includes:
-- Sliding window flow control
-- Nagle's algorithm for coalescing small packets
-- Fast retransmit and recovery
-- Selective ACK (SACK) support
-- Congestion control (CUBIC algorithm)
+- `socket`(41), `bind`(49), `connect`(42), `listen`(50), `accept`(43), `sendto`(44), `recvfrom`(45), `setsockopt`(54)
+- AF_INET=2, AF_INET6=10; `SOCK_RAW` gated on `CAP_NET_RAW`
+- Non-blocking semantics: timeouts via `SO_RCVTIMEO`/`SO_SNDTIMEO` are accepted but unused — sockets are non-blocking, with read/write returning `EAGAIN`.
 
 ## Packet Buffering
 
-Network buffers use a `mbuf`-style structure with shared ownership:
-
-```rust
-pub struct NetBuf {
-    data: Arc<Vec<u8>>,
-    offset: usize,
-    length: usize,
-    next: Option<Box<NetBuf>>,
-}
-```
-
-This structure supports zero-copy packet forwarding by adjusting offsets rather than copying data.
+Buffers are smoltcp-owned (`smoltcp::phy::Device` receive/transmit tokens). There is no kernel `mbuf`-style `NetBuf` structure.
 
 ## Future Plans
 
-- IPv6 support
+- WireGuard VPN integration
 - TCP offload engine (TOE) for capable NICs
 - Network stack virtualization for container networking
-- WireGuard VPN integration

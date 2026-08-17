@@ -12,9 +12,9 @@ fn user_main() -> i32 {
     let mut i = 1;
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
-        if arg.starts_with("-F") {
+        if let Some(stripped) = arg.strip_prefix("-F") {
             let f = if arg.len() > 2 {
-                &arg[2..]
+                stripped
             } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
@@ -47,7 +47,7 @@ fn user_main() -> i32 {
     let mut line_num: u64 = 0;
     for line in text.lines() {
         line_num += 1;
-        let fields: alloc::vec::Vec<&str> = line.split(|c| c == fs).collect();
+        let fields: alloc::vec::Vec<&str> = line.split(fs).collect();
         let matched = pattern.is_empty() || line.contains(pattern);
         if matched {
             if action.contains("print") || action.contains("print $0") {

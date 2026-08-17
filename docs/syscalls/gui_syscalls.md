@@ -1,70 +1,28 @@
 # GUI System Calls
 
-SkyOS provides kernel-level GUI operations through syscalls 300-306.
+SkyOS exposes an in-kernel compositor through GUI syscalls in the 100–105 and 120–126 ranges
+(see `kernel/src/syscalls/numbers.rs`). Each window is identified by a handle (an index into the
+compositor's window list).
 
-## skyos_create_window (syscall 300)
+| # | Name | Description |
+|---|------|-------------|
+| 100 | gui_create_window | Create a window (title, width, height) |
+| 101 | gui_get_buffer | Get window content size (packed width/height) |
+| 102 | gui_flush | Copy user buffer into window and render |
+| 103 | gui_map_buffer | Map the window framebuffer into user space |
+| 104 | beep | Emit a PC-speaker tone |
+| 105 | gui_get_key | Pop the next queued key event |
+| 120 | gui_get_mouse | Get mouse state relative to content area |
+| 121 | gui_set_title | Update the window title |
+| 122 | gui_destroy_window | Remove the window from the compositor |
+| 123 | gui_resize_window | Resize the window |
+| 124 | gui_move_window | Move the window |
+| 125 | clipboard | Read/write the compositor clipboard |
+| 126 | notify | Queue a desktop notification |
 
-```c
-int skyos_create_window(int x, int y, int width, int height, uint32_t flags);
-```
+Userspace applications normally call these through `libsarga::gui::Window` rather than issuing the
+syscalls directly. Full signatures, packed return formats, and the event-handling model are
+documented in `docs/api/gui_syscalls.md`.
 
-Creates a new window at the specified position and size. The window is initially hidden; the compositor makes it visible after the first buffer flush. Returns a window ID (positive integer) on success.
-
-**Flags**:
-- `WINDOW_RESIZABLE` (1): Window can be resized by the user
-- `WINDOW_BORDERLESS` (2): No window decorations
-- `WINDOW_TRANSPARENT` (4): Support alpha transparency
-- `WINDOW_FULLSCREEN` (8): Full-screen window
-
-## skyos_get_buffer (syscall 301)
-
-```c
-void *skyos_get_buffer(int window_id);
-```
-
-Returns a pointer to the window's framebuffer in the calling process's address space. The buffer is in BGRA32 format with 8 bits per channel (32 bits per pixel). The buffer size is `width * height * 4` bytes. Returns NULL if the window ID is invalid.
-
-## skyos_flush (syscall 302)
-
-```c
-int skyos_flush(int window_id, int x, int y, int width, int height);
-```
-
-Marks a rectangular region of the window as dirty and requests the compositor to update the display. The compositor may clip the rectangle to the window bounds.
-
-## skyos_map_buffer (syscall 303)
-
-```c
-void *skyos_map_buffer(size_t size, uint32_t flags);
-```
-
-Maps a GPU-accessible memory buffer. Used for hardware-accelerated rendering. The returned pointer is to write-combined memory that is coherent with the GPU.
-
-**Flags**:
-- `MAP_GPU_WRITE_COMBINE` (0): Write-combining for GPU writes
-- `MAP_GPU_UNCACHED` (1): Uncached for MMIO access
-- `MAP_GPU_LARGE_PAGES` (2): Use 2 MiB pages if available
-
-## skyos_get_display_info (syscall 304)
-
-```c
-int skyos_get_display_info(struct display_info *info);
-```
-
-Returns display properties: resolution, refresh rate, color depth, and physical size. Returns 0 on success.
-
-## skyos_set_cursor (syscall 305)
-
-```c
-int skyos_set_cursor(int window_id, int x, int y);
-```
-
-Sets the cursor position relative to the specified window. Used by the compositor to manage cursor state.
-
-## skyos_event_wait (syscall 306)
-
-```c
-int skyos_event_wait(struct input_event *events, int max_events, uint64_t timeout_ns);
-```
-
-Blocks until input events are available or the timeout expires. Returns the number of events read. Timeout of 0 returns immediately (non-blocking poll).
+There is no separate "display info", "set cursor", or "event wait" syscall; input is polled per
+frame via `gui_get_key` / `gui_get_mouse`, and display geometry is obtained from the ADE.

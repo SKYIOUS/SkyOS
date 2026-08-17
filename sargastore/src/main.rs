@@ -173,7 +173,7 @@ fn defaults() -> Vec<Pkg> {
     ]
 }
 
-fn load_metadata(pkgs: &mut Vec<Pkg>) {
+fn load_metadata(pkgs: &mut [Pkg]) {
     if let Ok(s) = io::read_to_string("/etc/packages.list") {
         let mut name = String::new();
         let mut version = String::new();
@@ -181,7 +181,7 @@ fn load_metadata(pkgs: &mut Vec<Pkg>) {
         let mut cat: Option<Cat> = None;
         let mut installed: Option<bool> = None;
         let mut section: Option<String> = None;
-        let mut flush = |name: &str,
+        let mut flush = |_name: &str,
                          version: &str,
                          desc: &str,
                          cat: Option<Cat>,
@@ -247,7 +247,7 @@ fn leak_str(s: &str) -> &'static str {
     core::str::from_utf8(leaked).unwrap_or("")
 }
 
-fn visible<'a>(pkgs: &'a [Pkg], cat: Cat, query: &str) -> Vec<usize> {
+fn visible(pkgs: &[Pkg], cat: Cat, query: &str) -> Vec<usize> {
     let q = query.trim().to_lowercase();
     pkgs.iter()
         .enumerate()
@@ -281,7 +281,7 @@ fn try_install(pkg: &Pkg) -> bool {
     let path = alloc::format!("/var/spkg/{}.skp", pkg.name);
     if io::stat(path.as_str()).is_ok() {
         let cmd = alloc::format!("/bin/spkg install {} 1", path);
-        if let Ok(_) = process::spawn(cmd.as_str()) {
+        if process::spawn(cmd.as_str()).is_ok() {
             return true;
         }
     }
@@ -321,6 +321,7 @@ fn user_main() -> i32 {
         let clicked = pressed && !prev_pressed;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x1B => {
                     if search_focus {
@@ -340,9 +341,7 @@ fn user_main() -> i32 {
                     }
                 }
                 0x48 | 0x26 => {
-                    if selected > 0 {
-                        selected -= 1;
-                    }
+                    selected = selected.saturating_sub(1);
                 }
                 0x50 | 0x28 => {
                     let vis = visible(&pkgs, sel_cat, &query);
@@ -400,7 +399,7 @@ fn user_main() -> i32 {
             let vis = visible(&pkgs, sel_cat, &query);
             for (rank, &idx) in vis.iter().enumerate() {
                 let y = LIST_TOP + rank as u32 * (CARD_H + CARD_PAD) - scroll;
-                if y >= LIST_TOP && y < LIST_BOT {
+                if (LIST_TOP..LIST_BOT).contains(&y) {
                     let bx = CARD_X + CARD_W - 90;
                     let by = y + (CARD_H - 28) / 2;
                     if in_rect(mx, my, bx, by, 80, 28) {
@@ -418,7 +417,7 @@ fn user_main() -> i32 {
 
         if let Some(idx) = installing {
             install_ticks += 1;
-            let pct = (install_ticks as u32 * 10).min(100);
+            let pct = (install_ticks * 10).min(100);
             status = alloc::format!("Installing {}... {}%", pkgs[idx].name, pct);
             if install_ticks >= 10 {
                 let ok = try_install(&pkgs[idx]);
@@ -547,7 +546,7 @@ fn user_main() -> i32 {
             let bt_y = y + (CARD_H - 28) / 2;
             if let Some(ii) = installing {
                 if ii == idx {
-                    let pw = (install_ticks * 8) as u32;
+                    let pw = install_ticks * 8;
                     win.draw_rounded_rect(bt_x, bt_y, 80, 28, 6, theme.bg_elevated);
                     win.draw_rounded_rect(bt_x, bt_y, pw, 28, 6, theme.accent);
                     win.draw_string(bt_x + 4, bt_y + 8, "...", theme.text, 0);

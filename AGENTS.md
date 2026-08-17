@@ -3,9 +3,9 @@
 ## Build & Run
 
 ```powershell
-python build_disk.py                          # full build (kernel → UEFI image → VDI)
-.\make_bootimage.ps1                          # kernel + UEFI image only
-python scripts/make_iso.py [version]          # create bootable .iso from bootimage (requires WSL + xorriso)
+python build_disk.py                          # full build (userspace → kernel → UEFI image → VDI)
+python build_disk.py --kernel-only            # kernel + UEFI image only (faster for kernel dev)
+python build_disk.py --iso --version 0.6.0    # full build + ISO output
 qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2
 qemu-system-x86_64 -bios OVMF.fd -cdrom release\skyos-<version>.iso -m 512M -smp 2 -nographic
 ```
@@ -16,6 +16,15 @@ qemu-system-x86_64 -bios OVMF.fd -cdrom release\skyos-<version>.iso -m 512M -smp
 - Heap at `0xFFFF_C000_0000_0000`, phys mem offset at `0xFFFF_8000_0000_0000`
 - `panic = "abort"` in both dev and release profiles
 - **No test harness** — `#![no_std]` + `#![no_main]`, no `#[test]`s found. Verification is manual/boot-time.
+- Selftest suite (`--features self_test`): registers ~91 tests, runs **once** in `kernel_main` (after `scheduler::init()`, before userland spawns). Gate: `py tests/boot_stress.py --tries 40` — fails on any `not ok`, panic, or stall.
+
+## QEMU Debugging Pitfalls (learned the hard way)
+
+- **Rebuild order matters**: `cargo build` must run in `kernel/kernel` (root CWD silently builds the wrong target → **stale bootimage probes**). After any kernel change: build → regen bootimage (`build_disk.build_bootimage` from repo root) → only then probe. `probe.py`/`probe2.py`/`timeline.py` live in `C:\Windows\TEMP\opencode\` (gdbstub attach; use `-smp 1`).
+- **"Hang at the slab poison loop" (`slab.rs` dealloc, 0xDE fill) is usually NOT a hang**: TCG on this host is slow and the 32MB ramdisk frees used to hold the allocator lock for seconds (now capped at 1MiB). Verify progress with two gdb snapshots ~20s apart (compare `rax`/offset) before assuming a deadlock. The allocator lock is held across the poison loop — never add allocations to IRQ paths (`tick`/`try_schedule`); `scheduler::init()` pre-reserves queue capacity so they don't allocate.
+- **Suite runs twice symptom**: if TAP numbers exceed 91 or test names repeat (+91 offset), `register_all()`/`run_all()` is duplicated in `main.rs` — `TESTS` is a global Vec that accumulates.
+- **`IrqSafeMutex` is non-reentrant** — nested `.lock()` self-deadlocks; compute `stat()`/lookups before taking the fs lock, not inside.
+- **`-smp 2` AP freezes at `mov cr4,eax` under TCG**: the trampoline used to write CR4.SMEP unconditionally; QEMU TCG (10.2.50 git build) never retires that instruction on an AP vCPU (verified via gdbstub: RIP frozen at 0x8034 across `stepi`, both MTTCG and `-accel tcg,thread=single`; BSP's identical write is fine because no other vCPU is active). Fixed by CPUID-gating SMEP in the trampoline (commit 5f7db52). QEMU's TCG still *claims* SMEP, so plain `-smp 2` still stalls — use `-cpu qemu64,-smep`: `py tests/boot_stress.py --smp 2 --cpu qemu64,-smep --timeout 120`. SMP-2 boots are slow (~2 min wall) and occasionally miss a 120s timeout under load; repeat if flaky.
 
 ## Project Structure
 

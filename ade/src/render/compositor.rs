@@ -9,10 +9,8 @@
 //! matches the CP437 glyphs used by libsarga's own `draw_char` so that text
 //! rendering stays pixel-identical to the previous direct-draw pipeline.
 
-use crate::core::damage::DamageTracker;
 use crate::core::geometry::Rect;
 use crate::render::layer::{Layer, LAYER_COUNT};
-use alloc::vec;
 use alloc::vec::Vec;
 
 // ── Pixel helpers ──────────────────────────────────────────────────────────
@@ -89,30 +87,6 @@ impl<'a> Canvas<'a> {
             for px in x0..x1 {
                 self.data[row + px] = alpha_blend(self.data[row + px], color, a);
             }
-        }
-    }
-
-    pub fn fill_rect_alpha(&mut self, x: u32, y: u32, rw: u32, rh: u32, color: u32) {
-        self.draw_rect_alpha(x, y, rw, rh, color);
-    }
-
-    /// Copy a rectangular region from a source buffer into this canvas at the
-    /// same position `(dst_x, dst_y)`.  Both buffers are row-major `u32` pixel
-    /// arrays; `src_w` is the source buffer's width in pixels.
-    pub fn copy_rect(&mut self, src: &[u32], src_w: u32, dst_x: u32, dst_y: u32, rw: u32, rh: u32) {
-        let x0 = dst_x.min(self.w);
-        let y0 = dst_y.min(self.h);
-        let x1 = (dst_x + rw).min(self.w);
-        let y1 = (dst_y + rh).min(self.h);
-        if x0 >= x1 || y0 >= y1 {
-            return;
-        }
-        let sw = self.w as usize;
-        for py in y0..y1 {
-            let off = py as usize * sw + x0 as usize;
-            let src_off = py as usize * src_w as usize + x0 as usize;
-            let count = (x1 - x0) as usize;
-            self.data[off..off + count].copy_from_slice(&src[src_off..src_off + count]);
         }
     }
 
@@ -214,6 +188,7 @@ impl<'a> Canvas<'a> {
         self.fill_rect(x, y, rw, rh, color);
     }
 
+    #[allow(clippy::too_many_arguments)] // public canvas API, matches sibling draw fns
     pub fn draw_gradient_rect(
         &mut self,
         x: u32,
@@ -525,7 +500,7 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn draw_shadow(&mut self, x: u32, y: u32, w: u32, h: u32, radius: u32, color: u32) {
-        let color_alpha = ((color >> 24) & 0xFF) as u32;
+        let color_alpha = (color >> 24) & 0xFF;
         if color_alpha == 0 || radius == 0 || w == 0 || h == 0 {
             return;
         }
@@ -542,115 +517,23 @@ impl<'a> Canvas<'a> {
             self.draw_rect_outline(sx, sy, sw, sh, col);
         }
     }
-
-    pub fn draw_rect_alpha_blend(&mut self, x: u32, y: u32, rw: u32, rh: u32, color: u32) {
-        let a = ((color >> 24) & 0xFF) as u8;
-        if a == 0 {
-            return;
-        }
-        if a == 255 {
-            self.fill_rect(x, y, rw, rh, color);
-            return;
-        }
-        let sw = self.w as usize;
-        let sh = self.h as usize;
-        let x0 = x.min(sw as u32) as usize;
-        let y0 = y.min(sh as u32) as usize;
-        let x1 = (x + rw).min(sw as u32) as usize;
-        let y1 = (y + rh).min(sh as u32) as usize;
-        for py in y0..y1 {
-            let row = py * sw;
-            for px in x0..x1 {
-                self.data[row + px] = alpha_blend(self.data[row + px], color, a);
-            }
-        }
-    }
-
-    pub fn box_blur(&self, buffer: &[u32], src_w: u32, src_h: u32, radius: u32) -> Vec<u32> {
-        let w = src_w as usize;
-        let h = src_h as usize;
-        let r = radius as usize;
-        if w == 0 || h == 0 || r == 0 {
-            return buffer.to_vec();
-        }
-        let mut tmp = vec![0u32; w * h];
-        let mut out = vec![0u32; w * h];
-        for y in 0..h {
-            for x in 0..w {
-                let x0 = if x >= r { x - r } else { 0 };
-                let x1 = (x + r + 1).min(w);
-                let mut r_sum = 0u64;
-                let mut g_sum = 0u64;
-                let mut b_sum = 0u64;
-                let cnt = (x1 - x0) as u64;
-                for kx in x0..x1 {
-                    let p = buffer[y * w + kx];
-                    r_sum += ((p >> 16) & 0xFF) as u64;
-                    g_sum += ((p >> 8) & 0xFF) as u64;
-                    b_sum += (p & 0xFF) as u64;
-                }
-                let rc = (r_sum / cnt) as u32;
-                let gc = (g_sum / cnt) as u32;
-                let bc = (b_sum / cnt) as u32;
-                tmp[y * w + x] = 0xFF000000 | (rc << 16) | (gc << 8) | bc;
-            }
-        }
-        for y in 0..h {
-            for x in 0..w {
-                let y0 = if y >= r { y - r } else { 0 };
-                let y1 = (y + r + 1).min(h);
-                let mut r_sum = 0u64;
-                let mut g_sum = 0u64;
-                let mut b_sum = 0u64;
-                let cnt = (y1 - y0) as u64;
-                for ky in y0..y1 {
-                    let p = tmp[ky * w + x];
-                    r_sum += ((p >> 16) & 0xFF) as u64;
-                    g_sum += ((p >> 8) & 0xFF) as u64;
-                    b_sum += (p & 0xFF) as u64;
-                }
-                let rc = (r_sum / cnt) as u32;
-                let gc = (g_sum / cnt) as u32;
-                let bc = (b_sum / cnt) as u32;
-                out[y * w + x] = 0xFF000000 | (rc << 16) | (gc << 8) | bc;
-            }
-        }
-        for y in 0..h {
-            for x in 0..w {
-                let x0 = if x >= r { x - r } else { 0 };
-                let x1 = (x + r + 1).min(w);
-                let mut r_sum = 0u64;
-                let mut g_sum = 0u64;
-                let mut b_sum = 0u64;
-                let cnt = (x1 - x0) as u64;
-                for kx in x0..x1 {
-                    let p = out[y * w + kx];
-                    r_sum += ((p >> 16) & 0xFF) as u64;
-                    g_sum += ((p >> 8) & 0xFF) as u64;
-                    b_sum += (p & 0xFF) as u64;
-                }
-                let rc = (r_sum / cnt) as u32;
-                let gc = (g_sum / cnt) as u32;
-                let bc = (b_sum / cnt) as u32;
-                tmp[y * w + x] = 0xFF000000 | (rc << 16) | (gc << 8) | bc;
-            }
-        }
-        tmp
-    }
 }
 
 // ── LayerBuffer ─────────────────────────────────────────────────────────────
 
 /// One compositor layer: an offscreen pixel buffer.
+#[derive(Default)]
 struct LayerBuffer {
     buf: Vec<u32>,
 }
 
 impl LayerBuffer {
-    fn new(pixels: usize) -> Self {
-        LayerBuffer {
-            buf: vec![0u32; pixels],
-        }
+    /// Allocate exactly `pixels` zeroed entries. Returns `Err(())` on OOM
+    /// instead of panicking through the global alloc error handler.
+    fn alloc(&mut self, pixels: usize) -> Result<(), ()> {
+        self.buf.try_reserve_exact(pixels).map_err(|_| ())?;
+        self.buf.resize(pixels, 0);
+        Ok(())
     }
 
     fn clear(&mut self) {
@@ -662,31 +545,29 @@ impl LayerBuffer {
 
 // ── Compositor ──────────────────────────────────────────────────────────────
 
-pub(crate) struct Compositor {
+pub struct Compositor {
     layers: [LayerBuffer; LAYER_COUNT],
     w: u32,
     h: u32,
-    pub damage: DamageTracker,
     first_frame: bool,
 }
 
 impl Compositor {
-    pub fn new(w: u32, h: u32) -> Self {
+    /// Returns `None` if any layer buffer allocation fails (OOM).
+    pub fn new(w: u32, h: u32) -> Option<Self> {
         let pixels = (w * h) as usize;
-        Compositor {
-            layers: [
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-                LayerBuffer::new(pixels),
-            ],
+        let mut layers: [LayerBuffer; LAYER_COUNT] = Default::default();
+        for l in layers.iter_mut() {
+            if l.alloc(pixels).is_err() {
+                return None;
+            }
+        }
+        Some(Compositor {
+            layers,
             w,
             h,
-            damage: DamageTracker::new(),
             first_frame: true,
-        }
+        })
     }
 
     /// Reset every layer buffer to transparent black.
@@ -696,76 +577,18 @@ impl Compositor {
         }
     }
 
-    /// Clear only the given rectangular regions in every layer buffer.
-    pub fn clear_region(&mut self, rects: &[Rect]) {
-        let sw = self.w as usize;
-        for r in rects {
-            let x0 = r.x.max(0) as usize;
-            let y0 = r.y.max(0) as usize;
-            let x1 = ((r.x + r.w as i32).min(self.w as i32)).max(0) as usize;
-            let y1 = ((r.y + r.h as i32).min(self.h as i32)).max(0) as usize;
-            if x0 >= x1 || y0 >= y1 {
-                continue;
-            }
-            for l in self.layers.iter_mut() {
-                for py in y0..y1 {
-                    let row = py * sw;
-                    for px in x0..x1 {
-                        l.buf[row + px] = 0;
-                    }
-                }
-            }
-        }
-    }
-
     /// Clear a single layer buffer.
-    pub fn clear_layer(&mut self, layer: Layer) {
+    pub(crate) fn clear_layer(&mut self, layer: Layer) {
         self.layers[layer as usize].clear();
     }
 
     /// Return a [`Canvas`] that writes into the given layer's buffer.
-    pub fn layer_canvas(&mut self, layer: Layer) -> Canvas<'_> {
+    pub(crate) fn layer_canvas(&mut self, layer: Layer) -> Canvas<'_> {
         let buf = &mut self.layers[layer as usize].buf;
         Canvas {
             data: buf.as_mut_slice(),
             w: self.w,
             h: self.h,
-        }
-    }
-
-    pub fn blur_region(&mut self, layer: Layer, rect: Rect, radius: u32) {
-        let rw = rect.w;
-        let rh = rect.h;
-        if rw == 0 || rh == 0 || radius == 0 {
-            return;
-        }
-        let sw = self.w as i32;
-        let sh = self.h as i32;
-        let x0 = rect.x.max(0) as u32;
-        let y0 = rect.y.max(0) as u32;
-        let x1 = (rect.x + rw as i32).min(sw).max(0) as u32;
-        let y1 = (rect.y + rh as i32).min(sh).max(0) as u32;
-        let cw = x1.saturating_sub(x0);
-        let ch = y1.saturating_sub(y0);
-        if cw == 0 || ch == 0 {
-            return;
-        }
-        let mut cv = self.layer_canvas(layer);
-        let mut region = vec![0u32; (cw * ch) as usize];
-        for dy in 0..ch {
-            let src_off = ((y0 + dy) * cv.w + x0) as usize;
-            let dst_off = (dy * cw) as usize;
-            for dx in 0..cw {
-                region[dst_off + dx as usize] = cv.data[src_off + dx as usize];
-            }
-        }
-        let blurred = cv.box_blur(&region, cw, ch, radius);
-        for dy in 0..ch {
-            let dst_off = ((y0 + dy) * cv.w + x0) as usize;
-            let src_off = (dy * cw) as usize;
-            for dx in 0..cw {
-                cv.data[dst_off + dx as usize] = blurred[src_off + dx as usize];
-            }
         }
     }
 
@@ -781,7 +604,7 @@ impl Compositor {
     pub fn compose(&mut self, win: &mut libsarga::gui::Window, damage_rects: Option<&[Rect]>) {
         let dst = win.buffer_mut();
         let total = (self.w * self.h) as usize;
-        let full = self.first_frame || damage_rects.map_or(true, |r| r.is_empty());
+        let full = self.first_frame || damage_rects.is_none_or(|r| r.is_empty());
         self.first_frame = false;
 
         if full {

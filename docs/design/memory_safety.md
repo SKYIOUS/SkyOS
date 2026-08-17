@@ -10,18 +10,23 @@ Kernel code must manipulate hardware registers, construct page tables, and manag
 
 ### 1. Encapsulation
 
-Unsafe operations are wrapped in safe abstractions. For example, page table manipulation is exposed through a `PageTable` type that guarantees:
+Unsafe operations are wrapped in safe abstractions. Page mapping is exposed through the `x86_64` crate's `OffsetPageTable` plus thin kernel wrappers (`memory/virt.rs`):
 
 ```rust
-impl PageTable {
-    /// Safety: The caller must ensure `phys_addr` is a valid mapped frame
-    pub unsafe fn map_page(&mut self, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) -> Result<()>;
-    
-    // Safe wrapper
-    pub fn allocate_and_map(&mut self, virt: VirtAddr, size: usize) -> Result<()> {
-        let frame = frame_allocator::allocate(size)?;
-        unsafe { self.map_page(virt, frame.addr(), PageFlags::READABLE | PageFlags::WRITABLE) }
-    }
+// memory/virt.rs
+pub unsafe fn map_contiguous(
+    mapper: &mut OffsetPageTable,
+    virt_start: VirtAddr,
+    phys_start: PhysAddr,
+    page_count: u64,
+    flags: Flags,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+) {
+    // for each page: mapper.map_to(page, frame, flags, frame_allocator)
+}
+
+pub fn map_device(phys_addr: PhysAddr, _size: u64) -> VirtAddr {
+    // returns PHYSICAL_MEMORY_OFFSET + phys_addr
 }
 ```
 
@@ -40,13 +45,10 @@ fn read_u32(ptr: *const u32) -> u32 {
 }
 ```
 
-### 4. KASAN Integration
-
-The Kernel Address Sanitizer detects use-after-free and out-of-bounds accesses in debug builds by maintaining shadow memory that tracks allocation status.
-
-### 5. Type System Enforcement
+### 4. Type System Enforcement
 
 The type system prevents common errors:
 - `PhysFrame` vs `VirtAddr`: Different types prevent address space confusion
-- `MappedPages` vs `UnmappedPages`: State transitions are enforced at compile time
-- `IoPort` vs `MmioRegion`: Different access methods are type-checked
+- `Port<T>` for I/O ports vs raw MMIO access: access methods are type-checked
+
+There is no KASAN. Runtime safety relies on the checks above plus the allocator/guard-page mechanisms described in `docs/security/memory_protection.md`.

@@ -23,8 +23,8 @@ fn user_main() -> i32 {
         }
     }
     let mut exit_code = 0;
-    for i in 0..count {
-        if let Some(path) = dirs[i] {
+    for item in dirs.iter().take(count) {
+        if let Some(path) = *item {
             let mut path_c = String::from(path);
             path_c.push('\0');
             if parent {

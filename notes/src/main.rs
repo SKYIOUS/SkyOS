@@ -15,7 +15,7 @@ fn user_main() -> i32 {
     notes.push(String::from("- Fast and secure"));
 
     loop {
-        while let Some(_) = win.get_key() {}
+        while win.get_key().is_some() {}
 
         win.clear(theme.bg_primary);
         win.draw_gradient_rect(0, 0, 150, 400, theme.bg_surface, theme.bg_primary, false);

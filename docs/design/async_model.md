@@ -1,49 +1,38 @@
 # Async/Await Execution Model Design
 
-SkyOS uses Rust's async/await for all kernel operations, from syscall handling to driver I/O.
+SkyOS uses Rust's async/await for select kernel operations, driven by a single cooperative executor.
 
 ## Why Async?
 
-Traditional kernel threading models use preemptive multitasking with blocking I/O. This has several drawbacks:
-- Thread stacks consume significant memory (typically 4-16 KiB each)
-- Context switches are expensive (~1-10 microseconds)
-- Synchronization is complex and error-prone
+- Stackless coroutines (state machines) instead of full thread stacks
+- Context switches only at explicit yield points
+- Simplifies I/O waits that would otherwise need dedicated blocking threads
 
-The async model addresses these issues by:
-- Using stackless coroutines (state machines) instead of full thread stacks
-- Performing context switches only at explicit yield points
-- Eliminating most locking through single-threaded execution within tasks
+The general kernel (syscall handling, drivers, filesystem I/O) remains synchronous threaded code; async is used where a waiting task maps naturally onto a `Future` (e.g. the shell's scancode stream).
 
-## The Executor
+## The Executor (`task/executor.rs`)
 
-Each CPU core runs an independent async executor. The executor polls tasks in a loop, advancing each task's state machine until it returns `Poll::Pending`. When a task blocks, the executor parks it and polls other tasks.
+A single `Executor` runs in a **dedicated kernel thread** (`run_async_tasks`, spawned from `main.rs` via `task::scheduler::spawn`). It is not per-CPU.
 
 ```rust
+pub struct Executor { /* tasks: HashMap<TaskId, Task>, ready_queue: ArrayQueue<TaskId> */ }
 impl Executor {
-    pub fn block_on<T>(&self, future: impl Future<Output = T>) -> T {
-        pin_mut!(future);
-        loop {
-            if let Poll::Ready(result) = future.as_mut().poll(&mut Context::from_waker(&waker)) {
-                return result;
-            }
-            // Park if no progress
-        }
-    }
+    pub fn new() -> Self;
+    pub fn spawn(&mut self, task: Task) -> Result<(), &'static str>;
+    pub fn run(&mut self) -> !;  // run_ready_tasks(); sleep_if_idle();
 }
 ```
 
-## Non-blocking Drivers
+Tasks are woken by `Waker`s pushed onto the `ready_queue` (`ArrayQueue`); `run()` pops them, polls each to `Poll::Pending`, and sleeps when idle.
 
-Drivers use async operations for I/O. A disk read, for example, submits the request, returns `Pending`, and is woken when the DMA transfer completes:
+## Async Keyboard Stream
 
-```rust
-async fn read_block(&self, block: u64) -> Result<Block> {
-    self.submit_request(block).await?;
-    let result = self.wait_for_completion().await?;
-    Ok(result)
-}
-```
+`task/keyboard.rs` exposes `ScancodeStream` (a `futures_util::Stream`) that yields scancodes to the shell, registering a `Waker` when empty and waking on input. This is the canonical async consumer.
 
 ## Interrupt to Async Bridge
 
-Interrupt handlers convert hardware events into async wakeups. When an interrupt fires, the handler places a notification in the relevant driver's event queue and wakes the driver's task via its waker.
+Interrupt-driven sources (e.g. PS/2 scancodes) push onto lock-free queues and wake the executor's waker rather than doing work in interrupt context.
+
+## Driver I/O
+
+Drivers are **not** async — block devices (`BlockDevice`), network tokens, and storage I/O are synchronous. The async executor is for kernel-internal event streams, not a general driver I/O model.

@@ -10,7 +10,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use libsarga::args;
 use libsarga::io::{self, close, getdents64, open};
-use libsarga::process::{execve, exit, fork, kill, wait};
+use libsarga::process::{execve, exit, fork, kill, waitpid};
 use libsarga::sarga_main;
 
 fn eprint(s: &str) {
@@ -80,8 +80,7 @@ fn cmd_start(path: &str) {
             exit(1);
         }
         Ok(pid) => {
-            let _ = wait(pid);
-            eprint("[svc] started\n");
+            eprint(&alloc::format!("[svc] started PID {}\n", pid));
         }
         Err(_) => eprint("[svc] fork failed\n"),
     }
@@ -90,10 +89,26 @@ fn cmd_start(path: &str) {
 fn cmd_stop(path: &str) {
     let procs = format_pid_list();
     for (pid, cmd) in &procs {
-        if cmd == path {
+        if cmd == path || cmd.ends_with(path) {
+            eprint(&alloc::format!("[svc] stopping PID {}...\n", pid));
             let _ = kill(*pid as i64, 15);
-            let _ = wait(*pid);
-            eprint("[svc] stopped\n");
+            let mut stopped = false;
+            for _ in 0..50 {
+                if let Ok((reaped, _)) = waitpid(*pid as i64, 1) {
+                    if reaped != 0 {
+                        stopped = true;
+                        break;
+                    }
+                }
+                let _ = io::nanosleep(100_000_000);
+            }
+            if stopped {
+                eprint("[svc] stopped\n");
+            } else {
+                let _ = kill(*pid as i64, 9);
+                let _ = waitpid(*pid as i64, 0);
+                eprint("[svc] stopped (SIGKILL after timeout)\n");
+            }
             return;
         }
     }

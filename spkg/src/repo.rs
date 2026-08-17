@@ -24,15 +24,25 @@ pub fn load_repos() -> Vec<RepoConfig> {
         Ok(s) => s,
         Err(_) => return repos,
     };
-    let mut current = RepoConfig { name: String::new(), url: String::new(), enabled: false };
+    let mut current = RepoConfig {
+        name: String::new(),
+        url: String::new(),
+        enabled: false,
+    };
     let mut in_section = false;
     for line in data.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if line.starts_with('[') && line.ends_with(']') {
             if in_section && !current.name.is_empty() {
                 repos.push(current);
-                current = RepoConfig { name: String::new(), url: String::new(), enabled: false };
+                current = RepoConfig {
+                    name: String::new(),
+                    url: String::new(),
+                    enabled: false,
+                };
             }
             let section = &line[1..line.len() - 1];
             current.name = section.rsplit('.').next().unwrap_or(section).to_string();
@@ -41,11 +51,17 @@ pub fn load_repos() -> Vec<RepoConfig> {
             if let Some(eq) = line.find('=') {
                 let key = line[..eq].trim();
                 let val = line[eq + 1..].trim().trim_matches('"');
-                match key { "url" => current.url = val.to_string(), "enabled" => current.enabled = val == "true", _ => {} }
+                match key {
+                    "url" => current.url = val.to_string(),
+                    "enabled" => current.enabled = val == "true",
+                    _ => {}
+                }
             }
         }
     }
-    if in_section && !current.name.is_empty() { repos.push(current); }
+    if in_section && !current.name.is_empty() {
+        repos.push(current);
+    }
     repos
 }
 
@@ -68,7 +84,8 @@ pub fn fetch_and_cache_index(repo: &RepoConfig) -> Result<Vec<RepoIndexEntry>, &
 
 pub fn load_cached_index(repo_name: &str) -> Result<Vec<RepoIndexEntry>, &'static str> {
     let cache_path = alloc::format!("/var/spkg/cache/{}.toml", repo_name);
-    let data = libsarga::io::read_to_string(&cache_path).map_err(|_| "no cache, run spkg update first")?;
+    let data =
+        libsarga::io::read_to_string(&cache_path).map_err(|_| "no cache, run spkg update first")?;
     parse_index(&data)
 }
 
@@ -78,21 +95,55 @@ pub fn parse_index(data: &str) -> Result<Vec<RepoIndexEntry>, &'static str> {
     let mut entries = Vec::new();
     for table in tables {
         let mut e = RepoIndexEntry {
-            name: String::new(), version: String::new(), description: String::new(),
-            dependencies: Vec::new(), filename: String::new(), hash: String::new(),
+            name: String::new(),
+            version: String::new(),
+            description: String::new(),
+            dependencies: Vec::new(),
+            filename: String::new(),
+            hash: String::new(),
         };
-        for (k, v) in &*table {
+        for (k, v) in table {
             match k.as_str() {
-                "name" => { if let TomlValue::String(s) = v { e.name = s.clone(); } }
-                "version" => { if let TomlValue::String(s) = v { e.version = s.clone(); } }
-                "description" => { if let TomlValue::String(s) = v { e.description = s.clone(); } }
-                "dependencies" => { if let TomlValue::Array(arr) = v { for item in arr { if let TomlValue::String(s) = item { e.dependencies.push(s.clone()); } } } }
-                "filename" => { if let TomlValue::String(s) = v { e.filename = s.clone(); } }
-                "hash" => { if let TomlValue::String(s) = v { e.hash = s.clone(); } }
+                "name" => {
+                    if let TomlValue::String(s) = v {
+                        e.name = s.clone();
+                    }
+                }
+                "version" => {
+                    if let TomlValue::String(s) = v {
+                        e.version = s.clone();
+                    }
+                }
+                "description" => {
+                    if let TomlValue::String(s) = v {
+                        e.description = s.clone();
+                    }
+                }
+                "dependencies" => {
+                    if let TomlValue::Array(arr) = v {
+                        for item in arr {
+                            if let TomlValue::String(s) = item {
+                                e.dependencies.push(s.clone());
+                            }
+                        }
+                    }
+                }
+                "filename" => {
+                    if let TomlValue::String(s) = v {
+                        e.filename = s.clone();
+                    }
+                }
+                "hash" => {
+                    if let TomlValue::String(s) = v {
+                        e.hash = s.clone();
+                    }
+                }
                 _ => {}
             }
         }
-        if !e.name.is_empty() && !e.version.is_empty() { entries.push(e); }
+        if !e.name.is_empty() && !e.version.is_empty() {
+            entries.push(e);
+        }
     }
     Ok(entries)
 }

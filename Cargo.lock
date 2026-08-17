@@ -6,7 +6,9 @@ version = 4
 name = "ade"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "libsarga",
+ "libskyaudio",
 ]
 
 [[package]]
@@ -30,6 +32,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "bitflags"
+version = "2.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+
+[[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "calculator"
 version = "0.1.0"
 dependencies = [
@@ -44,6 +67,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfg-if"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
 name = "clock"
 version = "0.1.0"
 dependencies = [
@@ -54,7 +83,29 @@ dependencies = [
 name = "coreutils"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "libsarga",
+ "md-5",
+ "miniz_oxide",
+]
+
+[[package]]
+name = "crypto-common"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
+dependencies = [
+ "block-buffer",
+ "crypto-common",
 ]
 
 [[package]]
@@ -62,6 +113,27 @@ name = "font8x8"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e"
+
+[[package]]
+name = "glob-matcher"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "464c48cc775f1b72d181e9b8b98d8231b2df1550b627e62bb63a172972e9a67c"
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "707114b52a152fa7bdb290cd7cd5912d9467273b6d74e21b8d81aca1f8533f6b"
+dependencies = [
+ "typenum",
+]
 
 [[package]]
 name = "init"
@@ -78,10 +150,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipc_echo"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "libsarga"
 version = "0.1.0"
 dependencies = [
  "font8x8",
+ "hex",
  "miniz_oxide",
  "ttf-parser",
 ]
@@ -105,6 +185,16 @@ name = "login-manager"
 version = "0.1.0"
 dependencies = [
  "libsarga",
+]
+
+[[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest",
 ]
 
 [[package]]
@@ -141,6 +231,7 @@ dependencies = [
 name = "passwd"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "libsarga",
 ]
 
@@ -204,6 +295,7 @@ dependencies = [
 name = "sash"
 version = "0.1.0"
 dependencies = [
+ "glob-matcher",
  "libsarga",
 ]
 
@@ -271,6 +363,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "syslogd"
+version = "0.1.0"
+dependencies = [
+ "libsarga",
+]
+
+[[package]]
 name = "sysmon"
 version = "0.1.0"
 dependencies = [
@@ -296,6 +395,12 @@ name = "ttf-parser"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17f77d76d837a7830fe1d4f12b7b4ba4192c1888001c7164257e4bc6d21d96b4"
+
+[[package]]
+name = "typenum"
+version = "1.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "vahid"

@@ -1,13 +1,20 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::num::Wrapping;
 use libsarga::{args, io, println, sarga_main};
 
-struct XorShift { state: Wrapping<u64> }
+struct XorShift {
+    state: Wrapping<u64>,
+}
 impl XorShift {
-    fn new(seed: u64) -> Self { XorShift { state: Wrapping(seed) } }
+    fn new(seed: u64) -> Self {
+        XorShift {
+            state: Wrapping(seed),
+        }
+    }
     fn next(&mut self) -> u64 {
         self.state ^= self.state >> 12;
         self.state ^= self.state << 25;
@@ -15,31 +22,62 @@ impl XorShift {
         self.state.0.wrapping_mul(0x2545F4914F6CDD1Du64)
     }
     fn range(&mut self, max: usize) -> usize {
-        if max == 0 { return 0; }
+        if max == 0 {
+            return 0;
+        }
         (self.next() as usize) % max
     }
+}
+
+fn entropy_seed() -> u64 {
+    if let Ok(fd) = io::open("/dev/urandom", 0) {
+        let mut buf = [0u8; 8];
+        if io::read(fd, &mut buf).is_ok() {
+            let _ = io::close(fd);
+            return u64::from_le_bytes(buf);
+        }
+        let _ = io::close(fd);
+    }
+    let clock = unsafe { libsarga::syscall::syscall1(96, 0) } as u64;
+    0x9E37_79B9_7F4A_7C15 ^ clock
 }
 
 fn user_main() -> i32 {
     let lines: Vec<alloc::string::String> = if args::argc() > 1 {
         match io::read_to_string(args::get(1).unwrap()) {
             Ok(s) => s.lines().map(|l| l.to_string()).collect(),
-            Err(_) => { println!("shuf: error"); return 1; }
+            Err(_) => {
+                println!("shuf: error");
+                return 1;
+            }
         }
     } else {
-        let mut buf = [0u8; 4096]; let mut all = alloc::string::String::new();
-        loop { match io::read(0, &mut buf) { Ok(0) => break, Ok(n) => { if let Ok(s) = core::str::from_utf8(&buf[..n]) { all.push_str(s); } }, Err(_) => break, } }
+        let mut buf = [0u8; 4096];
+        let mut all = alloc::string::String::new();
+        loop {
+            match io::read(0, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                        all.push_str(s);
+                    }
+                }
+                Err(_) => break,
+            }
+        }
         all.lines().map(|l| l.to_string()).collect()
     };
 
-    let mut rng = XorShift::new(42);
+    let mut rng = XorShift::new(entropy_seed() | 1);
     let mut shuffled = lines.clone();
     let n = shuffled.len();
     for i in (1..n).rev() {
         let j = rng.range(i + 1);
         shuffled.swap(i, j);
     }
-    for line in &shuffled { println!("{}", line); }
+    for line in &shuffled {
+        println!("{}", line);
+    }
     0
 }
 sarga_main!(user_main);

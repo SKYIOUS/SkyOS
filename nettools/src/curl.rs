@@ -140,17 +140,17 @@ fn user_main() -> i32 {
                         }
                     }
                     let _ = io::close(fd);
-                    return 0;
+                    0
                 }
                 Err(e) => {
                     println!("curl: connect failed: {}", e);
-                    return 1;
+                    1
                 }
             }
         }
         Err(e) => {
             println!("curl: socket failed: {}", e);
-            return 1;
+            1
         }
     }
 }

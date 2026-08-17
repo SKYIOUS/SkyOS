@@ -1,17 +1,9 @@
 //! Explorer — file manager application.
-#![allow(dead_code)]
 
 use crate::sys::vfs::VfsEntry;
 use alloc::string::String;
 use alloc::vec::Vec;
 use libsarga::theme::Theme;
-
-/// Undo log entry for file operations
-pub(crate) struct FileOpLog {
-    pub op_type: u8, // 0=delete, 1=rename/move, 2=create
-    pub path: String,
-    pub old_path: String,
-}
 
 #[derive(Clone)]
 pub(crate) struct ExplorerTab {
@@ -31,9 +23,6 @@ pub(crate) struct ExplorerState {
     pub history: Vec<String>,
     pub history_idx: i32,
     pub path: String,
-    pub split: bool,
-    pub split_tab: Option<ExplorerTab>,
-    pub ops: Vec<FileOpLog>,
     pub search_query: String,
     pub search_results: Vec<VfsEntry>,
     pub search_active: bool,
@@ -45,8 +34,7 @@ pub(crate) struct ExplorerState {
 impl ExplorerState {
     pub fn new(id: u32, start_path: &str) -> Self {
         let path = String::from(start_path);
-        let mut history = Vec::new();
-        history.push(path.clone());
+        let history = alloc::vec![path.clone()];
         let tab = ExplorerTab {
             path: path.clone(),
             entries: Vec::new(),
@@ -63,9 +51,6 @@ impl ExplorerState {
             history,
             history_idx: 0,
             path,
-            split: false,
-            split_tab: None,
-            ops: Vec::new(),
             search_query: String::new(),
             search_results: Vec::new(),
             search_active: false,
@@ -73,10 +58,6 @@ impl ExplorerState {
             show_preview: false,
             preview_content: String::new(),
         }
-    }
-
-    pub fn active(&mut self) -> &mut ExplorerTab {
-        &mut self.tabs[self.active_tab]
     }
 
     pub fn active_ref(&self) -> &ExplorerTab {
@@ -165,483 +146,6 @@ impl ExplorerState {
         self.navigate("/home");
     }
 
-    pub fn enter_dir(&mut self, path: &str) {
-        self.navigate(path);
-    }
-
-    pub fn new_tab(&mut self, path: &str) {
-        let tab = ExplorerTab {
-            path: String::from(path),
-            entries: Vec::new(),
-            sort_by: 0,
-            sort_desc: false,
-            view_mode: 0,
-            scroll: 0,
-            sel_idx: None,
-        };
-        self.tabs.push(tab);
-        self.active_tab = self.tabs.len() - 1;
-        self.refresh();
-    }
-
-    pub fn close_tab(&mut self, idx: usize) {
-        if self.tabs.len() <= 1 {
-            return;
-        }
-        self.tabs.remove(idx);
-        if self.active_tab >= idx && self.active_tab > 0 {
-            self.active_tab -= 1;
-        }
-    }
-
-    // ---- File Operations ----
-
-    pub fn copy_selected(&mut self, dest: &str) {
-        let tab = self.active_tab;
-        let path = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].path.clone())
-        {
-            Some(p) => p,
-            None => return,
-        };
-        let name = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].name.clone())
-        {
-            Some(n) => n,
-            None => return,
-        };
-        let dest_path = if dest.ends_with('/') {
-            alloc::format!("{}{}", dest, name)
-        } else {
-            alloc::format!("{}/{}", dest, name)
-        };
-        let _ = copy_file(&path, &dest_path);
-        self.refresh();
-    }
-
-    pub fn move_selected(&mut self, dest: &str) {
-        let tab = self.active_tab;
-        let path = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].path.clone())
-        {
-            Some(p) => p,
-            None => return,
-        };
-        let name = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].name.clone())
-        {
-            Some(n) => n,
-            None => return,
-        };
-        let dest_path = if dest.ends_with('/') {
-            alloc::format!("{}{}", dest, name)
-        } else {
-            alloc::format!("{}/{}", dest, name)
-        };
-        if rename_file(&path, &dest_path).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 1,
-                path: dest_path,
-                old_path: path,
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn rename_selected(&mut self, new_name: &str) {
-        let tab = self.active_tab;
-        let idx = match self.tabs[tab].sel_idx {
-            Some(i) => i,
-            None => return,
-        };
-        let old_path = self.tabs[tab].entries[idx].path.clone();
-        let parent = match old_path.rfind('/') {
-            Some(s) => &old_path[..s + 1],
-            None => return,
-        };
-        let new_path = alloc::format!("{}{}", parent, new_name);
-        if rename_file(&old_path, &new_path).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 1,
-                path: new_path,
-                old_path: old_path,
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn delete_selected(&mut self) {
-        let tab = self.active_tab;
-        let idx = match self.tabs[tab].sel_idx {
-            Some(i) => i,
-            None => return,
-        };
-        let path = self.tabs[tab].entries[idx].path.clone();
-        if delete_file(&path).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 0,
-                path: path.clone(),
-                old_path: String::new(),
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn create_folder(&mut self, name: &str) {
-        let base = self.tabs[self.active_tab].path.clone();
-        let full = if base.ends_with('/') {
-            alloc::format!("{}{}", base, name)
-        } else {
-            alloc::format!("{}/{}", base, name)
-        };
-        if libsarga::io::mkdir(&full, 0o755).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 2,
-                path: full,
-                old_path: String::new(),
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn create_file(&mut self, name: &str) {
-        let base = self.tabs[self.active_tab].path.clone();
-        let full = if base.ends_with('/') {
-            alloc::format!("{}{}", base, name)
-        } else {
-            alloc::format!("{}/{}", base, name)
-        };
-        if libsarga::fs::write_file(&full, "").is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 2,
-                path: full,
-                old_path: String::new(),
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn duplicate_selected(&mut self) {
-        let tab = self.active_tab;
-        let idx = match self.tabs[tab].sel_idx {
-            Some(i) => i,
-            None => return,
-        };
-        let src = &self.tabs[tab].entries[idx];
-        let new_name = alloc::format!("copy_{}", src.name);
-        let base = self.tabs[self.active_tab].path.clone();
-        let dest = if base.ends_with('/') {
-            alloc::format!("{}{}", base, new_name)
-        } else {
-            alloc::format!("{}/{}", base, new_name)
-        };
-        let _ = copy_file(&src.path, &dest);
-        self.refresh();
-    }
-
-    pub fn undo_last_op(&mut self) {
-        if let Some(op) = self.ops.pop() {
-            match op.op_type {
-                0 => {
-                    let _ = libsarga::posix::rename(&op.old_path, &op.path);
-                }
-                1 => {
-                    let _ = libsarga::posix::rename(&op.path, &op.old_path);
-                }
-                2 => {
-                    let _ = libsarga::io::unlink(&op.path);
-                }
-                _ => {}
-            }
-        }
-        self.refresh();
-    }
-
-    // ---- Trash ----
-
-    const TRASH_PATH: &'static str = "/tmp/trash";
-    const TRASH_META: &'static str = "/tmp/trash/meta";
-
-    pub fn trash_selected(&mut self) {
-        let tab = self.active_tab;
-        let idx = match self.tabs[tab].sel_idx {
-            Some(i) => i,
-            None => return,
-        };
-        let src = &self.tabs[tab].entries[idx].path;
-        let name = &self.tabs[tab].entries[idx].name;
-        let trash_dest = alloc::format!("{}/{}", Self::TRASH_PATH, name);
-        // Ensure trash directory exists
-        let _ = libsarga::io::mkdir(Self::TRASH_PATH, 0o755);
-        // Store metadata for restore
-        let _ = libsarga::io::mkdir(Self::TRASH_META, 0o755);
-        let meta_path = alloc::format!("{}/{}", Self::TRASH_META, name);
-        let _ = libsarga::fs::write_file(&meta_path, src);
-        // Move to trash
-        if rename_file(src, &trash_dest).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 1,
-                path: trash_dest,
-                old_path: String::from(src),
-            });
-        }
-        self.refresh();
-    }
-
-    pub fn restore_from_trash(&mut self, name: &str) {
-        let meta_path = alloc::format!("{}/{}", Self::TRASH_META, name);
-        if let Ok(orig_path) = libsarga::io::read_to_string(&meta_path) {
-            let trash_path = alloc::format!("{}/{}", Self::TRASH_PATH, name);
-            if rename_file(&trash_path, &orig_path).is_ok() {
-                let _ = libsarga::io::unlink(&meta_path);
-                self.ops.push(FileOpLog {
-                    op_type: 1,
-                    path: orig_path,
-                    old_path: trash_path,
-                });
-            }
-        }
-        self.refresh();
-    }
-
-    pub fn empty_trash(&mut self) {
-        let entries = crate::sys::vfs::VfsContext::list_dir_static(Self::TRASH_PATH);
-        for e in &entries {
-            if e.is_dir {
-                continue;
-            }
-            let _ = libsarga::io::unlink(&e.path);
-        }
-        self.refresh();
-    }
-
-    pub fn permanent_delete_selected(&mut self) {
-        let tab = self.active_tab;
-        let path = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].path.clone())
-        {
-            Some(p) => p,
-            None => return,
-        };
-        let _ = libsarga::io::unlink(&path);
-        self.refresh();
-    }
-
-    // ---- Search ----
-
-    pub fn start_search(&mut self, query: &str) {
-        self.search_query = String::from(query);
-        self.search_results.clear();
-        if query.is_empty() {
-            self.search_active = false;
-            return;
-        }
-        self.search_active = true;
-        let base = self.tabs[self.active_tab].path.clone();
-        recursive_search(&base, query, &mut self.search_results);
-    }
-
-    pub fn cancel_search(&mut self) {
-        self.search_active = false;
-        self.search_query.clear();
-        self.search_results.clear();
-    }
-
-    // ---- Preview ----
-
-    pub fn toggle_preview(&mut self) {
-        self.show_preview = !self.show_preview;
-        self.preview_content.clear();
-        if self.show_preview {
-            self.load_preview();
-        }
-    }
-
-    pub fn load_preview(&mut self) {
-        self.preview_content.clear();
-        let tab = self.active_tab;
-        let idx = match self.tabs[tab].sel_idx {
-            Some(i) => i,
-            None => return,
-        };
-        let path = &self.tabs[tab].entries[idx].path;
-        if self.tabs[tab].entries[idx].is_dir {
-            return;
-        }
-        if let Ok(content) = libsarga::io::read_to_string(path) {
-            let preview = if content.len() > 4000 {
-                &content[..4000]
-            } else {
-                &content
-            };
-            self.preview_content.push_str(preview);
-        }
-    }
-
-    // ---- Favorites ----
-
-    pub fn toggle_favorite(&mut self, path: &str) {
-        if let Some(i) = self.favorites.iter().position(|p| p == path) {
-            self.favorites.remove(i);
-        } else {
-            self.favorites.push(String::from(path));
-        }
-    }
-
-    pub fn is_favorite(&self, path: &str) -> bool {
-        self.favorites.iter().any(|p| p == path)
-    }
-
-    // ---- Drag & Drop ----
-
-    pub fn drag_source(&mut self) -> Option<(String, String)> {
-        let tab = self.active_tab;
-        self.tabs[tab].sel_idx.map(|i| {
-            (
-                self.tabs[tab].entries[i].path.clone(),
-                self.tabs[tab].entries[i].name.clone(),
-            )
-        })
-    }
-
-    pub fn handle_drop(&mut self, src_path: &str, dest_dir: &str) {
-        let name = src_path.rsplit('/').next().unwrap_or(src_path);
-        let dest = if dest_dir.ends_with('/') {
-            alloc::format!("{}{}", dest_dir, name)
-        } else {
-            alloc::format!("{}/{}", dest_dir, name)
-        };
-        if rename_file(src_path, &dest).is_ok() {
-            self.ops.push(FileOpLog {
-                op_type: 1,
-                path: dest.clone(),
-                old_path: String::from(src_path),
-            });
-        }
-        self.refresh();
-    }
-
-    // ---- Properties ----
-
-    pub fn get_properties(&self) -> Vec<(String, String)> {
-        let tab = self.active_tab;
-        let mut props = Vec::new();
-        if let Some(idx) = self.tabs[tab].sel_idx {
-            let e = &self.tabs[tab].entries[idx];
-            props.push((String::from("Name"), e.name.clone()));
-            props.push((
-                String::from("Type"),
-                if e.is_dir {
-                    String::from("Directory")
-                } else {
-                    e.name
-                        .rfind('.')
-                        .map(|i| String::from(&e.name[i + 1..]))
-                        .unwrap_or(String::from("File"))
-                },
-            ));
-            props.push((String::from("Size"), format_size(e.size)));
-            props.push((String::from("Path"), e.path.clone()));
-            props.push((String::from("Modified"), format_date(e.modified)));
-            props.push((String::from("Is Dir"), alloc::format!("{}", e.is_dir)));
-        }
-        props
-    }
-
-    // ---- Open With ----
-
-    pub fn get_open_with_candidates(&self, ext: &str) -> Vec<&'static str> {
-        match ext {
-            ".txt" | ".md" | ".rs" | ".c" | ".h" | ".py" | ".js" | ".toml" => {
-                alloc::vec!["/bin/skyedit", "/bin/sargaview"]
-            }
-            ".png" | ".jpg" | ".bmp" | ".gif" => alloc::vec!["/bin/sargaview"],
-            _ => alloc::vec!["/bin/sargaview"],
-        }
-    }
-
-    pub fn open_with(&mut self, app_path: &str) {
-        let tab = self.active_tab;
-        let path = match self.tabs[tab]
-            .sel_idx
-            .map(|i| self.tabs[tab].entries[i].path.clone())
-        {
-            Some(p) => p,
-            None => return,
-        };
-        match libsarga::process::fork() {
-            Ok(0) => {
-                let _ = libsarga::process::execve(app_path, &[app_path, &path], &[]);
-                libsarga::process::exit(1);
-            }
-            Ok(_) => {}
-            Err(_) => {}
-        }
-    }
-
-    // ---- Keyboard ----
-
-    pub fn handle_key(&mut self, key: u8) {
-        match key {
-            0x0D => {
-                // Enter — enter dir
-                if let Some(idx) = self.tabs[self.active_tab].sel_idx {
-                    let path = self.tabs[self.active_tab].entries[idx].path.clone();
-                    self.enter_dir(&path);
-                }
-            }
-            0x7F | 0x08 => {
-                // Backspace — go up
-                self.go_up();
-            }
-            b'1' | b'2' | b'3' | b'4' => {
-                self.tabs[self.active_tab].view_mode = key - b'1';
-                self.refresh();
-            }
-            b'p' => {
-                self.toggle_preview();
-            }
-            b'f' => {
-                let path = self.tabs[self.active_tab].path.clone();
-                self.toggle_favorite(&path);
-            }
-            b'/' => {
-                self.search_active = !self.search_active;
-            }
-            0x26 => {
-                // Arrow Up
-                let tab = &mut self.tabs[self.active_tab];
-                if let Some(idx) = tab.sel_idx {
-                    if idx > 0 {
-                        tab.sel_idx = Some(idx - 1);
-                    }
-                } else if !tab.entries.is_empty() {
-                    tab.sel_idx = Some(tab.entries.len() - 1);
-                }
-            }
-            0x28 => {
-                // Arrow Down
-                let tab = &mut self.tabs[self.active_tab];
-                if let Some(idx) = tab.sel_idx {
-                    if idx + 1 < tab.entries.len() {
-                        tab.sel_idx = Some(idx + 1);
-                    }
-                } else if !tab.entries.is_empty() {
-                    tab.sel_idx = Some(0);
-                }
-            }
-            b'z' => {
-                self.undo_last_op();
-            }
-            _ => {}
-        }
-    }
-
     pub fn status_text(&self) -> String {
         let tab = self.active_tab;
         let count = if self.search_active {
@@ -651,104 +155,6 @@ impl ExplorerState {
         };
         let sel = self.tabs[tab].sel_idx.map(|_| "1 selected").unwrap_or("");
         alloc::format!("{} items  {}", count, sel)
-    }
-}
-
-fn recursive_search(dir: &str, query: &str, results: &mut Vec<VfsEntry>) {
-    recursive_search_depth(dir, query, results, 0);
-}
-
-fn recursive_search_depth(dir: &str, query: &str, results: &mut Vec<VfsEntry>, depth: u32) {
-    // ponytail: depth limit 10, reopen if needed
-    if depth > 10 {
-        return;
-    }
-    let query_lower = query.to_lowercase();
-    if let Ok(fd) = libsarga::io::open(dir, 0) {
-        let mut buf = [0u8; 4096];
-        loop {
-            let n = libsarga::io::read(fd, &mut buf).unwrap_or(0);
-            if n <= 0 {
-                break;
-            }
-            let mut off = 0usize;
-            while off + 19 <= n as usize {
-                let ino = u64::from_ne_bytes(buf[off..off + 8].try_into().unwrap_or([0; 8]));
-                if ino == 0 {
-                    break;
-                }
-                let _type = buf[off + 16];
-                off += 17;
-                let name_end = off + buf[off..].iter().position(|&b| b == 0).unwrap_or(0);
-                let name = core::str::from_utf8(&buf[off..name_end]).unwrap_or("");
-                if name != "." && !name.is_empty() {
-                    let full = if dir.ends_with('/') {
-                        alloc::format!("{}{}", dir, name)
-                    } else {
-                        alloc::format!("{}/{}", dir, name)
-                    };
-                    let name_lower = name.to_lowercase();
-                    if name_lower.contains(&query_lower) {
-                        results.push(VfsEntry {
-                            name: String::from(name),
-                            path: full.clone(),
-                            is_dir: _type == 1,
-                            size: 0,
-                            modified: 0,
-                            file_type: _type,
-                        });
-                    }
-                    if _type == 1 && name != "." && name != ".." {
-                        recursive_search_depth(&full, query, results, depth + 1);
-                    }
-                }
-                off = name_end + 1;
-            }
-        }
-        let _ = libsarga::io::close(fd);
-    }
-}
-
-// Raw file I/O helpers
-fn copy_file(src: &str, dest: &str) -> Result<(), ()> {
-    let src_fd = libsarga::io::open(src, 0).map_err(|_| ())?;
-    let mut buf = [0u8; 4096];
-    let dest_fd = libsarga::io::open(dest, 0x42).map_err(|_| {
-        let _ = libsarga::io::close(src_fd);
-        ()
-    })?;
-    loop {
-        let n = libsarga::io::read(src_fd, &mut buf).unwrap_or(0);
-        if n <= 0 {
-            break;
-        }
-        let mut written = 0;
-        while written < n {
-            let w = libsarga::io::write(dest_fd, &buf[written..n]).unwrap_or(0);
-            if w == 0 {
-                break;
-            }
-            written += w;
-        }
-    }
-    let _ = libsarga::io::close(src_fd);
-    let _ = libsarga::io::close(dest_fd);
-    Ok(())
-}
-
-fn rename_file(old: &str, new: &str) -> Result<(), ()> {
-    if libsarga::posix::rename(old, new) == 0 {
-        Ok(())
-    } else {
-        Err(())
-    }
-}
-
-fn delete_file(path: &str) -> Result<(), ()> {
-    if libsarga::io::unlink(path).is_ok() {
-        Ok(())
-    } else {
-        Err(())
     }
 }
 
@@ -806,12 +212,8 @@ fn format_size(s: u64) -> alloc::string::String {
 }
 
 fn format_date(ts: u64) -> alloc::string::String {
-    // Simple: days since epoch
     let days = ts / 86400;
-    let y = 1970 + days / 365;
-    let rem = days % 365;
-    let m = 1 + rem / 30;
-    let d = 1 + rem % 30;
+    let (y, m, d) = libsarga::time::civil_from_days(days);
     alloc::format!("{}-{:02}-{:02}", y, m, d)
 }
 
@@ -849,7 +251,7 @@ pub(crate) fn draw_explorer_content(
     let tab = state.active_ref();
 
     let mut y = aw.y as u32 + 29;
-    let bottom = aw.y as u32 + aw.h as u32 - 4;
+    let bottom = aw.y as u32 + aw.h - 4;
     let area_x = aw.x as u32 + 2;
     let area_w = aw.w - 4;
 
@@ -1178,6 +580,7 @@ pub(crate) fn handle_explorer_click(
     false
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_list(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1244,6 +647,7 @@ fn draw_list(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_grid(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1283,6 +687,7 @@ fn draw_grid(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_icon(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1349,6 +754,7 @@ fn draw_icon(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // draw helper; param shape fixed by all call sites
 fn draw_details(
     canvas: &mut crate::render::compositor::Canvas,
     theme: &Theme,
@@ -1417,5 +823,97 @@ fn draw_details(
             };
             canvas.draw_string(cx, ey + 1, short, theme.text_disabled, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str, is_dir: bool, size: u64, modified: u64) -> VfsEntry {
+        VfsEntry {
+            name: String::from(name),
+            path: String::from(name),
+            is_dir,
+            size,
+            modified,
+        }
+    }
+
+    #[test]
+    fn sort_entries_dirs_first_then_name() {
+        let mut v = vec![
+            entry("b.txt", false, 1, 1),
+            entry("a_dir", true, 9, 9),
+            entry("A.txt", false, 2, 2),
+        ];
+        sort_entries(&mut v, 0, false);
+        assert!(v[0].is_dir);
+        assert_eq!(v[1].name, "A.txt"); // case-insensitive: a.txt before b.txt
+        assert_eq!(v[2].name, "b.txt");
+    }
+
+    #[test]
+    fn sort_entries_by_size_and_date() {
+        let mut v = vec![
+            entry("big", false, 300, 100),
+            entry("small", false, 1, 900),
+            entry("mid", false, 200, 500),
+        ];
+        sort_entries(&mut v, 1, false);
+        assert_eq!(v[0].name, "small");
+        assert_eq!(v[2].name, "big");
+        sort_entries(&mut v, 1, true);
+        assert_eq!(v[0].name, "big");
+        sort_entries(&mut v, 2, true);
+        assert_eq!(v[0].name, "small"); // newest modified first
+    }
+
+    #[test]
+    fn sort_entries_by_extension() {
+        let mut v = vec![
+            entry("a.rs", false, 0, 0),
+            entry("b.txt", false, 0, 0),
+            entry("c.rs", false, 0, 0),
+        ];
+        sort_entries(&mut v, 3, false);
+        assert_eq!(v[0].name, "a.rs");
+        assert_eq!(v[1].name, "c.rs");
+        assert_eq!(v[2].name, "b.txt");
+    }
+
+    #[test]
+    fn sort_entries_unknown_mode_is_noop() {
+        let mut v = vec![entry("b", false, 0, 0), entry("a", false, 0, 0)];
+        sort_entries(&mut v, 99, false);
+        assert_eq!(v[0].name, "b"); // unchanged (dirs-first is still applied, both files)
+    }
+
+    #[test]
+    fn format_size_units() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_size(1024 * 1024 * 1024 + 150 * 1024 * 1024), "1.1 GB");
+    }
+
+    #[test]
+    fn format_date_epoch_and_day() {
+        assert_eq!(format_date(0), "1970-01-01");
+        assert_eq!(format_date(86400), "1970-01-02");
+    }
+
+    #[test]
+    fn status_text_empty_and_selected() {
+        let mut st = ExplorerState::new(1, "/home");
+        assert_eq!(st.status_text(), "0 items  ");
+        st.tabs[st.active_tab].sel_idx = Some(0);
+        assert_eq!(st.status_text(), "0 items  1 selected");
+        st.search_active = true;
+        st.search_results = vec![entry("x", false, 1, 1)];
+        assert_eq!(st.status_text(), "1 items  1 selected");
     }
 }

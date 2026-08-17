@@ -12,22 +12,6 @@ struct ScriptContext {
     continue_flag: bool,
 }
 
-#[allow(dead_code)]
-pub fn run_script(path: &str) -> i64 {
-    let content = read_file(path);
-    if content.is_empty() {
-        return 1;
-    }
-    let mut ctx = ScriptContext {
-        vars: Vec::new(),
-        funcs: Vec::new(),
-        pos_args: Vec::new(),
-        break_flag: false,
-        continue_flag: false,
-    };
-    execute_lines(&content, &mut ctx)
-}
-
 pub fn run_script_with_args(path: &str, args: &[String]) -> i64 {
     let content = read_file(path);
     if content.is_empty() {
@@ -87,7 +71,7 @@ fn execute_lines(input: &str, ctx: &mut ScriptContext) -> i64 {
         } else if trimmed.starts_with("return ") {
             break;
         } else {
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -153,7 +137,7 @@ fn execute_if(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize {
                 i = ni;
                 continue;
             }
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -185,7 +169,7 @@ fn execute_if(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize {
                     i = ni;
                     continue;
                 }
-                execute_line_trimmed(&trimmed, ctx);
+                execute_line_trimmed(trimmed, ctx);
                 i += 1;
             }
         }
@@ -252,7 +236,7 @@ fn execute_if_elif(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usi
                 i = ni;
                 continue;
             }
-            execute_line_trimmed(&trimmed, ctx);
+            execute_line_trimmed(trimmed, ctx);
             i += 1;
         }
     }
@@ -283,7 +267,7 @@ fn execute_if_elif(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usi
                     i = ni;
                     continue;
                 }
-                execute_line_trimmed(&trimmed, ctx);
+                execute_line_trimmed(trimmed, ctx);
                 i += 1;
             }
         }
@@ -467,7 +451,7 @@ fn execute_case(lines: &[&str], start: usize, ctx: &mut ScriptContext) -> usize 
                     break;
                 }
                 if matched {
-                    execute_line_trimmed(&l, ctx);
+                    execute_line_trimmed(l, ctx);
                 }
                 i += 1;
             }
@@ -534,7 +518,7 @@ fn expand_vars(input: &str, ctx: &ScriptContext) -> String {
                         pos += 1;
                     }
                 }
-                c if c.is_digit(10) => {
+                c if c.is_ascii_digit() => {
                     let idx = (c as u8 - b'0') as usize;
                     let val = if idx == 0 {
                         ctx.pos_args.first().cloned().unwrap_or_default()
@@ -595,32 +579,8 @@ fn lookup_var(name: &str, ctx: &ScriptContext) -> String {
 }
 
 fn glob_match(pattern: &str, word: &str) -> bool {
-    let pat: Vec<char> = pattern.chars().collect();
-    let w: Vec<char> = word.chars().collect();
-    glob_inner(&pat, &w, 0, 0)
-}
-
-fn glob_inner(p: &[char], w: &[char], pi: usize, wi: usize) -> bool {
-    if pi >= p.len() {
-        return wi >= w.len();
-    }
-    match p[pi] {
-        '*' => {
-            if pi + 1 >= p.len() {
-                return true;
-            }
-            let mut j = wi;
-            while j <= w.len() {
-                if glob_inner(p, w, pi + 1, j) {
-                    return true;
-                }
-                j += 1;
-            }
-            false
-        }
-        '?' => wi < w.len() && glob_inner(p, w, pi + 1, wi + 1),
-        c => wi < w.len() && w[wi] == c && glob_inner(p, w, pi + 1, wi + 1),
-    }
+    // ponytail: glob-matcher treats '/' as a separator in `*`; case words here are plain strings
+    glob_matcher::glob_match(pattern, word)
 }
 
 fn read_file(path: &str) -> String {

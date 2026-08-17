@@ -10,8 +10,7 @@ struct TimeSpec {
 }
 
 fn format_timestamp(sec: u64, _nsec: u64) -> alloc::string::String {
-    // Basic formatting: YYYY-MM-DD HH:MM:SS (UTC)
-    // Epoch is 1970-01-01
+    // Format YYYY-MM-DD HH:MM:SS (UTC)
     let mut s = sec;
     let seconds = s % 60;
     s /= 60;
@@ -20,12 +19,7 @@ fn format_timestamp(sec: u64, _nsec: u64) -> alloc::string::String {
     let hours = s % 24;
     s /= 24;
 
-    // Simplistic day to date conversion (ignoring leap years for brevity in this OS)
-    let days = s;
-    let year = 1970 + (days / 365);
-    let day_of_year = days % 365;
-    let month = (day_of_year / 30) + 1;
-    let day = (day_of_year % 30) + 1;
+    let (year, month, day) = libsarga::time::civil_from_days(s);
 
     alloc::format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",

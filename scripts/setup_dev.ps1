@@ -52,7 +52,7 @@ else { Write-Host "[WARN] OVMF.fd not at $ovmf" -ForegroundColor Yellow }
 
 Write-Host ""
 Write-Host "=== Dev environment ready ===" -ForegroundColor Green
-Write-Host "  Build:          .\build.ps1"
-Write-Host "  Boot image:     cd ..\SKYIOUS KERNEL; .\make_bootimage.ps1"
+Write-Host "  Build:          python build_disk.py"
+Write-Host "  Kernel only:    python build_disk.py --kernel-only"
 Write-Host "  Run (display):  .\run_qemu_display.ps1"
 Write-Host "  Run (nographic): .\run_test_nographic.ps1"

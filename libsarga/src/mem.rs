@@ -1,8 +1,12 @@
 use crate::errno::Error;
+use crate::sync::RawMutex;
 use crate::syscall::*;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+/// # Safety
+/// Caller must ensure `addr`/`len` describe a valid range and `fd` is valid
+/// unless MAP_ANONYMOUS is set; the kernel may fault on invalid inputs.
 pub unsafe fn mmap(
     addr: u64,
     len: usize,
@@ -27,6 +31,9 @@ pub unsafe fn mmap(
     }
 }
 
+/// # Safety
+/// Caller must ensure `addr`/`len` describe a range previously returned by
+/// `mmap`; unmapping invalid ranges may fault.
 pub unsafe fn munmap(addr: u64, len: usize) -> Result<(), i64> {
     let r = syscall2(11, addr, len as u64);
     if r < 0 {
@@ -45,13 +52,17 @@ const SLAB_SIZES: &[usize] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 struct SlabAllocator {
     free_lists: [AtomicUsize; SLAB_SIZES.len()], // Each stores a pointer to free list head
+    lock: RawMutex,
 }
 
 impl SlabAllocator {
     const fn new() -> Self {
+        // ponytail: const-local to repeat into the array; not a global
+        #[allow(clippy::declare_interior_mutable_const)] // used only as a fresh init value
         const ZERO: AtomicUsize = AtomicUsize::new(0);
         SlabAllocator {
             free_lists: [ZERO; SLAB_SIZES.len()],
+            lock: RawMutex::new(),
         }
     }
 
@@ -61,25 +72,31 @@ impl SlabAllocator {
 
     unsafe fn alloc_from_slab(&self, layout: Layout) -> Option<*mut u8> {
         if let Some(idx) = self.slab_index(layout.size()) {
-            let head = self.free_lists[idx].swap(0, Ordering::Acquire);
+            self.lock.lock();
+            // SAFETY: free-list head is either 0 or a block pointer written by dealloc_to_slab
+            let head = self.free_lists[idx].load(Ordering::Acquire);
             if head != 0 {
                 // Pop from free list
                 let ptr = head as *mut u8;
                 // Read next pointer from first word
                 let next = *(ptr as *const usize);
                 self.free_lists[idx].store(next, Ordering::Release);
+                self.lock.unlock();
                 return Some(ptr);
             }
+            self.lock.unlock();
         }
         None
     }
 
     unsafe fn dealloc_to_slab(&self, ptr: *mut u8, layout: Layout) {
         if let Some(idx) = self.slab_index(layout.size()) {
+            self.lock.lock();
             // Push to free list
             let head = self.free_lists[idx].load(Ordering::Acquire);
             *(ptr as *mut usize) = head;
             self.free_lists[idx].store(ptr as usize, Ordering::Release);
+            self.lock.unlock();
         }
     }
 }
@@ -125,15 +142,25 @@ unsafe impl GlobalAlloc for SargaMapper {
     }
 }
 
+#[cfg(target_os = "none")]
 #[global_allocator]
 pub static ALLOCATOR: SargaMapper = SargaMapper::new();
 
+// The allocator lang items must not be defined when the crate is compiled for
+// the host (whether under `cfg(test)` or as a dependency of a host binary):
+// std already provides both, and a second definition is E0152 duplicate lang
+// item. On the sarga targets (`os = "none"`) std is absent, so they are
+// defined there.
+#[cfg(target_os = "none")]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
+/// # Safety
+/// Caller must ensure `dest`/`src` point to valid, non-overlapping regions of
+/// at least `n` bytes each.
 pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     for i in 0..n {
         *dest.add(i) = *src.add(i);
@@ -141,7 +168,10 @@ pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut
     dest
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
+/// # Safety
+/// Caller must ensure `s` points to a valid writable region of at least `n`
+/// bytes.
 pub unsafe extern "C" fn memset(s: *mut u8, c: i32, n: usize) -> *mut u8 {
     for i in 0..n {
         *s.add(i) = c as u8;
@@ -149,7 +179,10 @@ pub unsafe extern "C" fn memset(s: *mut u8, c: i32, n: usize) -> *mut u8 {
     s
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
+/// # Safety
+/// Caller must ensure `s1`/`s2` point to valid readable regions of at least
+/// `n` bytes each.
 pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
     for i in 0..n {
         let a = *s1.add(i);
@@ -165,18 +198,30 @@ pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
 
 pub fn shmget(key: i32, size: usize, flags: i32) -> Result<i32, Error> {
     let r = unsafe { syscall3(SYS_SHMGET, key as u64, size as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as i32)
+    }
 }
 
 pub fn shmat(shmid: i32, addr: Option<*const u8>, flags: i32) -> Result<*mut u8, Error> {
-    let addr_ptr = addr.unwrap_or(core::ptr::null()) as u64;
+    let addr_ptr = addr.unwrap_or_default() as u64;
     let r = unsafe { syscall3(SYS_SHMAT, shmid as u64, addr_ptr, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as *mut u8) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as *mut u8)
+    }
 }
 
 pub fn shmdt(addr: *const u8) -> Result<(), Error> {
     let r = unsafe { syscall1(SYS_SHMDT, addr as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 #[repr(C)]
@@ -211,7 +256,11 @@ pub const IPC_EXCL: i32 = 0o2000;
 pub fn shmctl(shmid: i32, cmd: i32, buf: Option<&mut ShmIdDs>) -> Result<(), Error> {
     let buf_ptr = buf.map_or(0, |b| b as *mut ShmIdDs as u64);
     let r = unsafe { syscall3(SYS_SHMCTL, shmid as u64, cmd as u64, buf_ptr) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 // ── memfd_create ──────────────────────────────────────────────────
@@ -220,7 +269,11 @@ pub fn memfd_create(name: &str, flags: u32) -> Result<i64, Error> {
     let mut buf = alloc::vec::Vec::from(name.as_bytes());
     buf.push(0);
     let r = unsafe { syscall2(SYS_MEMFD_CREATE, buf.as_ptr() as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r)
+    }
 }
 
 // ─── POSIX timers ──────────────────────────────────────────────────
@@ -241,14 +294,42 @@ pub struct Itimerspec {
 pub fn timer_create(clockid: i32, evp: Option<&Sigevent>) -> Result<i32, Error> {
     let evp_ptr = evp.map_or(0, |e| e as *const Sigevent as u64);
     let mut timerid: i32 = 0;
-    let r = unsafe { syscall3(SYS_TIMER_CREATE, clockid as u64, evp_ptr, (&mut timerid as *mut i32) as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(timerid) }
+    let r = unsafe {
+        syscall3(
+            SYS_TIMER_CREATE,
+            clockid as u64,
+            evp_ptr,
+            (&mut timerid as *mut i32) as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(timerid)
+    }
 }
 
-pub fn timer_settime(timerid: i32, flags: i32, new: &Itimerspec, old: Option<&mut Itimerspec>) -> Result<(), Error> {
+pub fn timer_settime(
+    timerid: i32,
+    flags: i32,
+    new: &Itimerspec,
+    old: Option<&mut Itimerspec>,
+) -> Result<(), Error> {
     let old_ptr = old.map_or(0, |o| o as *mut Itimerspec as u64);
-    let r = unsafe { syscall4(SYS_TIMER_SETTIME, timerid as u64, flags as u64, new as *const Itimerspec as u64, old_ptr) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    let r = unsafe {
+        syscall4(
+            SYS_TIMER_SETTIME,
+            timerid as u64,
+            flags as u64,
+            new as *const Itimerspec as u64,
+            old_ptr,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn timer_gettime(timerid: i32) -> Result<Itimerspec, Error> {
@@ -256,25 +337,47 @@ pub fn timer_gettime(timerid: i32) -> Result<Itimerspec, Error> {
         it_interval: crate::posix::Timespec { sec: 0, nsec: 0 },
         it_value: crate::posix::Timespec { sec: 0, nsec: 0 },
     };
-    let r = unsafe { syscall2(SYS_TIMER_GETTIME, timerid as u64, (&mut val as *mut Itimerspec) as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(val) }
+    let r = unsafe {
+        syscall2(
+            SYS_TIMER_GETTIME,
+            timerid as u64,
+            (&mut val as *mut Itimerspec) as u64,
+        )
+    };
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(val)
+    }
 }
 
 pub fn timer_getoverrun(timerid: i32) -> Result<i32, Error> {
     let r = unsafe { syscall1(SYS_TIMER_GETOVERRUN, timerid as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(r as i32) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(r as i32)
+    }
 }
 
 pub fn timer_delete(timerid: i32) -> Result<(), Error> {
     let r = unsafe { syscall1(SYS_TIMER_DELETE, timerid as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 // ── mprotect ──────────────────────────────────────────────────────
 
 pub fn mprotect(addr: u64, len: usize, prot: i32) -> Result<(), Error> {
     let r = unsafe { syscall3(SYS_MPROTECT, addr, len as u64, prot as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 // ── swapon/swapoff ──────────────────────────────────────────────────
@@ -283,17 +386,28 @@ pub fn swapon(path: &str, flags: i32) -> Result<(), Error> {
     let mut buf = alloc::vec::Vec::from(path.as_bytes());
     buf.push(0);
     let r = unsafe { syscall2(SYS_SWAPON, buf.as_ptr() as u64, flags as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn swapoff(path: &str) -> Result<(), Error> {
     let mut buf = alloc::vec::Vec::from(path.as_bytes());
     buf.push(0);
     let r = unsafe { syscall1(SYS_SWAPOFF, buf.as_ptr() as u64) };
-    if r < 0 { Err(Error::from_i64(r)) } else { Ok(()) }
+    if r < 0 {
+        Err(Error::from_i64(r))
+    } else {
+        Ok(())
+    }
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
+/// # Safety
+/// Caller must ensure `dest`/`src` point to valid regions of at least `n`
+/// bytes; regions may overlap.
 pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     if dest < src as *mut u8 {
         for i in 0..n {

@@ -1,10 +1,15 @@
 # SkyOS QEMU Shell Test
 # Boots QEMU, logs in via serial, runs commands, checks output.
 param(
-    [string]$KernelDir = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL",
+    [string]$KernelDir = "",
     [string]$IsoPath = "",
     [int]$TimeoutSeconds = 180
 )
+
+$scriptDir = Split-Path -Parent $PSCommandPath
+if (-not $KernelDir) {
+    $KernelDir = Join-Path $scriptDir "..\kernel"
+}
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -18,7 +23,7 @@ Write-Host "=== SkyOS QEMU Shell Test ===" -ForegroundColor Cyan
 if (-not $IsoPath) {
     Write-Host "--- Building userspace ---"
     Push-Location $SkyOSDir
-    cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+    cargo build "-Zbuild-std=core,alloc" --target x86_64-sarga.json --release
     if (-not $?) { Write-Host "FAIL: userspace build failed" -ForegroundColor Red; exit 1 }
     Pop-Location
 
@@ -63,21 +68,39 @@ $psi.CreateNoWindow = $true
 $p = [System.Diagnostics.Process]::Start($psi)
 if (-not $p) { Write-Host "FAIL: Could not start QEMU" -ForegroundColor Red; exit 1 }
 
+# NOTE on password echo: this harness writes via StandardInput and captures
+# only StandardOutput. The guest never echoes (kernel serial is TX-only;
+# login reads without writing back), so the password never lands in the
+# captured stream — unlike the expect harnesses, which echo their own send
+# and wrap the password in log_user 0. No suppression needed here.
 $output = New-Object System.Text.StringBuilder
 $commands = @(
+    # Boot -> login prompt, then the vahid-healthy gate is enforced after
+    # the loop against the accumulated log (see the results table), same
+    # as the exp's regexp over the expect buffer.
     @{ after = "login:";        send = "root`r" }
-    @{ after = "Password:";     send = "root`r" }
-    @{ after = "[#$] ";         send = "ls /`r" }
+    # --- mistype re-prompt probe (port of qemu_shell_test.exp) ---
+    # The FIRST password prompt gets a WRONG password. The getty must
+    # announce 'Login incorrect' and re-prompt in place; the probe state
+    # in the read loop fails the run if '[init] starting service: getty'
+    # appears before the fresh 'login:' (the MAX_RESPAWNS guard).
+    @{ after = "Password:";     send = "not-the-password`r" }
+    @{ after = "Login incorrect"; send = $null; probe = $true }
+    # Fresh login: prompt -> re-login with the real credentials.
+    @{ after = "login:";        send = "root`r" }
+    @{ after = "Password:";     send = "skyos`r" }
+    @{ after = "sash\[";       send = "ls /`r" }
     @{ after = "bin";           send = "uname -a`r" }
-    @{ after = "SkyOS|sarga";   send = "echo SHELL_TEST_OK`r" }
+    @{ after = "Vahi|sarga-os"; send = "echo SHELL_TEST_OK`r" }
     @{ after = "SHELL_TEST_OK"; send = "ls /bin/ | head -10`r" }
-    @{ after = "sash|ls|cat";   send = "/bin/futex_test`r" }
-    @{ after = "PASS|OK";       send = "exit`r" }
+    @{ after = "sash|init|cat"; send = "/bin/futex_test`r" }
+    @{ after = "PASS";          send = "exit`r" }
 )
 
 $cmdIdx = 0
 $elapsed = 0
 $done = $false
+$repromptArmed = $false   # mistype re-prompt probe state
 
 while (-not $p.HasExited -and $elapsed -lt $TimeoutSeconds) {
     if ($p.StandardOutput.Peek() -ge 0) {
@@ -86,11 +109,38 @@ while (-not $p.HasExited -and $elapsed -lt $TimeoutSeconds) {
             $output.AppendLine($line) | Out-Null
             Write-Host "  $line" -ForegroundColor Gray
 
+            # --- mistype re-prompt probe (port of qemu_shell_test.exp) ---
+            # After 'Login incorrect', the getty must re-prompt in place:
+            # the fresh 'login:' must arrive WITHOUT an
+            # '[init] starting service: getty' respawn marker in between.
+            # Whichever line comes first decides PASS/FAIL, exactly like
+            # the exp's expect alternation.
+            if ($repromptArmed) {
+                if ($line -match '\[init\] starting service: getty') {
+                    Write-Host "FAIL: getty respawned after mistype (must re-prompt, not exit)" -ForegroundColor Red
+                    $FailCount++
+                    $repromptArmed = $false
+                    if (-not $p.HasExited) { $p.Kill() }
+                    exit 1
+                }
+                if ($line -match 'login:') {
+                    Write-Host "PASS: re-prompted in place (no getty respawn)" -ForegroundColor Green
+                    $PassCount++
+                    $repromptArmed = $false
+                }
+            }
+
             if ($cmdIdx -lt $commands.Count) {
                 $cmd = $commands[$cmdIdx]
                 if ($line -match $cmd.after) {
+                    if ($cmd.probe) {
+                        # Wrong password rejected; arm the re-prompt watch.
+                        Write-Host "PASS: mistype rejected ('Login incorrect')" -ForegroundColor Green
+                        $PassCount++
+                        $repromptArmed = $true
+                    }
                     Start-Sleep -Milliseconds 500
-                    $p.StandardInput.WriteLine($cmd.send)
+                    if ($cmd.send) { $p.StandardInput.WriteLine($cmd.send) }
                     Write-Host ">>> $($cmd.send)" -ForegroundColor Green
                     $cmdIdx++
                     if ($cmdIdx -eq $commands.Count) {
@@ -114,11 +164,21 @@ Write-Host "`n=== Results ===" -ForegroundColor Cyan
 
 $tests = @(
     @{ name = "Boot to login";         pattern = "login:" }
-    @{ name = "Shell prompt";          pattern = "[#$] " }
+    # vahid-healthy (port of the exp's accumulated-buffer regexp): the
+    # device manager must have reached '[vahid] ready' early in the boot
+    # (init spawns vahid first); checked against the whole accumulated
+    # serial log, so a missing marker fails the run like the CI gate.
+    @{ name = "vahid healthy (device manager)"; pattern = "\[vahid\] ready" }
+    # memory-pressure marker (port of the exp's mem_marker check): the
+    # console getty prints '[login] mem free=N pages' (ctlFS
+    # /ctl/sys/mem/free) at startup, the same OOM evidence login-manager
+    # gives the GUI gate; checked against the whole accumulated serial log.
+    @{ name = "getty memory-pressure marker"; pattern = "\[login\] mem free=" }
+    @{ name = "Shell prompt";          pattern = "sash\[" }
     @{ name = "ls / output";           pattern = "bin" }
-    @{ name = "uname output";          pattern = "SkyOS|sarga" }
+    @{ name = "uname output";          pattern = "Vahi|sarga-os" }
     @{ name = "echo test";             pattern = "SHELL_TEST_OK" }
-    @{ name = "futex_test binary";     pattern = "PASS|OK" }
+    @{ name = "futex_test binary";     pattern = "PASS" }
 )
 
 $allPass = $true

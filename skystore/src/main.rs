@@ -168,7 +168,7 @@ fn hash_color(s: &str) -> u32 {
 fn ascii_lower(s: &str) -> String {
     let mut r = String::with_capacity(s.len());
     for b in s.bytes() {
-        r.push(if b >= b'A' && b <= b'Z' {
+        r.push(if b.is_ascii_uppercase() {
             (b + 32) as char
         } else {
             b as char
@@ -361,7 +361,7 @@ fn show_progress(win: &mut Window, theme: &Theme, text: &str) {
 fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
     // Wait for button release first so the initial click doesn't fire again
     while (win.get_mouse().buttons & 1) != 0 {
-        while let Some(_) = win.get_key() {}
+        while win.get_key().is_some() {}
         unsafe {
             libsarga::syscall::syscall2(35, 0, 8_000_000u64);
         }
@@ -369,6 +369,7 @@ fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
     let mut prev = 0u8;
     loop {
         while let Some(k) = win.get_key() {
+            let k = k as u8;
             if k == 0x1B {
                 return false;
             }
@@ -395,10 +396,10 @@ fn show_confirm(win: &mut Window, theme: &Theme, msg: &str) -> bool {
         if clicked {
             let mx = mouse.x as i32;
             let my = mouse.y as i32;
-            if mx >= rx as i32 && mx < (rx + 80) as i32 && my >= 270 && my < 298 {
+            if mx >= rx as i32 && mx < (rx + 80) as i32 && (270..298).contains(&my) {
                 return true;
             }
-            if mx >= cx as i32 && mx < (cx + 80) as i32 && my >= 270 && my < 298 {
+            if mx >= cx as i32 && mx < (cx + 80) as i32 && (270..298).contains(&my) {
                 return false;
             }
         }
@@ -427,6 +428,7 @@ fn user_main() -> i32 {
         prev_btn = mouse.buttons;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x09 => search.set_focus(!search.is_focused()),
                 0x2F => search.set_focus(true),
@@ -487,9 +489,8 @@ fn user_main() -> i32 {
                     let fi = filter_packages(&packages, search.text());
                     for (i, &pi) in fi.iter().enumerate() {
                         let ey = 80 + i as u32 * 56 - scroll;
-                        if mx >= 10 && mx < 690 && my >= ey as i32 && my < (ey + 50) as i32 {
-                            if mx >= 610
-                                && mx < 680
+                        if (10..690).contains(&mx) && my >= ey as i32 && my < (ey + 50) as i32 {
+                            if (610..680).contains(&mx)
                                 && ey + 10 <= my as u32
                                 && (my as u32) < ey + 40
                             {
@@ -514,11 +515,11 @@ fn user_main() -> i32 {
                     }
                 }
                 View::Detail(idx) if idx < packages.len() => {
-                    if mx >= 10 && mx < 90 && my >= 80 && my < 108 {
+                    if (10..90).contains(&mx) && (80..108).contains(&my) {
                         view = View::Browse;
                     }
                     let bx = (700 - 120) / 2;
-                    if mx >= bx && mx < bx + 120 && my >= 420 && my < 456 {
+                    if mx >= bx && mx < bx + 120 && (420..456).contains(&my) {
                         if packages[idx].installed {
                             let msg = alloc::format!("Remove {}?", packages[idx].name);
                             if show_confirm(&mut win, &theme, &msg) {

@@ -20,13 +20,14 @@ impl AboutState {
         let ph = 240u32;
         let px = (snap.screen_w - pw) / 2;
         let py = (snap.screen_h - ph) / 3;
-        crate::core::dialog::draw_backdrop(canvas, snap.screen_w, snap.screen_h);
-        crate::core::dialog::draw_panel(canvas, px, py, pw, ph, "About SARGA OS");
+        crate::core::dialog::draw_backdrop(canvas, snap.screen_w, snap.screen_h, snap.theme);
+        crate::core::dialog::draw_panel(canvas, px, py, pw, ph, "About SARGA OS", snap.theme);
 
         // Logo area
         let logo_x = px + pw / 2 - 40;
-        canvas.draw_rounded_rect(logo_x, py + 32, 80, 32, 6, 0xFF3D5AFE);
-        canvas.draw_string(logo_x + 16, py + 38, "SARGA", 0xFFFFFFFF, 0);
+        canvas.draw_rounded_rect(logo_x, py + 32, 80, 32, 6, snap.theme.accent);
+        // Logo sits on the indigo accent -> white text.
+        canvas.draw_string(logo_x + 16, py + 38, "SARGA", snap.theme.on_accent, 0);
 
         // Info lines
         let mut iy = py + 76;
@@ -41,22 +42,8 @@ impl AboutState {
         ];
         for line in lines {
             let cx = px + (pw - line.len() as u32 * 8) / 2;
-            canvas.draw_string(cx, iy, line, 0xFFD0D0D0, 0);
+            canvas.draw_string(cx, iy, line, snap.theme.text_secondary, 0);
             iy += 16;
         }
-    }
-
-    pub fn hit_test(&self, mx: i32, my: i32, snap: &RenderSnapshot) -> bool {
-        if !self.open {
-            return false;
-        }
-        let pw = 320u32;
-        let ph = 240u32;
-        let px = (snap.screen_w - pw) / 2;
-        let py = (snap.screen_h - ph) / 3;
-        mx >= px as i32
-            && mx <= (px + pw) as i32
-            && my >= py as i32
-            && my <= (py + ph) as i32
     }
 }

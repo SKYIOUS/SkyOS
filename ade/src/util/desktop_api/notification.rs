@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::core::desktop::Desktop;
 use crate::ipc::permission::PERM_NOTIFICATIONS;
 use crate::ipc::ApplicationId;
@@ -16,12 +14,9 @@ pub(crate) fn notify(
     if !desktop.permission_check(app, PERM_NOTIFICATIONS) {
         return;
     }
-    desktop.services.notify(title, body, urgency, timeout);
-}
-
-/// Desktop API v1.0
-pub(crate) fn dismiss(desktop: &mut Desktop, _app: ApplicationId, id: u64) {
-    desktop.services.notifications.dismiss(id);
+    desktop
+        .services
+        .notify(title, body, urgency, timeout, desktop.clock_ticks);
 }
 
 /// Desktop API v1.0

@@ -28,7 +28,6 @@ static ALIAS_TABLE: AliasTable = AliasTable(Mutex::new(Vec::new()));
 enum JobStatus {
     Running,
     Stopped,
-    Done,
 }
 
 struct JobEntry {
@@ -57,10 +56,8 @@ pub fn get_env(name: &str) -> Option<String> {
     let env_slot = SHELL_ENV.0.lock();
     if let Some(ref env) = *env_slot {
         for entry in env.iter() {
-            if let Some(val) = entry.strip_prefix(name) {
-                if val.starts_with('=') {
-                    return Some(String::from(&val[1..]));
-                }
+            if let Some(val) = entry.strip_prefix(name).and_then(|e| e.strip_prefix('=')) {
+                return Some(String::from(val));
             }
         }
     }
@@ -71,12 +68,9 @@ pub fn set_env(name: &str, val: &str) {
     let entry = alloc::format!("{}={}", name, val);
     let mut env_slot = SHELL_ENV.0.lock();
     if let Some(ref mut env) = *env_slot {
-        for i in 0..env.len() {
-            if env[i].starts_with(name)
-                && env[i].len() > name.len()
-                && env[i].as_bytes()[name.len()] == b'='
-            {
-                env[i] = entry;
+        for e in env.iter_mut() {
+            if e.starts_with(name) && e.len() > name.len() && e.as_bytes()[name.len()] == b'=' {
+                *e = entry;
                 return;
             }
         }
@@ -176,7 +170,6 @@ pub fn print_jobs() {
                 }
             }
             JobStatus::Stopped => "Stopped",
-            JobStatus::Done => "Done",
         };
         println!(
             "[{}] {} {}{}",
@@ -291,7 +284,9 @@ pub fn bg_job(id: usize) -> i64 {
         println!("bg: job not found");
         return 1;
     }
-    println!("[{}] {} &", id, tbl[id - 1].pid);
+    let pid = tbl[id - 1].pid;
+    println!("[{}] {} &", id, pid);
+    let _ = libsarga::process::kill(pid as i64, SIGCONT);
     0
 }
 
@@ -351,6 +346,8 @@ pub fn save_history_on_exit() {
     }
 }
 
+// clippy: fd is the only error payload needed by callers; keep it simple
+#[allow(clippy::result_unit_err)]
 pub fn open_file(path: &str, flags: u64) -> Result<i64, ()> {
     let c_str = CString::new(path.as_bytes()).map_err(|_| ())?;
     let fd = unsafe { libsarga::syscall::syscall2(2, c_str.as_ptr() as u64, flags) };
@@ -426,13 +423,21 @@ fn read_with_continuation(history: &mut readline::History, prompt: &str) -> Stri
 }
 
 fn init_signal_handlers() {
-    // Ignore SIGINT in the shell itself (child processes inherit default disposition)
+    // SIGINT: shell ignores it (child processes reset via reset_sigint_for_child before exec)
     let _ = rt_sigaction(SIGINT, Some(&SigAction::handler(SIG_IGN)), None);
-    // SIGCHLD: we poll via waitpid in the main loop, so keep default (no async handler needed)
-    // SIGTSTP: let child processes handle it; shell ignores it
     let _ = rt_sigaction(SIGTSTP, Some(&SigAction::handler(SIG_IGN)), None);
-    // SIGQUIT: ignore
     let _ = rt_sigaction(SIGQUIT, Some(&SigAction::handler(SIG_IGN)), None);
+}
+
+/// Reset SIGINT to SIG_DFL before exec so child processes respond to Ctrl+C.
+pub(crate) fn reset_sigint_for_child() {
+    let dfl = SigAction {
+        sa_handler: SIG_DFL,
+        sa_flags: 0,
+        sa_restorer: 0,
+        sa_mask: 0,
+    };
+    let _ = rt_sigaction(SIGINT, Some(&dfl), None);
 }
 
 fn user_main() -> i32 {
@@ -483,7 +488,7 @@ fn user_main() -> i32 {
         // Alias expansion
         let expanded =
             if let Some(alias) = get_alias(trimmed.split_whitespace().next().unwrap_or("")) {
-                let rest = trimmed.splitn(2, ' ').nth(1).unwrap_or("");
+                let rest = trimmed.split_once(' ').map(|(_, r)| r).unwrap_or("");
                 if rest.is_empty() {
                     alias
                 } else {
@@ -531,6 +536,8 @@ fn expand_shell_vars(s: &str) -> String {
                     pos += 2;
                 }
                 '$' => {
+                    let pid_str = alloc::format!("{}", libsarga::process::getpid());
+                    out.push_str(&pid_str);
                     pos += 2;
                 }
                 c if c.is_alphabetic() || c == '_' => {

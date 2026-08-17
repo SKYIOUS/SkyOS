@@ -1,61 +1,29 @@
-# PCI Device Enumeration
+# PCI Device Access
 
-The PCI subsystem discovers and enumerates devices on the PCI and PCI Express buses.
+The PCI subsystem (`kernel/kernel/src/pci/mod.rs`) provides configuration-space access and device enumeration via the legacy I/O port method (0xCF8 config address, 0xCFC config data). There is no ECAM/MMIO access, and no `PciConfig`/`PciDevice` structs — accesses are raw read/write helpers taking `(bus, slot, func)`.
 
-## Configuration Space
-
-Each PCI device has a 256-byte configuration space accessed through I/O ports 0xCF8 (config address) and 0xCFC (config data). PCI Express uses memory-mapped configuration space (ECAM) for faster access.
+## Configuration Access
 
 ```rust
-pub struct PciConfig {
-    pub vendor_id: u16,
-    pub device_id: u16,
-    pub command: u16,
-    pub status: u16,
-    pub revision_id: u8,
-    pub class_code: u8,
-    pub subclass: u8,
-    pub prog_if: u8,
-    pub header_type: u8,
-}
+pub fn read_config_u32(bus: u8, slot: u8, func: u8, offset: u8) -> u32;
+pub fn read_config_u16(bus: u8, slot: u8, func: u8, offset: u8) -> u16;
+pub fn read_config_u8(bus: u8, slot: u8, func: u8, offset: u8) -> u8;
+pub fn write_config_u32(bus: u8, slot: u8, func: u8, offset: u8, value: u32);
+pub fn write_config_u16(bus: u8, slot: u8, func: u8, offset: u8, value: u16);
 ```
 
-## Bus Enumeration
+The 32-bit accessor builds the standard PCI config address word (`enable | bus<<16 | slot<<11 | func<<8 | offset&0xFC`); the u16/u8 variants shift the result. `read_bar64(bus, slot, func, bar_offset)` reads a 64-bit BAR (detecting it via the low bits and reading the upper dword).
 
-The kernel scans PCI buses 0-255, each with devices 0-31 and functions 0-7:
+## Enumeration
 
-```rust
-pub fn enumerate_all() -> Vec<PciDevice> {
-    let mut devices = Vec::new();
-    for bus in 0..256 {
-        for device in 0..32 {
-            for function in 0..8 {
-                let config = read_config(bus, device, function);
-                if config.vendor_id != 0xFFFF {
-                    devices.push(PciDevice { bus, device, function, config });
-                    // If multi-function, continue to function 7
-                    if function == 0 && !config.is_multi_function() {
-                        break;
-                    }
-                } else if function == 0 {
-                    break; // No device, skip remaining functions
-                }
-            }
-        }
-    }
-    devices
-}
-```
+`pub fn enumerate_pci()` scans the bus hierarchy (recursively handling PCI-to-PCI bridges), using `vendor_id == 0xFFFF` as "no device". Enumeration calls the driver hooks for discovered devices.
+
+## Capabilities & MSI
+
+- `find_capability(bus, slot, func, cap_id) -> Option<u8>` walks the capability list from the status-register capabilities bit + `0x34` pointer.
+- `pci_enable_msi(bus, slot, func) -> Option<u8>` finds the MSI capability, allocates a vector from `apic::msi`, writes the MSI address/data registers, and enables MSI (single-message, MME=0).
+- Legacy interrupts are routed through the I/O APIC via `apic::route_pci_irq`.
 
 ## Base Address Registers (BARs)
 
-Each device has up to 6 BARs that describe memory or I/O regions. The driver reads the BAR to determine the region type, size, and base address. Memory BARs can be 32-bit or 64-bit.
-
-## PCI Interrupts
-
-PCI devices can use:
-- **INTx**: Legacy interrupt lines (INTA#, INTB#, etc.)
-- **MSI**: Message Signaled Interrupts (write to a memory address)
-- **MSI-X**: Extended MSI with multiple independent vectors
-
-The kernel configures MSI/MSI-X when supported and available.
+BARs are read via `read_bar64` (handles both 32-bit and 64-bit memory BARs, plus I/O BARs). The raw value is mapped to a virtual address via the physical-memory offset (`bar_to_virt`).

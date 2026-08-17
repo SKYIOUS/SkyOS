@@ -34,10 +34,9 @@ fn user_main() -> i32 {
         }
     }
     let text = alloc::string::String::from_utf8_lossy(&data);
-    if expr.starts_with("s/") {
-        let rest = &expr[2..];
+    if let Some(rest) = expr.strip_prefix("s/") {
         let parts: alloc::vec::Vec<&str> = rest.split('/').collect();
-        let pattern = parts.get(0).unwrap_or(&"");
+        let pattern = parts.first().unwrap_or(&"");
         let replacement = parts.get(1).unwrap_or(&"");
         for line in text.lines() {
             if pattern.is_empty() {

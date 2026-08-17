@@ -8,11 +8,28 @@ use libsarga::fs;
 use libsarga::io::{self, close, getdents64, open, stat, Stat};
 use libsarga::sarga_main;
 
+const SKIP_PREFIXES: &[&str] = &[
+    "/dev/",
+    "/proc/",
+    "/sys/",
+    "/tmp/",
+    "/var/cache/",
+    "/var/spool/",
+    "/var/log/",
+    "/mnt/",
+];
+
+fn is_skipped(path: &str) -> bool {
+    SKIP_PREFIXES
+        .iter()
+        .any(|p| path.starts_with(p) || path == p.trim_end_matches('/'))
+}
+
 fn walk_dir(path: &str, entries: &mut Vec<(String, String, u64, bool)>, depth: usize) {
-    if depth > 8 {
+    if depth > 6 {
         return;
     }
-    if path.len() > 256 {
+    if path.len() > 256 || is_skipped(path) {
         return;
     }
     let fd = match open(path, 0) {
@@ -55,12 +72,17 @@ fn walk_dir(path: &str, entries: &mut Vec<(String, String, u64, bool)>, depth: u
         } else {
             format!("{}/{}", path, name)
         };
-        let is_dir = d_type == 4;
-        let size = stat(&full).map(|s: Stat| s.size as u64).unwrap_or(0);
-        let full_clone = full.clone();
-        entries.push((name.to_string(), full_clone, size, is_dir));
 
-        if is_dir && depth < 8 {
+        if is_skipped(&full) {
+            off += reclen;
+            continue;
+        }
+
+        let is_dir = d_type == 4;
+        let size = stat(&full).map(|s: Stat| s.size).unwrap_or(0);
+        entries.push((name.to_string(), full.clone(), size, is_dir));
+
+        if is_dir && depth < 6 {
             walk_dir(&full, entries, depth + 1);
         }
         off += reclen;
@@ -76,27 +98,30 @@ fn build_index() -> Vec<(String, String, u64, bool)> {
 fn write_index(entries: &[(String, String, u64, bool)]) {
     let mut out = String::new();
     for (name, path, size, is_dir) in entries {
-        out.push_str(&format!("{}|{}|{}|{}\n", name, path, size, *is_dir as u8));
+        let escaped_path = path.replace('|', "_");
+        out.push_str(&format!(
+            "{}|{}|{}|{}\n",
+            name, escaped_path, size, *is_dir as u8
+        ));
     }
-    let _ = fs::write_file("/tmp/search.idx", &out);
+    // Atomic write: write to temp then rename
+    let _ = fs::write_file("/tmp/search.idx.tmp", &out);
+    let _ = libsarga::io::rename("/tmp/search.idx.tmp", "/tmp/search.idx");
 }
 
 fn user_main() -> i32 {
-    io::print_str("[searchd] starting filesystem indexer\n");
+    io::print_str("[searchd] starting\n");
     let mut cycle = 0u64;
 
     loop {
-        io::print_str(&format!("[searchd] indexing... (cycle {})\n", cycle));
+        if cycle == 0 || cycle.is_multiple_of(12) {
+            io::print_str(&format!("[searchd] indexing (cycle {})\n", cycle));
+        }
         let entries = build_index();
         write_index(&entries);
-        io::print_str(&format!("[searchd] indexed {} entries\n", entries.len()));
 
         cycle += 1;
-        for _ in 0..30000 {
-            unsafe {
-                libsarga::syscall::syscall2(35, 0, 1_000_000u64);
-            }
-        }
+        let _ = io::nanosleep(30_000_000_000);
     }
 }
 

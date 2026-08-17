@@ -1,10 +1,10 @@
 # SkyOS Kernel Architecture
 
-This document provides a high-level overview of the Skyious kernel's architecture, design principles, and major components.
+This document provides a high-level overview of the Vahi kernel's architecture, design principles, and major components.
 
 ## 1. Core Principles
 
-Skyious is a monolithic kernel with a modular design, written from scratch in Rust. It aims for POSIX compatibility where feasible while exploring modern OS concepts. Key principles include:
+Vahi is a monolithic kernel with a modular design, written from scratch in Rust. It aims for POSIX compatibility where feasible while exploring modern OS concepts. Key principles include:
 
 - **Safety:** Leverage Rust's safety features to minimize `unsafe` code. All `unsafe` blocks must be justified with a `// SAFETY:` comment.
 - **Modularity:** Subsystems (memory, scheduler, VFS) are designed as independent modules with clear APIs.
@@ -14,7 +14,7 @@ Skyious is a monolithic kernel with a modular design, written from scratch in Ru
 
 1.  **UEFI Firmware:** The system starts by executing the UEFI firmware (e.g., OVMF in QEMU, or the motherboard's firmware).
 2.  **Bootloader:** The UEFI firmware loads the `bootloader` crate's EFI application from the disk's EFI System Partition (ESP).
-3.  **Kernel Loading:** The bootloader loads the Skyious kernel ELF file, sets up a higher-half memory map, maps the framebuffer, and hands off control.
+3.  **Kernel Loading:** The bootloader loads the Vahi kernel ELF file, sets up a higher-half memory map, maps the framebuffer, and hands off control.
 4.  **`kernel_main`:** The bootloader jumps to the `kernel_main` entry point, passing a `BootInfo` structure containing the memory map, framebuffer details, and physical memory offset.
 
 ## 3. Major Subsystems
@@ -33,15 +33,15 @@ Skyious is a monolithic kernel with a modular design, written from scratch in Ru
 
 ### 3.3 Scheduling & Concurrency
 
-- **Preemptive Scheduler:** A global, priority-based round-robin scheduler (`task/scheduler.rs`) manages `Thread`s.
+- **Preemptive Scheduler:** A per-CPU **stride scheduler** (`task/scheduler.rs`) manages `Thread`s using tickets/`pass` proportional-share (see SCHEDULER.md). New threads spawn into a global `pending_queue`; idle CPUs steal work.
 - **SMP:** The kernel boots Application Processors (APs), each of which enters the scheduler loop to begin executing threads.
 - **Async Executor:** A cooperative async/await executor (`task/executor.rs`) runs tasks like the kernel shell. It is run within a dedicated kernel thread.
 
 ### 3.4 Virtual Filesystem (VFS)
 
-- **Trait-based:** A `VfsNode` trait provides a unified interface for files, directories, and devices.
-- **Filesystems:** Supports `Tmpfs` (for `/`), `Ext2` (read-only), `FAT32`, and `Pipe` for IPC.
-- **Mounting:** A `VfsManager` handles mounting filesystems at different paths.
+- **Trait-based:** `VfsNode` and `FileSystem` traits provide a unified interface for files, directories, and devices.
+- **Filesystems:** ramfs (/tmp), devfs (/dev), ctlfs (/ctl), pipe, tarfs (initrd root unless a block device filesystem is found), skyfs, ext2 (**read-write**), ext4 (**read-only**, feature-gated), and FAT32 (via `fatfs` crate).
+- **Mounting:** A `VfsManager` (`pub static VFS: SchedLock<VfsManager>`) handles mounting filesystems at different paths.
 
 ### 3.5 Syscalls
 
@@ -51,6 +51,8 @@ Skyious is a monolithic kernel with a modular design, written from scratch in Ru
 ### 3.6 Drivers
 
 - **PCI:** The PCI bus is enumerated at boot to discover devices.
-- **Storage:** A block device trait abstracts storage controllers like AHCI.
+- **Storage:** A block device trait abstracts storage controllers: AHCI, NVMe, PATA, and VirtIO block.
 - **Network:** E1000 and VirtIO network drivers are supported, integrated with the `smoltcp` networking stack.
-- **Graphics:** A framebuffer driver uses the UEFI GOP to provide a graphical console.
+- **USB:** UHCI, XHCI, and HID drivers.
+- **Audio:** HDA and PC speaker.
+- **Graphics:** VirtIO GPU plus BGA framebuffer with a graphical console (UEFI GOP).

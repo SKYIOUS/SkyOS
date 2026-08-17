@@ -2,6 +2,16 @@
 
 Phase 6 adds comprehensive security mechanisms to SkyOS.
 
+## Already Implemented
+
+Some items in the goals below already exist (see `docs/security/`):
+
+- **SMEP/SMAP** — enabled conditionally at boot (see `docs/security/memory_protection.md`)
+- **Stack canaries** — `-Z stack-protector=strong` on the kernel
+- **MAC** — rule-based LSM (`security.rs`) hooks file/socket/exec/mount/kill
+- **Audit** — `audit_log()` records capability denials
+- **Capabilities** — Linux-style capability bits + `capset`/`capget`
+
 ## Goals
 
 - Address Space Layout Randomization (ASLR)
@@ -33,10 +43,7 @@ The security architecture defends against:
 
 ## Security Hardening
 
-Additional hardening measures:
-- SMEP (Supervisor Mode Execution Prevention)
-- SMAP (Supervisor Mode Access Prevention)
-- Kernel page table isolation (KPTI) for Meltdown mitigation
+Additional hardening measures (KPTI is not planned — the kernel uses a shared higher-half mapping, so page-table isolation is not a Meltdown mitigation for this layout):
 - W^X enforcement for kernel memory
 
 ## Expected Timeline

@@ -21,14 +21,14 @@ fn read_stdin() -> alloc::string::String {
 
 fn read_file(path: &str) -> alloc::string::String {
     let fd = unsafe { libsarga::syscall::syscall2(2, path.as_ptr() as u64, 0) };
-    if (fd as i64) < 0 {
+    if fd < 0 {
         return String::new();
     }
     let mut data = alloc::vec::Vec::new();
     let mut buf = [0u8; 4096];
     loop {
         let n = unsafe { libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, 4096) };
-        if (n as i64) <= 0 {
+        if n <= 0 {
             break;
         }
         data.extend_from_slice(&buf[..n as usize]);
@@ -42,14 +42,14 @@ fn write_file(path: &str, content: &str) -> bool {
     let fd = unsafe {
         libsarga::syscall::syscall3(2, path.as_ptr() as u64, content.as_ptr() as u64, flags)
     };
-    if (fd as i64) < 0 {
+    if fd < 0 {
         return false;
     }
     let n = unsafe {
         libsarga::syscall::syscall3(1, fd as u64, content.as_ptr() as u64, content.len() as u64)
     };
     let _ = unsafe { libsarga::syscall::syscall1(3, fd as u64) };
-    (n as i64) == content.len() as i64
+    n == content.len() as i64
 }
 
 fn user_main() -> i32 {
@@ -71,21 +71,20 @@ fn user_main() -> i32 {
     let mut current_file = alloc::string::String::new();
     let mut removes: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for line in diff.lines() {
-        if line.starts_with("--- ") {
-            let name = &line[4..];
+        if let Some(name) = line.strip_prefix("--- ") {
             if let Some((n, _)) = name.split_once('\t') {
                 current_file = alloc::string::String::from(n);
             }
         } else if line.starts_with("--- /dev/null") {
-            if let Some(next) = diff.lines().skip_while(|l| !l.starts_with("+++ ")).next() {
+            if let Some(next) = diff.lines().find(|l| l.starts_with("+++ ")) {
                 current_file = alloc::string::String::from(&next[4..]);
             }
-        } else if line.starts_with("+++ ") {
-            if line[4..].starts_with("/dev/null") {
+        } else if let Some(name) = line.strip_prefix("+++ ") {
+            if name.starts_with("/dev/null") {
                 continue;
             }
             if current_file.is_empty() {
-                current_file = alloc::string::String::from(&line[4..]);
+                current_file = alloc::string::String::from(name);
             }
         } else if line.starts_with('-') && !line.starts_with("---") {
             removes.push(alloc::string::String::from(&line[1..]));

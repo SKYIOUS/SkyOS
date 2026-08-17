@@ -85,7 +85,7 @@ fn user_main() -> i32 {
         egid,
         lookup_name_by_gid(egid)
     ));
-    return 0;
+    0
 }
 
 sarga_main!(user_main);

@@ -5,86 +5,240 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  dispatch-sanity:
+    # Dispatch-time self-check: proves the workflow_dispatch trigger is
+    # still declared on the ref being run, and surfaces the event payload
+    # for manual-run debugging. Runs only on workflow_dispatch (job-level
+    # `if`), so push/PR runs skip it. If the trigger is ever silently
+    # removed from ci.yml, the next dispatch fails loudly here - the
+    # checked-out file must still declare the trigger, and a run that
+    # reaches this job without it is a red flag, not a green light.
+    name: Dispatch sanity
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert workflow_dispatch trigger is declared
+        run: |
+          if ! grep -q '^  workflow_dispatch:' .github/workflows/ci.yml; then
+            echo "::error::workflow_dispatch trigger missing from .github/workflows/ci.yml - re-add 'workflow_dispatch:' under 'on:' before dispatching."
+            exit 1
+          fi
+          echo "PASS: workflow_dispatch trigger present"
+
+      - name: Print event payload
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "actor=${{ github.actor }}"
+          echo "sha=${{ github.sha }}"
+          echo "--- full payload ---"
+          jq . "$GITHUB_EVENT_PATH" 2>/dev/null || cat "$GITHUB_EVENT_PATH"
   fmt:
-    name: Formatting
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rustfmt --allow-downgrade
-          rustup default nightly
-      - name: cargo fmt
-        run: cargo fmt --check
+          # Pinned nightly-2026-01-15 (matches local 1.94 dev; the pinned cargo is the last that
+          # accepts .json target specs without -Zjson-target-spec, and its rustc still has the
+          # x86-softfloat rustc-abi value - both renamed on newer nightlies).
+          rustup toolchain install nightly-2026-01-15 --component rustfmt --allow-downgrade
+          rustup default nightly-2026-01-15
+      - run: cargo fmt --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
-          rustup toolchain install nightly --component clippy --component rust-src --allow-downgrade
-          rustup default nightly
-      - name: cargo clippy
-        run: cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings
+          rustup toolchain install nightly-2026-01-15 --component clippy --component rust-src --allow-downgrade
+          rustup default nightly-2026-01-15
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          key: clippy-${{ hashFiles('Cargo.lock') }}
+          restore-keys: clippy-
+      - name: Clippy (sarga target -- product target, ALL workspace members)
+        run: |
+          # No `-p` filters and no workspace `default-members`: a silent
+          # narrowing of this gate trips tests/test_clippy_guard.py host-side.
+          cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json --workspace -- -D warnings
+      - name: Clippy (host target -- lib targets; catches cfg-gated warnings the sarga target cannot see)
+        run: |
+          # --lib: the no_std bin crates cannot compile on the host (panic
+          # handler + allocator are cfg(target_os = "none")); the host-test
+          # cfg code this leg exists to lint lives in the lib targets
+          # (libsarga, libskyaudio).
+          cargo clippy --workspace --lib -- -D warnings
 
-  check-all-targets:
-    name: Check all targets build
+  dead-code:
+    name: No dead-code suppressions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly with rust-src
+      - name: Reject allow(dead_code) markers in workspace
         run: |
-          rustup toolchain install nightly --component rust-src --allow-downgrade
-          rustup default nightly
-      - name: Build debug
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json
-      - name: Build release
-        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+          # Matches #[allow(dead_code)] and #![allow(dead_code)] plus combined
+          # allows like #[allow(dead_code, clippy::type_complexity)], but not
+          # prose that merely mentions the string. Scoped to the userspace
+          # workspace: kernel is a separate repo, target/ is build artifacts.
+          if grep -rnE '#!?\[allow\((dead_code|dead_code[ ,])' --include='*.rs' --exclude-dir=target --exclude-dir=kernel .; then
+            echo "::error::#[allow(dead_code)] markers found in the workspace — the compiler must stay unmuzzled. Delete the dead code instead of suppressing the warning (see ade/docs/rebuild-plan.md, P1)."
+            exit 1
+          fi
+          echo "PASS: no allow(dead_code) markers in the workspace"
+      - name: libsarga ioctl/ioctls must have external consumers
+        run: |
+          # pub items in a library crate are invisible to rustc's dead_code
+          # lint, so an orphaned pub ioctl()/ioctls:: would pass both clippy
+          # -D warnings and the allow(dead_code) grep above. Pin >= 1 consumer
+          # outside libsarga itself (today: login's echo_off/echo_on).
+          # NOTE: match sets are captured into vars, NOT piped to grep -q —
+          # under the job's `bash -eo pipefail`, grep -q exiting early on a
+          # match SIGPIPEs upstream grep (141) and pipefail turns that into a
+          # false failure exactly when a consumer exists.
+          fail=0
+          # 1) the ioctl() wrapper: fully-qualified call OR import-style use.
+          files=$(grep -rlE 'libsarga::io::ioctl|use libsarga::io::[^;]*\bioctl\b' \
+            --include='*.rs' --exclude-dir=target --exclude-dir=kernel . \
+            | grep -v '^./libsarga/')
+          if [ -z "$files" ]; then
+            echo "::error::libsarga io::ioctl has no consumer outside libsarga — wire it in or delete it"
+            fail=1
+          fi
+          # 2) every pub const in the ioctls module (dynamic: new consts are
+          # auto-covered, same machinery as the colors-module step above).
+          # NOTE: the sed range assumes `pub mod ioctls {` starts at column 0
+          # with no same-line attribute and closes with `}` at column 0 — do
+          # not decorate or rename the module line without updating this.
+          for name in $(sed -n '/^pub mod ioctls {/,/^}/p' libsarga/src/io.rs \
+            | grep -oE 'pub const [A-Z_]+' | awk '{print $3}'); do
+            files=$(grep -rlE "ioctls::$name\b" \
+              --include='*.rs' --exclude-dir=target --exclude-dir=kernel . \
+              | grep -v '^./libsarga/')
+            if [ -z "$files" ]; then
+              echo "::error::libsarga ioctls::$name has no consumer outside libsarga — wire it in or delete it"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "PASS: ioctl wrapper + all ioctls consts consumed outside libsarga"
 
-  integration-qemu:
-    name: QEMU integration test
+      - name: Reject unreferenced colors-module constants
+        run: |
+          # Every constant in libsarga/src/theme.rs colors module must be
+          # referenced by at least one file outside theme.rs. A constant only
+          # theme.rs touches is dead scaffold - the WIN_CLOSE_HOVER history:
+          # it sat unreferenced for months while a hardcoded duplicate value
+          # appeared in draw code, then got "resurrected". Palette values live
+          # inline in Theme::dark()/light(); this module is for chrome colors
+          # with no theme-field equivalent (see ade/docs/rebuild-plan.md P1).
+          fail=0
+          for name in $(grep -oE 'pub const [A-Z_]+' libsarga/src/theme.rs | awk '{print $3}'); do
+            refs=$(grep -rnE --include='*.rs' --exclude-dir=target --exclude-dir=kernel "(^|[^a-zA-Z0-9_])$name(\$|[^a-zA-Z0-9_])" . 2>/dev/null | grep -v 'libsarga/src/theme.rs' | grep -vE '^[[:space:]]*//' | wc -l)
+            if [ "$refs" -eq 0 ]; then
+              echo "::error::libsarga theme colors constant $name has no references outside theme.rs - delete it or wire it into draw code."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "PASS: every colors-module constant is referenced outside theme.rs"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [debug, release]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly
+        run: |
+          rustup toolchain install nightly-2026-01-15 --component rust-src --allow-downgrade
+          rustup default nightly-2026-01-15
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            target/
+          key: build-${{ matrix.profile }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: build-${{ matrix.profile }}-
+      - name: Build (${{ matrix.profile }})
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json ${{ matrix.profile == 'release' && '--release' || '' }}
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  integration:
+    name: Integration (QEMU)
     runs-on: ubuntu-22.04
-    needs: [check-all-targets]
+    needs: [build, host-tests]
     steps:
       - uses: actions/checkout@v4
         with:
           path: SkyOS
 
-      - name: Checkout SKYIOUS KERNEL
+      - name: Checkout kernel
         uses: actions/checkout@v4
         with:
           repository: SKYIOUS/SKYIOUS-KERNEL
           path: SKYIOUS-KERNEL
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 mtools expect
 
-      - name: Install Rust nightly
+      - name: Install nightly
         run: |
-          rustup toolchain install nightly --component rust-src --component llvm-tools-preview --allow-downgrade
-          rustup default nightly
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
 
-      - name: Build kernel with self_test
+      - name: Build kernel (self_test)
         working-directory: SKYIOUS-KERNEL/kernel
         run: cargo build --release --target x86_64-unknown-none -Zbuild-std=core,alloc --features net,smp,ai_rule,self_test
 
-      - name: Build userspace
+      - name: Build userspace (release)
         working-directory: SkyOS
         run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
 
-      - name: Build initrd and bootimage
+      - name: Build initrd
         working-directory: SkyOS
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
         run: |
-          python3 build_initrd.py
           mkdir -p SKYIOUS-KERNEL/SkyOS
-          cp initrd.tar SKYIOUS-KERNEL/SkyOS/
+          cp SkyOS/initrd.tar SKYIOUS-KERNEL/SkyOS/
 
       - name: Create UEFI bootimage
         working-directory: SKYIOUS-KERNEL
@@ -96,20 +250,20 @@ jobs:
           pip install pycdlib 2>/dev/null || true
           python3 scripts/make_iso.py "ci-$(date +%Y%m%d)"
 
-      - name: QEMU integration test
+      - name: QEMU boot test
         working-directory: SkyOS
         timeout-minutes: 5
         run: |
           ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
-          if [ -z "$ISO" ]; then
-            echo "ERROR: No ISO found"
-            exit 1
-          fi
-          # Try expect-based integration test if available
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+
           if command -v expect &>/dev/null; then
-            expect tests/qemu_shell_test.exp "$ISO" 180 || true
+            # Propagate the expect verdict: a failing shell test must fail
+            # the step (the same un-masking the ade-selftest job does with its
+            # own expect script's output).
+            expect tests/qemu_shell_test.exp "$ISO" 180 || exit 1
           fi
-          # Simple boot test (always runs)
+
           timeout 120 qemu-system-x86_64 \
             -bios OVMF.fd \
             -cdrom "$ISO" \
@@ -119,16 +273,979 @@ jobs:
             -device e1000,netdev=net0 -netdev user,id=net0 \
             2>&1 | tee qemu_log.txt
 
-      - name: Check boot log
+      - name: Verify boot
         working-directory: SkyOS
         run: |
+          # The getty attempt cap (MAX_FAILED_ATTEMPTS=10 -> 30 s backoff)
+          # must NEVER fire in this harness: qemu_shell_test.exp logs in
+          # exactly once, so a 'Too many failed attempts' line means a
+          # harness regression (repeated submissions) or a cap misconfig.
+          # The expect session persists its serial interaction to
+          # qemu_integration_log.txt (set logfile in the harness). NOTE: a
+          # missing file (grep exits 2 -> gate passes silently) means expect
+          # was not installed, so the shell login was never exercised — that
+          # run is vacuously green, not verified clean.
+          if grep -q "Too many failed attempts - pausing 30s" qemu_integration_log.txt; then
+            echo "FAIL: getty attempt cap fired in shell harness (unexpected pause)"
+            grep "Too many failed attempts" qemu_integration_log.txt
+            exit 1
+          fi
           if grep -q "login:" qemu_log.txt; then
-            echo "PASS: System booted and login prompt detected"
-            if grep -q "PASS" qemu_log.txt; then
-              echo "PASS: Additional integration tests passed"
+            echo "PASS: Login prompt detected"
+            if grep -q "not ok" qemu_log.txt; then
+              echo "FAIL: Self-test failures detected"
+              grep "not ok" qemu_log.txt
+              exit 1
+            fi
+            if grep -q "TAP version 13" qemu_log.txt; then
+              echo "PASS: Self-test TAP output detected"
             fi
           else
-            echo "FAIL: No login prompt found in QEMU output"
+            echo "FAIL: No login prompt"
             cat qemu_log.txt
             exit 1
           fi
+          # Memory-pressure evidence on the shell boot (belt-and-suspenders,
+          # mirroring the gui-gate's explicit [vahid] ready grep): the exp's
+          # mem_marker FAIL arm only catches a FAILING marker - it cannot
+          # catch an exp edit that DROPS the check (fail_count stays 0,
+          # expect exits 0 -> vacuous green). Asserting the marker in the
+          # captured log here proves the console getty actually printed its
+          # startup ctlFS read on THIS boot.
+          if ! grep -q "\[login\] mem free=" qemu_integration_log.txt; then
+            echo "FAIL: getty memory-pressure marker missing from the shell boot log"
+            tail -60 qemu_integration_log.txt
+            exit 1
+          fi
+
+  gui-login:
+    name: GUI login (QEMU, Phase B)
+    runs-on: ubuntu-22.04
+    needs: [build, host-tests]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SkyOS
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          path: SKYIOUS-KERNEL
+
+      - name: Install system deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 mtools expect
+
+      - name: Install nightly
+        run: |
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
+
+      - name: Build kernel
+        working-directory: SKYIOUS-KERNEL/kernel
+        run: cargo build --release --target x86_64-unknown-none -Zbuild-std=core,alloc --features net,smp,ai_rule
+
+      - name: Build userspace (release)
+        working-directory: SkyOS
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+      - name: Build initrd
+        working-directory: SkyOS
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
+        run: |
+          mkdir -p SKYIOUS-KERNEL/SkyOS
+          cp SkyOS/initrd.tar SKYIOUS-KERNEL/SkyOS/
+
+      - name: Create UEFI bootimage
+        working-directory: SKYIOUS-KERNEL
+        run: cargo run --release --manifest-path builder/Cargo.toml
+
+      - name: Create ISO
+        working-directory: SkyOS
+        run: |
+          pip install pycdlib 2>/dev/null || true
+          python3 scripts/make_iso.py "ci-$(date +%Y%m%d)"
+
+      # Phase B (ade/docs/session-lifecycle.md): GUI login via QEMU monitor
+      # sendkey. Re-verified Aug 8 2026: Tab/Enter/Backspace arrive as Unicode
+      # bytes (pc-keyboard 0.5.1 US104 layout maps them to 0x08/0x09/0x0A), so
+      # login-manager's field switch + submit ARE reachable - the login half
+      # should pass on a current kernel. The Ctrl+Alt+Backspace logout half
+      # remains kernel-gated on MODIFIER delivery (Alt never survives the
+      # one-byte stream), not on RawKey mapping.
+      - name: Boot and drive GUI login
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+
+          # KERNEL_DESIGN_A: CI-visible toggle for the ctrl-alt-backspace
+          # chord probe (qemu_gui_login.exp step 5). 0/absent = current
+          # kernel (chord inert, esc fallback keeps the harness green);
+          # set to 1 when the kernel lands Design A (packed modifier bits,
+          # docs/kernel-gui-modifier-delivery.md A1-A4) so step 5 ASSERTs
+          # the chord ends the session instead of falling back to esc.
+          export KERNEL_DESIGN_A="${KERNEL_DESIGN_A:-0}"
+          expect tests/qemu_gui_login.exp "$ISO" 300 | tee qemu_gui_log.txt
+
+      - name: Verify GUI login verdict
+        working-directory: SkyOS
+        run: |
+          # The GUI attempt cap (MAX_FAILED_ATTEMPTS=10 -> 30 s backoff) is
+          # a POSITIVE contract: the harness drives 10 wrong passwords into
+          # login-manager's window, asserts the 'Too many failed attempts -
+          # pausing 30s' announce fires EXACTLY ONCE (on the 10th) with no
+          # login-manager respawn, proves the reset with an 11th wrong
+          # password, then logs in correctly. A count of 0 means the cap
+          # regressed or the probe never ran; a count > 1 means the counter
+          # was not reset after the backoff.
+          cap_count=$(grep -c "Too many failed attempts - pausing 30s" qemu_gui_log.txt || true)
+          if [ "$cap_count" -ne 1 ]; then
+            echo "FAIL: GUI attempt cap marker count = $cap_count (expected exactly 1)"
+            grep "Too many failed attempts" qemu_gui_log.txt
+            exit 1
+          fi
+          if grep -q "GUI login integration: PASS" qemu_gui_log.txt; then
+            # Phase B routing probe (belt-and-suspenders, checked AFTER the
+            # verdict so an early boot death reports the verdict failure, not
+            # a misleading routing diagnosis): the one-shot [KBD] IRQ1 fired!
+            # marker (kernel interrupts.rs) proves sendkey reached the
+            # keyboard handler - without it every sendkey-driven assertion
+            # is void.
+            if ! grep -q "\[KBD\] IRQ1 fired!" qemu_gui_log.txt; then
+              echo "FAIL: sendkey never reached IRQ1 (kernel keyboard routing)"
+              exit 1
+            fi
+            # Idempotent-unwind contract: the unwind marker carries the
+            # session's exit code and ending state ('[ade] session ended
+            # code=0 ending=true'), so CI asserts EXIT_LOGOUT 0 on real
+            # input -- the synthetic host tests pin it, this greps it.
+            if ! grep -q "\[ade\] session ended code=0 ending=true" qemu_gui_log.txt; then
+              echo "FAIL: unwind marker missing code=0 ending=true (idempotent-unwind contract)"
+              exit 1
+            fi
+            echo "PASS: GUI login end-to-end green (incl. IRQ1 routing)"
+          else
+            echo "FAIL: GUI login did not complete"
+            tail -80 qemu_gui_log.txt
+            exit 1
+          fi
+
+  ade-selftest:
+    name: ADE selftest (QEMU)
+    runs-on: ubuntu-22.04
+    needs: [build, host-tests]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SkyOS
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          path: SKYIOUS-KERNEL
+
+      - name: Install system deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 mtools expect
+
+      - name: Install nightly
+        run: |
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
+
+      - name: Build kernel
+        working-directory: SKYIOUS-KERNEL/kernel
+        run: cargo build --release --target x86_64-unknown-none -Zbuild-std=core,alloc --features net,smp,ai_rule
+
+      - name: Build userspace (release)
+        working-directory: SkyOS
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+      - name: Build initrd
+        working-directory: SkyOS
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
+        run: |
+          mkdir -p SKYIOUS-KERNEL/SkyOS
+          cp SkyOS/initrd.tar SKYIOUS-KERNEL/SkyOS/
+
+      - name: Create UEFI bootimage
+        working-directory: SKYIOUS-KERNEL
+        run: cargo run --release --manifest-path builder/Cargo.toml
+
+      - name: Create ISO
+        working-directory: SkyOS
+        run: |
+          pip install pycdlib 2>/dev/null || true
+          python3 scripts/make_iso.py "ci-$(date +%Y%m%d)"
+
+      - name: Boot and run ade --selftest
+        working-directory: SkyOS
+        timeout-minutes: 6
+        run: |
+          # Fail the job when expect fails: without pipefail the `tee` on the
+          # right of the pipeline masks expect's exit code, so the exp step's
+          # FAIL verdicts would never reach the job status.
+          set -o pipefail
+          ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+
+          expect tests/qemu_ade_selftest.exp "$ISO" 240 | tee qemu_ade_log.txt
+
+      - name: Verify ade selftest verdict
+        working-directory: SkyOS
+        run: |
+          # The boot step runs `set -o pipefail`, so a failing expect already
+          # fails the job — this grep step is the belt-and-suspenders second
+          # gate: it re-validates the serial log against the a11y markers
+          # even when expect exited 0, catching a spurious expect pass (a
+          # stale pattern) or a test unwired from run_all before the pipeline
+          # can go green on a log that does not prove the suite ran. Check
+          # a11y failures first
+          # (the positive grep below would otherwise report "missing" when
+          # the line is actually a FAIL), then assert ALL a11y tests ran and
+          # passed (one PASS line per test wired into run_all — the name
+          # list is cross-pinned by tests/test_ade_selftest_gate.py against
+          # ade/src/util/testing/mod.rs, so adding a test without updating
+          # this list fails CI), then the aggregate verdict.
+          if grep -qE "\[test\] FAIL test_(a11y_|tooltip_|focus_|logout_protocol_from_chord|logout_inert_with_window_open|keymap|from_raw|session_end_gate)" qemu_ade_log.txt; then
+            echo "FAIL: an a11y/input-suite test reported a failure"
+            grep -E "\[test\] FAIL test_(a11y_|tooltip_|focus_|logout_protocol_from_chord|logout_inert_with_window_open|keymap|from_raw|session_end_gate)" qemu_ade_log.txt
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+          # The getty attempt cap (MAX_FAILED_ATTEMPTS=10 -> 30 s backoff)
+          # must NEVER fire here either: the scripted mistype is exactly ONE
+          # failure (well below the cap), so a 'Too many failed attempts'
+          # line means a harness regression (repeated bad logins).
+          if grep -q "Too many failed attempts - pausing 30s" qemu_ade_log.txt; then
+            echo "FAIL: getty attempt cap fired in selftest harness (unexpected pause)"
+            grep "Too many failed attempts" qemu_ade_log.txt
+            exit 1
+          fi
+          a11y_passes=$(grep -cE "\[test\] PASS test_(a11y_close_button|a11y_taskbar_button|tooltip_owner_label|a11y_close_resyncs_focus|a11y_resync_exclusion|focus_validate_central|a11y_activation_dismisses_overlays|a11y_taskbar_focus_feedback|tooltip_hardening|tooltip_role_labels|a11y_full_keyboard_loop|a11y_tray_panel|a11y_keyboard_window_open|a11y_start_menu_rows|a11y_start_menu_ring_scroll|a11y_overlay_mouse_keyboard_parity|a11y_start_menu_focus_feedback|a11y_window_btn_focus_feedback|a11y_focused_target|a11y_arrows_from_byte_stream)" qemu_ade_log.txt || true)
+          if [ "$a11y_passes" -lt 20 ]; then
+            echo "FAIL: a11y coverage incomplete in serial log (found $a11y_passes/20)"
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+          # Logout-protocol contract: the chord -> is_ending -> exit_code
+          # test (test_logout_protocol_from_chord) is an input-suite test
+          # OUTSIDE the a11y PASS alternation above, so it needs its own
+          # assertion. Its PASS marker must appear in the serial log; a
+          # regression (is_ending not flipping, exit code drifting from 0,
+          # a near-miss key corrupting the unwind) fails the suite and
+          # this gate goes red with the offending tail.
+          if ! grep -qE "\[test\] PASS test_logout_protocol_from_chord" qemu_ade_log.txt; then
+            echo "FAIL: logout protocol test did not pass (chord->is_ending->exit_code)"
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+          # Window-open companion: with ANY window present the chord and
+          # every near-miss key must be inert (the wm.is_empty() no-op
+          # branch of the Quit arm, test_logout_inert_with_window_open).
+          # Its positive-control tail also proves the same desktop ends
+          # once the window is gone. Outside the a11y PASS alternation,
+          # so it needs its own assertion.
+          if ! grep -qE "\[test\] PASS test_logout_inert_with_window_open" qemu_ade_log.txt; then
+            echo "FAIL: window-open logout inertness test did not pass (Quit no-op branch)"
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+
+          # Input-suite contracts beyond the a11y alternation: keymap
+          # routing (test_keymap), the packed decode (test_from_raw),
+          # the session-end gate rules (test_session_end_gate), and the
+          # structurally-idempotent end protocol (test_session_end_protocol)
+          # are all input-suite tests OUTSIDE the a11y PASS alternation,
+          # so each needs its own assertion. A regression in any of
+          # them fails the suite and this gate goes red with the
+          # offending tail.
+          for t in test_keymap test_from_raw test_session_end_gate test_session_end_protocol; do
+            if ! grep -qE "\[test\] PASS $t" qemu_ade_log.txt; then
+              echo "FAIL: input-suite test $t did not pass"
+              grep -E "\[test\] FAIL $t" qemu_ade_log.txt || true
+              tail -60 qemu_ade_log.txt
+              exit 1
+            fi
+          done
+          # Two-step dismissal contract (first Enter dismisses the overlay,
+          # the next Enter acts): asserted via the per-step [a11y] marker --
+          # the aggregate PASS for test_a11y_activation_dismisses_overlays
+          # cannot prove the second Enter acted. Mirrors the exp 4a6b
+          # expect block; both sides are cross-pinned by
+          # tests/test_ade_selftest_gate.py.
+          if ! grep -qE "\[a11y\] test_a11y_activation_dismisses_overlays second Enter acts: PASS" qemu_ade_log.txt; then
+            echo "FAIL: two-step dismissal marker missing (dismiss then act contract)"
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+          if grep -q "selftest FAIL" qemu_ade_log.txt; then
+            echo "FAIL: ade selftest suite reported failures"
+            grep "selftest FAIL" qemu_ade_log.txt
+            exit 1
+          fi
+          if ! grep -q "selftest PASS" qemu_ade_log.txt; then
+            echo "FAIL: no '[ade] selftest PASS' verdict in serial log"
+            tail -60 qemu_ade_log.txt
+            exit 1
+          fi
+          # Keymap contract: ade prints the routing-table dump
+          # ("[input] bindings=17 quit=1 chord=yes ctrlq=no grabs=10")
+          # before the selftest verdict. Assert it verbatim so a table
+          # edit that changes any count (including turning a terminal
+          # key into a desktop grab, which bumps `grabs`) fails here even
+          # if the test_keymap pin were unwired from run_all. The literal
+          # is cross-pinned by tests/test_ade_selftest_gate.py against
+          # ade/src/main.rs — update BOTH when the table legitimately
+          # changes.
+          if ! grep -qF "[input] bindings=17 quit=1 chord=yes ctrlq=no grabs=10" qemu_ade_log.txt; then
+            echo "FAIL: keymap contract marker missing or drifted"
+            grep "\[input\] bindings" qemu_ade_log.txt || true
+            tail -20 qemu_ade_log.txt
+            exit 1
+          fi
+          echo "PASS: ade --selftest suite green in QEMU (incl. a11y coverage + keymap contract)"
+
+
+  gui-gate:
+    name: GUI + device-manager reachability gate (QEMU)
+    runs-on: ubuntu-22.04
+    needs: [build, host-tests]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SkyOS
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          path: SKYIOUS-KERNEL
+
+      - name: Install system deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 mtools expect
+
+      - name: Install nightly
+        run: |
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
+
+      - name: Build kernel
+        working-directory: SKYIOUS-KERNEL/kernel
+        run: cargo build --release --target x86_64-unknown-none -Zbuild-std=core,alloc --features net,smp,ai_rule
+
+      - name: Build userspace (release)
+        working-directory: SkyOS
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+      - name: Build initrd
+        working-directory: SkyOS
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
+        run: |
+          mkdir -p SKYIOUS-KERNEL/SkyOS
+          cp SkyOS/initrd.tar SKYIOUS-KERNEL/SkyOS/
+
+      - name: Create UEFI bootimage
+        working-directory: SKYIOUS-KERNEL
+        run: cargo run --release --manifest-path builder/Cargo.toml
+
+      - name: Create ISO
+        working-directory: SkyOS
+        run: |
+          pip install pycdlib 2>/dev/null || true
+          python3 scripts/make_iso.py "ci-$(date +%Y%m%d)"
+
+      # GUI + device-manager reachability gate (ade/docs/session-lifecycle.md
+      # Gap 1): a single boot asserts both "[vahid] ready" (device-manager
+      # health) and login-manager's window marker. PASS = "[vahid] ready" +
+      # "[login] window created"; FAIL = "[login] failed to create window"
+      # (the respawn loop) or a vahid FATAL/give-up. Every kernel build now
+      # answers the open questions instead of leaving them undecided.
+      - name: Boot and assert GUI + device-manager reachability
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          # Same un-masking as the ade-selftest and GUI-login boot steps: the
+          # `tee` would otherwise swallow this expect verdict's exit code.
+          set -o pipefail
+          ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+
+          expect tests/qemu_gui_gate.exp "$ISO" 300 | tee qemu_gui_gate_log.txt
+
+      - name: Verify GUI gate verdict
+        working-directory: SkyOS
+        run: |
+          if grep -q "GUI + device-manager reachability gate: PASS" qemu_gui_gate_log.txt; then
+            # Explicit positive vahid assertion #1 (guest marker): the
+            # device manager must have reached its healthy sleep loop in
+            # THIS captured boot, not just have the aggregate verdict.
+            if ! grep -q "\[vahid\] ready" qemu_gui_gate_log.txt; then
+              echo "FAIL: '[vahid] ready' missing from the captured log"
+              tail -80 qemu_gui_gate_log.txt
+              exit 1
+            fi
+            # Explicit positive assertion #2 (exp phase verdict): the tee'd
+            # log carries BOTH guest serial and the exp's send_user lines,
+            # so the guest marker alone cannot catch an exp edit that
+            # silently drops the vahid phase while keeping the aggregate
+            # verdict string. Only this exp PASS line proves the phase ran.
+            if ! grep -q "PASS: vahid device manager healthy" qemu_gui_gate_log.txt; then
+              echo "FAIL: vahid phase not exercised by the gate exp (phase dropped?)"
+              tail -80 qemu_gui_gate_log.txt
+              exit 1
+            fi
+            # Phase B routing probe on the gate too, checked AFTER the
+            # verdict (see gui-login above for why): the one-shot [KBD] IRQ1
+            # fired! marker proves sendkey reached the keyboard handler.
+            if ! grep -q "\[KBD\] IRQ1 fired!" qemu_gui_gate_log.txt; then
+              echo "FAIL: sendkey never reached IRQ1 (kernel keyboard routing)"
+              exit 1
+            fi
+            # Phase B Tab/Enter routing (kernel-keyboard-gate.md section
+            # 3): one sendkey Tab must advance login-manager's active field.
+            # This greps the exp's PASS line so a silent exp edit that
+            # drops the Tab probe fails the job, same pattern as the vahid
+            # phase verdict above.
+            if ! grep -q "PASS: sendkey Tab advanced the login-manager field" qemu_gui_gate_log.txt; then
+              echo "FAIL: Tab routing probe verdict missing from the gate log"
+              tail -80 qemu_gui_gate_log.txt
+              exit 1
+            fi
+            # Memory-pressure marker (boot-time allocator low-water
+            # evidence): login-manager prints '[login] mem free=N pages'
+            # from ctlFS /ctl/sys/mem/free before Window::create. Its
+            # presence is asserted explicitly so the Option 1 vs Option 2
+            # kernel-fix recommendation is settled by per-boot evidence
+            # (persistent OOM: free near zero; transient: plenty free).
+            if ! grep -q "\[login\] mem free=" qemu_gui_gate_log.txt; then
+              echo "FAIL: memory-pressure marker missing from the gate log"
+              tail -80 qemu_gui_gate_log.txt
+              exit 1
+            fi
+            echo "PASS: GUI reachable (window created), vahid healthy, IRQ1 + Tab routing live, mem marker present"
+          else
+            echo "FAIL: GUI or device-manager not reachable (see serial markers)"
+            tail -80 qemu_gui_gate_log.txt
+            exit 1
+          fi
+
+      # Cross-world clipboard probe (facility audit F1 payoff): console
+      # sash yank (Esc Y -> SYS_CLIPBOARD) then sendkey ctrl-b -> ade
+      # prints the kernel store; the yanked bytes must arrive on the
+      # GUI side, closing the console<->GUI clipboard loop on real
+      # hardware (kernel-gui-window-fix audit F1).
+      - name: Cross-world clipboard probe (F1 payoff)
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+          expect tests/qemu_clipboard_probe.exp "$ISO" 240 | tee qemu_clipboard_probe_log.txt
+          grep -q "PASS: cross-world clipboard loop" qemu_clipboard_probe_log.txt
+
+      # DRM set_mode probe (F4 payoff, K5-gated): boot, launch
+      # skysettings from the console shell (initrd now ships
+      # bin/skysettings), sendkey r to cycle the resolution, and
+      # assert the kernel prints DRM: set_mode
+      # (kernel-drmctl-fix.md Fix 1). Until the rewrite lands K5 the
+      # EINVAL path stays live: the app proves the key reached it
+      # (settings applying) but the kernel prints nothing ->
+      # KERNEL-GATED deferral (exit 0), like the give-up gate.
+      - name: DRM set_mode probe (K5-gated)
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+          expect tests/qemu_drm_probe.exp "$ISO" 240 | tee qemu_drm_probe_log.txt
+          if grep -q "KERNEL-GATED:" qemu_drm_probe_log.txt; then
+            echo "::warning::KERNEL GATE: DRM set_mode EINVAL loop still live (K5 not landed) - marker deferred"
+            exit 0
+          fi
+          grep -q "PASS: DRM set_mode delivered" qemu_drm_probe_log.txt
+
+      # DHCP/net probe (K10-gated): settles whether smoltcp works on
+      # real hardware. Today '[DHCP] lease lost' fires and
+      # '[DHCP] configured IP:' never appears - the harness dumps the
+      # net-marker evidence and defers via KERNEL-GATED (exit 0); the
+      # moment K10 lands (kernel-net-dhcp.md) the marker assert becomes
+      # hard. The TCP-echo leg is documented as blocked on K10 + a
+      # guest socket tool (see the doc).
+      - name: DHCP/net probe (K10-gated)
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found"; exit 1; fi
+          expect tests/qemu_net_probe.exp "$ISO" 240 | tee qemu_net_probe_log.txt
+          if grep -q "KERNEL-GATED:" qemu_net_probe_log.txt; then
+            echo "::warning::KERNEL GATE: DHCP lease never obtained on real hardware (K10 not landed) - settlement deferred with evidence"
+            exit 0
+          fi
+          grep -q "PASS: DHCP lease obtained" qemu_net_probe_log.txt
+
+      # Forced-failure variant: build a fail-vahid ISO (init compiled with
+      # the force-vahid-fail feature spawns vahid with --force-fail, driving
+      # its FATAL /dev path). The give-up harness's vahid arm then gets a
+      # real QEMU run instead of waiting for a genuine /dev node failure.
+      - name: Build fail-vahid ISO variant
+        working-directory: SkyOS
+        run: |
+          set -euxo pipefail
+          cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release -p init --features force-vahid-fail
+          # Repack the initrd with the feature-built init (build_initrd.py
+          # scans target/ for binaries), then rebuild bootimage + ISO.
+          python3 build_initrd.py
+          mkdir -p ../SKYIOUS-KERNEL/SkyOS
+          cp initrd.tar ../SKYIOUS-KERNEL/SkyOS/
+          (cd ../SKYIOUS-KERNEL && cargo run --release --manifest-path builder/Cargo.toml)
+          pip install pycdlib 2>/dev/null || true
+          python3 scripts/make_iso.py "ci-failvahid-$(date +%Y%m%d)"
+
+      - name: Boot and capture init respawn accounting markers
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          # Healthy ISO: svc is the ONLY non-zero-exit service, so the
+          # boundedness claim stays attributable to svc alone. Exclude the
+          # fail-vahid variant explicitly (both match the skyos-ci-* glob).
+          ISO="$(ls release/skyos-ci-*.iso 2>/dev/null | grep -v failvahid | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No healthy ISO found"; exit 1; fi
+          expect tests/qemu_giveup_boot.exp "$ISO" 300 | tee qemu_giveup_log.txt
+
+      - name: Verify bounded/unbounded respawn accounting markers
+        working-directory: SkyOS
+        run: |
+          if grep -q "KERNEL-GATED:" qemu_giveup_log.txt; then
+            # Surface the deferral in the CI UI so a kernel that never lands
+            # waitpid cannot stay silently green.
+            echo "::warning::KERNEL GATE: waitpid reaps no exits yet - boundedness markers deferred (kernel rewrite in flight)"
+            echo "KERNEL GATE: waitpid reaps no exits yet - boundedness markers deferred (kernel rewrite in flight)"
+            exit 0
+          fi
+          if ! grep -q "PASS: bounded" qemu_giveup_log.txt; then
+            echo "FAIL: boundedness not proven on real init (no give-up on svc despite non-zero exits)"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          if ! grep -q "PASS: unbounded" qemu_giveup_log.txt; then
+            echo "FAIL: unboundedness not proven (give-up on login-manager seen)"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          # vahid health, two layers (gate-lifted only - the KERNEL-GATED
+          # deferral above already exited): the guest's raw '[vahid] ready'
+          # marker AND the exp's 'PASS: vahid device manager healthy' phase
+          # verdict. An exp edit that drops the vahid stage must fail here
+          # even if the aggregate bounded/unbounded verdicts still print.
+          if ! grep -q "\[vahid\] ready" qemu_giveup_log.txt; then
+            echo "FAIL: vahid device manager never reached ready on the healthy boot"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          if ! grep -q "PASS: vahid device manager healthy" qemu_giveup_log.txt; then
+            echo "FAIL: exp vahid-health phase verdict missing (stage dropped from harness?)"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          # mknod contract on real hardware (gate-lifted only - like the
+          # '[vahid] ready' grep above, this block is SILENT until the kernel
+          # lands devfs + waitpid; the deferral exits before it): every node
+          # in the vahid node table must print its per-node success marker
+          # '[vahid] created /dev/<name>' (vahid/src/main.rs create_devices,
+          # added Aug 2026 so the six names are observable - before that they
+          # only appeared in the FAILED form). These are the six names a
+          # future kernel mknod must serve; dropping one fails here.
+          for node in null zero random urandom tty console; do
+            if ! grep -q "\[vahid\] created /dev/$node" qemu_giveup_log.txt; then
+              echo "FAIL: vahid never created /dev/$node on the healthy boot (mknod table not exercised)"
+              tail -40 qemu_giveup_log.txt
+              exit 1
+            fi
+          done
+          # PCI scan verdict: either the scanned-N marker (a future kernel
+          # with sysfs) or the sysfs-unavailable marker. The current kernel
+          # prints the latter (real boot evidence qemu_integration_log.txt:
+          # '[vahid] sysfs not found, skipping scan'), so a hard 'scanned N'
+          # requirement would false-fail a healthy no-sysfs boot.
+          if ! grep -qE "\[vahid\] scanned [0-9]+ PCI device\(s\)|\[vahid\] sysfs unavailable" qemu_giveup_log.txt; then
+            echo "FAIL: vahid PCI scan reached no verdict on the healthy boot"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          # Belt-and-suspenders on the raw log: the exp verdicts match the
+          # TTY0W-interleaved markers with (?s); these catch a late arrival
+          # the timed windows missed.
+          if ! grep -q "\[init\] giving up on " qemu_giveup_log.txt; then
+            echo "FAIL: no giving-up marker in the raw log"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          if grep -zqE "giving up on [^\n]*\n?[^\n]*login-manager" qemu_giveup_log.txt; then
+            echo "FAIL: unboundedness not proven (give-up on login-manager in raw log)"
+            exit 1
+          fi
+          # Per-respawn free-page series (Aug 12, 2026): login-manager prints
+          # '[login] mem free=N pages' before EVERY Window::create
+          # (login-manager/src/main.rs, ctlFS /ctl/sys/mem/free). On a healthy
+          # accounting-live boot the exp must print a mem verdict - either
+          # 'NOTE' (single reading: window path succeeded, no respawn loop) or
+          # 'PASS: mem series captured' (respawn loop observed). A boot with
+          # NO verdict means the marker contract broke (login-manager never
+          # ran or the print was renamed). Gate-lifted like the greps above:
+          # the KERNEL-GATED deferral exits before this block.
+          if ! grep -qE "NOTE: mem series|PASS: mem series captured" qemu_giveup_log.txt; then
+            echo "FAIL: no mem-series verdict - '[login] mem free=' marker contract broken on the healthy boot"
+            tail -40 qemu_giveup_log.txt
+            exit 1
+          fi
+          echo "PASS: init respawn accounting bounded (svc) + unbounded (login-manager)"
+
+      # Dedicated fail-vahid boot: vahid exits non-zero on the forced /dev
+      # path (--force-fail drives the single FATAL exit), so init must give
+      # up on IT after MAX_RESPAWNS. Kept as its own boot so the svc claim
+      # above stays attributable -- on this ISO both svc and vahid exit
+      # non-zero and would otherwise race the boundedness wait.
+      - name: Boot fail-vahid ISO and capture vahid give-up
+        working-directory: SkyOS
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          ISO="$(ls release/skyos-ci-failvahid-*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No fail-vahid ISO found"; exit 1; fi
+          expect tests/qemu_giveup_boot.exp "$ISO" 300 | tee qemu_failvahid_log.txt
+
+      - name: Verify vahid give-up on forced-failure boot
+        working-directory: SkyOS
+        run: |
+          if grep -q "KERNEL-GATED:" qemu_failvahid_log.txt; then
+            echo "::warning::KERNEL GATE: waitpid reaps no exits yet - vahid give-up deferred (kernel rewrite in flight)"
+            echo "KERNEL GATE: waitpid reaps no exits yet - vahid give-up deferred (kernel rewrite in flight)"
+            exit 0
+          fi
+          # The forced path must drive init to give up on vahid (boundedness
+          # claim for the fail-vahid variant), and the harness's bounded
+          # verdict must appear. grep -z spans the TTY0W interleave (same
+          # pattern as the svc verify's login-manager grep). [vahid] FATAL:
+          # is the belt-and-suspenders proof the FORCED /dev path (not some
+          # unrelated exit) caused the give-up.
+          if ! grep -zqE "giving up on [^\n]*\n?[^\n]*vahid" qemu_failvahid_log.txt; then
+            echo "FAIL: forced-failure boot did not drive init to give up on vahid"
+            tail -40 qemu_failvahid_log.txt
+            exit 1
+          fi
+          if ! grep -q "PASS: bounded" qemu_failvahid_log.txt; then
+            echo "FAIL: boundedness verdict missing from the fail-vahid boot"
+            tail -40 qemu_failvahid_log.txt
+            exit 1
+          fi
+          if ! grep -q "\[vahid\] FATAL:" qemu_failvahid_log.txt; then
+            echo "FAIL: no vahid FATAL marker in the fail-vahid boot"
+            tail -40 qemu_failvahid_log.txt
+            exit 1
+          fi
+          # The per-respawn free-page series (Aug 12, 2026): on the forced
+          # /dev-failure boot login-manager's Window::create fails -> exit 0
+          # -> unbounded respawn, so its '[login] mem free=N pages' marker
+          # (printed before EVERY Window::create) appears once per respawn.
+          # The exp classifies first-vs-last (recovering = transient ->
+          # Option 1; not recovering = persistent -> Option 2) against
+          # kernel-gui-window-fix.md's evidence table; a live boot must have
+          # captured the series (>= 2 readings). Gate-lifted like the
+          # KERNEL-GATED deferral above.
+          if ! grep -q "PASS: mem series captured" qemu_failvahid_log.txt; then
+            echo "FAIL: per-respawn free-page series not captured on the forced-failure boot (Option 1 vs 2 evidence missing)"
+            tail -40 qemu_failvahid_log.txt
+            exit 1
+          fi
+          echo "PASS: vahid forced-failure give-up proven on real init"
+
+
+
+  option2b-draft-build:
+    name: Option 2b draft compiles
+    # The userspace half of kernel Option 2 (kernel-gui-window-fix.md) is a
+    # draft diff pinned to APPLY host-side (TestOption2bDocDiff); this job
+    # proves it also BUILDS: extract, scratch-copy, apply, cargo build
+    # -p login-manager. Fails when the draft drifts into non-compiling code.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SkyOS
+      - name: Install nightly (pinned, matches the build job)
+        run: |
+          rustup toolchain install nightly-2026-01-15 --component rust-src --allow-downgrade
+          rustup default nightly-2026-01-15
+      - name: Apply Option 2b to scratch and build login-manager
+        working-directory: SkyOS
+        run: python3 tests/build_option2b_draft.py
+
+  host-tests:
+    name: Host tests (no QEMU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SkyOS
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          path: SKYIOUS-KERNEL
+
+      - name: Scan-rust strip regression gate (runs FIRST)
+        working-directory: SkyOS
+        # Every source-contract test below (login flow, login echo,
+        # clipboard split, overlay parity, mem marker) scans Rust through
+        # scan_rust.strip_rust. A stripping regression must fail HERE with
+        # a focused diagnosis, not as a confusing mismatch in a consumer.
+        run: python3 tests/test_scan_rust.py
+
+      - name: Scan-python strip regression gate
+        working-directory: SkyOS
+        # The Python-port consume/harness gates (probe_consume's negative
+        # source pins) scan Python through scan_python.strip_python. A
+        # stripping regression must fail HERE with a focused diagnosis,
+        # not as a confusing mismatch in a consumer.
+        run: python3 tests/test_scan_python.py
+
+      - name: Tcl syntax check (all .exp harnesses, no boot)
+        working-directory: SkyOS
+        # Every expect harness must parse as complete Tcl commands BEFORE
+        # the QEMU jobs spend minutes booting. `info complete` is the
+        # Tcl-core syntax-completeness check; a broken brace/quote is
+        # caught here in seconds instead of at boot time.
+        run: |
+          TCLSH=$(command -v tclsh || command -v tclsh8.6 || command -v expect)
+          if [ -z "$TCLSH" ]; then echo "ERROR: no tclsh/expect for harness syntax check"; exit 1; fi
+          "$TCLSH" tests/validate_tcl.exp tests/*.exp
+
+      - name: Login flow host test
+        working-directory: SkyOS
+        run: python3 tests/test_login_flow.py
+      - name: Login echo contract test
+        working-directory: SkyOS
+        run: python3 tests/test_login_echo.py
+      - name: Clippy-fix guard (newer-nightly lints)
+        working-directory: SkyOS
+        # libskyos.rs getdents casts + posix.rs SHEBANG were fixed so a
+        # modern clippy stays clean without touching the CI-pinned memcpy
+        # runtime shims; this source pin fails if they regress.
+        run: python3 tests/test_clippy_guard.py
+
+      - name: Single-home gate (tty/echo/auth constants)
+        working-directory: SkyOS
+        # Termios/echo/read_line/read_password live only in libsarga::tty,
+        # the cap constants only in libsarga::auth, and svc reads via the
+        # shared libsarga::io::read_to_string - a future auth binary that
+        # reintroduces a private copy fails here before any boot.
+        run: python3 tests/test_single_home_gate.py
+
+      - name: Vahid exit-code discipline test
+        working-directory: SkyOS
+        run: python3 tests/test_vahid_contract.py
+
+      - name: Init golden trace + getty respawn contract test
+        working-directory: SkyOS
+        run: python3 tests/test_init_golden_trace.py
+
+      - name: Give-up gate contract test
+        working-directory: SkyOS
+        run: python3 tests/test_giveup_gate.py
+
+      - name: GUI gate memory marker contract test
+        working-directory: SkyOS
+        run: python3 tests/test_gui_gate_mem_marker.py
+
+      - name: Selftest spec to kernel register() contract test
+        working-directory: SkyOS
+        # Pins kernel-gui-selftest-spec.md against the LIVE selftest.rs
+        # framework and the FUTURE gui_tests.rs register() calls, so the
+        # spec cannot drift while the kernel rewrite is in flight.
+        run: python3 tests/test_selftest_spec_contract.py
+
+      - name: Stride scheduler contract test
+        working-directory: SkyOS
+        # Host trace of kernel/src/task/scheduler.rs + thread.rs +
+        # syscalls/mod.rs pinning what is REAL (3-source pick_next order,
+        # pass+=stride accounting, route_outgoing sleep/futex/pipe routing,
+        # tick's IRQ-safe sleep wake, SCHED_OTHER-only sched_setattr) vs
+        # SCAFFOLDING (boost_thread_priority hard-stub, set_tickets dead
+        # code, selftest-only queue helpers, SCHED_QUIESCE). The kernel
+        # rewrite must preserve the real paths and deliberately un-stub
+        # the scaffolding - this gate fails loudly if either side drifts.
+        run: python3 tests/test_scheduler_contract.py
+
+      - name: Kernel change queue contract test
+        working-directory: SkyOS
+        # Pins session-lifecycle.md §6's K-number rows (K1/K1-alt/K2/K3/K4)
+        # with their exact harness conditions and the gate docs' K-banners,
+        # so the rewrite's landing checklist itself cannot silently drift.
+        run: python3 tests/test_kernel_queue_contract.py
+
+      - name: Kernel change queue CHECKLIST-OK gate
+        working-directory: SkyOS
+        # Derives each §6 row's landed state from the gate docs'
+        # CHECKLIST-OK markers + landing evidence and asserts the queue's
+        # landed column agrees, so the rewrite ticks items by landing
+        # evidence, not by hand-editing the checklist.
+        run: python3 tests/checklist_gate.py
+
+      - name: Tooltip label contract test
+        working-directory: SkyOS
+        run: python3 tests/test_tooltip_contract.py
+      - name: Window button face contract test
+        working-directory: SkyOS
+        # Host port of window_button_face + window_button_from_label (the
+        # render contract: pressed > hover-or-focused > base, pressed
+        # pointer-only), mirroring the tooltip formatter port -- no QEMU.
+        run: python3 tests/test_window_button_contract.py
+
+      - name: Theme focused-fill contrast gate test
+        working-directory: SkyOS
+        # Host-runnable WCAG gate for the keyboard-focus fills: parses
+        # accent_light/on_accent out of BOTH Theme constructors
+        # (libsarga/src/theme.rs), computes the real contrast ratio, and
+        # asserts it stays above the 3:1 UI-component floor (taskbar.rs
+        # documents ~3.42:1). A palette edit that dims the focused blue
+        # fails here with the actual ratio, before any boot.
+        run: python3 tests/test_theme_contrast.py
+
+      - name: Clipboard split contract test
+        working-directory: SkyOS
+        run: python3 tests/test_clipboard_contract.py
+      - name: DRM probe contract test
+        working-directory: SkyOS
+        run: python3 tests/test_drm_probe_contract.py
+      - name: DHCP/net probe contract test
+        working-directory: SkyOS
+        run: python3 tests/test_net_probe_contract.py
+      - name: SVC wire table contract test
+        working-directory: SkyOS
+        run: python3 tests/test_svc_wire_contract.py
+      - name: Overlay mouse/keyboard parity contract test
+        working-directory: SkyOS
+        run: python3 tests/test_overlay_parity.py
+
+      - name: ADE selftest gate contract test
+        working-directory: SkyOS
+        run: python3 tests/test_ade_selftest_gate.py
+
+      - name: Pycdlib ISO hybrid contract test
+        working-directory: SkyOS
+        run: |
+          pip install pycdlib 2>/dev/null || true
+          python3 tests/test_make_iso_pycdlib.py
+
+      - name: Probe expect-consume semantics contract test
+        working-directory: SkyOS
+        run: python3 tests/test_probe_consume.py
+
+      - name: Install nightly (for libsarga host unit tests)
+        run: |
+          rustup toolchain install nightly-2026-01-15 --allow-downgrade
+          rustup default nightly-2026-01-15
+
+      - name: libsarga host unit tests
+        working-directory: SkyOS
+        # libsarga's errno/fs/gui/hash/net/png/semver/theme/toml #[cfg(test)]
+        # modules run on the host: no_std is cfg_attr(not(test), ..), the
+        # lang items (panic handler, global allocator, alloc error handler)
+        # are gated on the sarga targets (os = "none") so they are absent on
+        # the host both under cfg(test) AND when the crate is a dependency of
+        # a host binary (dependencies never compile with cfg(test)). No QEMU,
+        # no syscalls.
+        run: cargo test -p libsarga --lib
+
+      - name: libsarga host-test coverage (per-module counts)
+        working-directory: SkyOS
+        # Asks the real host test binary for its test list
+        # (`cargo test -p libsarga --lib -- --list`), prints per-module
+        # counts, and fails if any pure-logic module (errno/net/semver/hash/
+        # toml/png/theme) has zero tests — a #[cfg(test)] module that stops
+        # running, or a new pure-logic module added without tests, fails
+        # here instead of silently shrinking the suite.
+        run: python3 tests/test_libsarga_host_coverage.py
+
+      - name: ade host unit tests
+        working-directory: SkyOS
+        # ade's sys/{audio,display,input,network} and util/{app_catalog,
+        # explorer} #[cfg(test)] modules run on the host via the lib target
+        # (lib.rs uses the same cfg_attr(not(test), no_std) treatment as
+        # libsarga; main.rs is the bare-metal entrypoint only). Depends on
+        # the libsarga gating above: ade links libsarga, and dependencies
+        # are never compiled with cfg(test). 30 tests (the audio mixer ones
+        # moved to libskyaudio); no QEMU, no syscalls.
+        run: cargo test -p ade --lib
+
+      - name: libskyaudio host unit tests
+        working-directory: SkyOS
+        # libskyaudio's tone (beep math), wav (header parsing), and mixer
+        # (volume/balance) #[cfg(test)] modules run on the host via the lib
+        # target (same cfg_attr(not(test), no_std) treatment as libsarga/ade;
+        # the beep/play_wav syscall shims are untouched). The count is pinned
+        # so a test that stops running - or a module whose tests vanish -
+        # fails here instead of silently shrinking the suite.
+        run: |
+          cargo test -p libskyaudio --lib 2>&1 | tee skyaudio-test-log.txt
+          grep -q "test result: ok. 20 passed; 0 failed" skyaudio-test-log.txt
+
+      - name: App wiring gate (initrd manifest <-> ade catalog)
+        working-directory: SkyOS
+        # build_initrd only WARNS on a missing binary, so the image can
+        # silently ship without an app the catalog advertises. This gate
+        # cross-checks the manifest against the catalog and cargo metadata.
+        run: python3 tests/test_app_wiring.py
+
+      - name: skyos-test host framework (buddy allocator, PS/2 mouse, VFS cache, futex, paging, pipe/sleep wait queues, ext2/tarfs)
+        working-directory: SkyOS
+        # The standalone host-side framework (tests/skyos-test + skyos-test-core,
+        # outside the userspace workspace). Its runner exits non-zero on any
+        # FAIL or an empty run, so a broken suite fails the job instead of
+        # printing '[FAIL]' and exiting 0. The summary grep below is the
+        # belt-and-suspenders pin against output drift, and the per-category
+        # pins after it assert each suite's count individually -- a suite
+        # can't silently lose (or gain) tests while the total stays put.
+        # A new suite must add its own `category:count` pair here.
+        run: |
+          set -o pipefail
+          cargo run --manifest-path tests/skyos-test/Cargo.toml -- run 2>&1 | tee skyos-test-log.txt
+          grep -q "Total: 107 | Passed: 107 | Failed: 0" skyos-test-log.txt
+          for pin in kernel::alloc:6 kernel::mouse:11 kernel::vfs:7 kernel::futex:12 kernel::paging:14 kernel::wait:15 kernel::fs:42; do
+            cat="${pin%:*}"; want="${pin##*:}"
+            out="$(cargo run --manifest-path tests/skyos-test/Cargo.toml -- run -c "$cat" 2>&1)"
+            echo "$out" >> skyos-test-log.txt
+            if ! echo "$out" | grep -q "Total: $want | Passed: $want | Failed: 0"; then
+              echo "::error::category $cat: expected $want passing tests, got:"
+              echo "$out" | tail -2
+              exit 1
+            fi
+          done
+
+      - name: skyos-test runner unit tests (timeout + CLI contract)
+        working-directory: SkyOS
+        # Hermetic #[cfg(test)] pins inside the standalone workspaces: the
+        # per-test timeout (a hung test's subprocess is KILLED after
+        # --timeout-ms instead of stalling the job forever), the total-run
+        # watchdog (--total-timeout-ms
+        # caps the SUM of all tests) and the CLI contract (unknown flags,
+        # subcommands, and stray positionals are hard non-zero exits, never
+        # silently ignored input). skyos-test-core is its own workspace root,
+        # so its manifest is invoked separately.
+        run: |
+          cargo test --manifest-path tests/skyos-test-core/Cargo.toml
+          cargo test --manifest-path tests/skyos-test/Cargo.toml

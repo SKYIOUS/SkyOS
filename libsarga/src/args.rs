@@ -3,6 +3,9 @@ use core::sync::atomic::{AtomicI32, Ordering};
 static ARGC: AtomicI32 = AtomicI32::new(0);
 static ARGV: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
+/// # Safety
+/// Caller must ensure `stack` points to a valid initialized stack with argc at
+/// offset 0 and the argv pointer array immediately after it.
 pub unsafe fn init(stack: *const u64) {
     let argc = unsafe { *stack } as i32;
     ARGC.store(argc, Ordering::SeqCst);

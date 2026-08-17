@@ -1,13 +1,9 @@
-pub(crate) mod app_lifecycle;
-pub(crate) mod audio;
-pub(crate) mod display;
-pub(crate) mod input;
-pub(crate) mod lifecycle;
-pub(crate) mod login_session;
-pub(crate) mod network;
-pub(crate) mod notification;
-pub(crate) mod power;
-pub(crate) mod session;
-pub(crate) mod session_service;
 pub(crate) mod vfs;
-pub(crate) mod watcher;
+
+// Pure-logic subsystems, host-testable under `cargo test` (the same
+// cfg(not(test)) treatment as libsarga): no syscalls, only integer/string
+// math, so their #[cfg(test)] modules run on the host.
+pub mod audio;
+pub mod display;
+pub mod input;
+pub mod network;

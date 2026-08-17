@@ -1,0 +1,44 @@
+#!/usr/bin/tclsh
+# Tcl-syntax validator for expect harnesses (tests/*.exp).
+#
+# Runs `info complete` over the FULL content of each file, which is the
+# Tcl-core way to decide whether a command string is syntactically
+# complete. A harness that parses as a sequence of complete commands must
+# report COMPLETE; any unbalanced brace, unterminated quote, or dangling
+# continuation line is INCOMPLETE. Every harness is checked this way in CI
+# (host-tests) BEFORE the QEMU jobs run (each QEMU job declares
+# needs: [build, host-tests]), so expect syntax errors surface in seconds
+# instead of after a full boot.
+#
+# SCOPE: `info complete` is a SYNTACTIC check. Balanced-but-invalid expect
+# constructs (wrong pattern/action pairing, a -re pattern Tcl rejects only
+# when expect compiles it, bad arity) still pass here and only fail at
+# boot; this gate catches brace/quote/continuation errors, not semantics.
+#
+# Usage: tclsh validate_tcl.exp <file.exp> [<file.exp> ...]
+# Exit 0 when all files are complete; exit 1 otherwise.
+
+set bad 0
+
+foreach f $argv {
+    if {[catch {set fh [open $f r]} err]} {
+        puts "ERROR: cannot open $f: $err"
+        set bad 1
+        continue
+    }
+    set content [read $fh]
+    close $fh
+    if {[info complete $content]} {
+        puts "COMPLETE  $f"
+    } else {
+        puts "INCOMPLETE  $f"
+        set bad 1
+    }
+}
+
+if {$bad} {
+    puts "VALIDATE-TCL-FAIL: one or more harnesses have Tcl syntax errors"
+    exit 1
+}
+puts "VALIDATE-TCL-PASS: all harnesses parse as complete Tcl commands"
+exit 0

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use alloc::vec::Vec;
 
 /// IPC API v1.0 — STABLE
@@ -7,13 +5,46 @@ use alloc::vec::Vec;
 pub(crate) enum ServiceId {
     Clipboard,
     Notification,
-    Launcher,
     FileDialog,
     Settings,
-    Session,
     Window,
-    Theme,
-    Power,
+}
+
+impl ServiceId {
+    /// The permission a caller must hold to use this service.
+    pub(crate) fn required_permission(self) -> crate::ipc::permission::AppPermission {
+        use crate::ipc::permission::{
+            PERM_CLIPBOARD, PERM_FILESYSTEM, PERM_NOTIFICATIONS, PERM_SETTINGS, PERM_WINDOW_CONTROL,
+        };
+        match self {
+            ServiceId::Clipboard => PERM_CLIPBOARD,
+            ServiceId::Notification => PERM_NOTIFICATIONS,
+            ServiceId::FileDialog => PERM_FILESYSTEM,
+            ServiceId::Settings => PERM_SETTINGS,
+            ServiceId::Window => PERM_WINDOW_CONTROL,
+        }
+    }
+
+    pub(crate) fn to_wire(self) -> u8 {
+        match self {
+            ServiceId::Clipboard => libsarga::ipc::SVC_CLIPBOARD,
+            ServiceId::Notification => libsarga::ipc::SVC_NOTIFICATION,
+            ServiceId::FileDialog => libsarga::ipc::SVC_FILE_DIALOG,
+            ServiceId::Settings => libsarga::ipc::SVC_SETTINGS,
+            ServiceId::Window => libsarga::ipc::SVC_WINDOW,
+        }
+    }
+
+    pub(crate) fn from_wire(w: u8) -> Option<ServiceId> {
+        match w {
+            libsarga::ipc::SVC_CLIPBOARD => Some(ServiceId::Clipboard),
+            libsarga::ipc::SVC_NOTIFICATION => Some(ServiceId::Notification),
+            libsarga::ipc::SVC_FILE_DIALOG => Some(ServiceId::FileDialog),
+            libsarga::ipc::SVC_SETTINGS => Some(ServiceId::Settings),
+            libsarga::ipc::SVC_WINDOW => Some(ServiceId::Window),
+            _ => None,
+        }
+    }
 }
 
 /// IPC API v1.0 — STABLE
@@ -21,8 +52,6 @@ pub(crate) enum ServiceId {
 pub(crate) struct ServiceInfo {
     pub id: ServiceId,
     pub name: &'static str,
-    pub version: u32,
-    pub required_permissions: u32,
     pub available: bool,
 }
 
@@ -46,16 +75,26 @@ impl ServiceRegistry {
         self.services.iter().find(|s| s.name == name)
     }
 
-    pub fn find_by_permission(&self, perm: u32) -> Vec<&ServiceInfo> {
-        self.services
-            .iter()
-            .filter(|s| s.required_permissions & perm == perm)
-            .collect()
-    }
-
     pub fn register(&mut self, info: ServiceInfo) {
         if !self.services.iter().any(|s| s.id == info.id) {
             self.services.push(info);
+        }
+    }
+
+    /// Registers the services actually backed by `sec::portal` handlers.
+    pub fn register_defaults(&mut self) {
+        for (id, name) in [
+            (ServiceId::Clipboard, "clipboard"),
+            (ServiceId::Notification, "notification"),
+            (ServiceId::FileDialog, "file_dialog"),
+            (ServiceId::Settings, "settings"),
+            (ServiceId::Window, "window"),
+        ] {
+            self.register(ServiceInfo {
+                id,
+                name,
+                available: true,
+            });
         }
     }
 
@@ -70,13 +109,5 @@ impl ServiceRegistry {
 
     pub fn all(&self) -> &[ServiceInfo] {
         &self.services
-    }
-
-    pub fn discover(&self, name: &str) -> Option<&ServiceInfo> {
-        self.find_by_name(name)
-    }
-
-    pub fn discover_by_permission(&self, perm: u32) -> Vec<&ServiceInfo> {
-        self.find_by_permission(perm)
     }
 }

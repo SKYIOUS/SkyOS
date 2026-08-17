@@ -84,6 +84,10 @@ pub fn flip() -> Result<(), i64> {
     }
 }
 
+/// UNUSABLE — the kernel's DRMCTL SET_MODE arm misreads width/height from
+/// `_fd`/`request` (`syscalls/mod.rs:6080-6081`), so every call returns `EINVAL`.
+/// Fixed when the kernel rewrite lands `kernel-drmctl-fix.md` Fix 1 (struct
+/// pointer in `arg`, CREATE_DUMB `copy_from_user` pattern); see facility audit F4.
 pub fn set_mode(w: u32, h: u32, bpp: u32) -> Result<(), i64> {
     let r = unsafe { syscall5(SYS_DRMCTL, 0, DRM_SET_MODE, w as u64, h as u64, bpp as u64) };
     if r < 0 {
@@ -93,6 +97,10 @@ pub fn set_mode(w: u32, h: u32, bpp: u32) -> Result<(), i64> {
     }
 }
 
+/// UNUSABLE — the kernel's DRMCTL MAP_DUMB arm ignores `id` and returns the
+/// main framebuffer vaddr (`syscalls/mod.rs:6095-6097`); dumb buffers are leaked
+/// with no mapping table. Fixed when the kernel rewrite lands `kernel-drmctl-fix.md`
+/// Fix 2 (real id[v]addr registry); see facility audit F4.
 pub fn map_dumb(id: u64) -> Result<*mut u32, i64> {
     let r = unsafe { syscall3(SYS_DRMCTL, id, DRM_MAP_DUMB, 0) };
     if r < 0 {

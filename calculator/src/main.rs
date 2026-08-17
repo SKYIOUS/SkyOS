@@ -12,8 +12,6 @@ struct Calculator {
     operand: f64,
     operator: u8,
     new_number: bool,
-    #[allow(dead_code)]
-    memory: f64,
     error: bool,
 }
 
@@ -25,7 +23,6 @@ impl Calculator {
             operand: 0.0,
             operator: b'=',
             new_number: true,
-            memory: 0.0,
             error: false,
         }
     }
@@ -83,15 +80,13 @@ impl Calculator {
             while end > d + 1 && frac[end - 1] == 0 {
                 end -= 1;
             }
-            for i in d..end {
-                buf[len] = b'0' + frac[i];
+            for f in frac.iter().take(end).skip(d) {
+                buf[len] = b'0' + f;
                 len += 1;
             }
         }
         self.display_len = len;
-        for i in 0..len {
-            self.display[i] = buf[i];
-        }
+        self.display[..len].copy_from_slice(&buf[..len]);
     }
 
     fn push_digit(&mut self, d: u8) {
@@ -148,7 +143,7 @@ impl Calculator {
         let mut power = 1.0;
         for i in (0..int_end).rev() {
             let b = s.as_bytes()[i];
-            if b >= b'0' && b <= b'9' {
+            if b.is_ascii_digit() {
                 result += (b - b'0') as f64 * power;
                 power *= 10.0;
             }
@@ -159,7 +154,7 @@ impl Calculator {
             let mut frac_power = 0.1;
             for i in decimal_pos..s.len() {
                 let b = s.as_bytes()[i];
-                if b >= b'0' && b <= b'9' {
+                if b.is_ascii_digit() {
                     frac_val += (b - b'0') as f64 * frac_power;
                     frac_power /= 10.0;
                 }
@@ -287,9 +282,9 @@ fn btn_rect(col: usize, row: usize) -> (u32, u32, u32, u32) {
 }
 
 fn hit_test(mx: u32, my: u32) -> Option<(usize, usize)> {
-    for row in 0..5 {
-        for col in 0..4 {
-            if BTN_LABELS[row][col].is_empty() {
+    for (row, row_labels) in BTN_LABELS.iter().enumerate() {
+        for (col, &label) in row_labels.iter().enumerate() {
+            if label.is_empty() {
                 continue;
             }
             let (x, y, w, h) = btn_rect(col, row);
@@ -376,9 +371,8 @@ fn user_main() -> i32 {
         }
 
         // Buttons
-        for row in 0..5 {
-            for col in 0..4 {
-                let label = BTN_LABELS[row][col];
+        for (row, row_labels) in BTN_LABELS.iter().enumerate() {
+            for (col, &label) in row_labels.iter().enumerate() {
                 if label.is_empty() {
                     continue;
                 }
@@ -412,6 +406,7 @@ fn user_main() -> i32 {
 
         // Keyboard input
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'0'..=b'9' => calc.push_digit(key - b'0'),
                 b'.' | b',' => calc.push_dot(),

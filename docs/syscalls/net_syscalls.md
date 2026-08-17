@@ -1,8 +1,9 @@
 # Networking System Calls
 
-The networking syscalls provide socket and network operations. These are currently planned for Phase 2.
+The networking syscalls provide socket and network operations, backed by smoltcp. All socket
+syscalls below are implemented (the `net` kernel feature) — see `docs/socket-api.md` for details.
 
-## socket (syscall 79)
+## socket (syscall 41)
 
 ```c
 int socket(int domain, int type, int protocol);
@@ -10,11 +11,11 @@ int socket(int domain, int type, int protocol);
 
 Creates a socket endpoint for communication. Returns a file descriptor on success.
 
-**Domains**: `AF_INET`, `AF_INET6`, `AF_UNIX`, `AF_NETLINK`
+**Domains**: `AF_INET` (2), `AF_INET6` (10), `AF_UNIX` (1, used for socketpair IPC)
 
-**Types**: `SOCK_STREAM` (TCP), `SOCK_DGRAM` (UDP), `SOCK_RAW`, `SOCK_SEQPACKET`
+**Types**: `SOCK_STREAM`, `SOCK_DGRAM`, `SOCK_RAW` (requires `CAP_NET_RAW`), `SOCK_NONBLOCK`
 
-## bind (syscall 81)
+## bind (syscall 49)
 
 ```c
 int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -22,23 +23,25 @@ int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
 Binds a socket to a local address.
 
-## listen (syscall 82)
+## listen (syscall 50)
 
 ```c
 int listen(int sockfd, int backlog);
 ```
 
-Marks a socket as passive (listening for incoming connections). `backlog` limits the pending connection queue.
+Marks a socket as passive (listening for incoming connections). `backlog` limits the pending
+connection queue.
 
-## accept (syscall 83)
+## accept (syscall 43)
 
 ```c
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 ```
 
-Accepts an incoming connection on a listening socket. Returns a new file descriptor for the connection.
+Accepts an incoming connection on a listening socket. Returns a new file descriptor for the
+connection. Returns `EINTR` if interrupted by a signal before a connection arrives.
 
-## connect (syscall 80)
+## connect (syscall 42)
 
 ```c
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -46,7 +49,7 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
 Connects a socket to a remote address.
 
-## sendto / recvfrom (syscalls 84-85)
+## sendto / recvfrom (syscalls 44-45)
 
 ```c
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
@@ -55,28 +58,29 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
 
 Send and receive datagrams on connectionless sockets.
 
-## sendmsg / recvmsg (syscalls 86-87)
+## sendmsg / recvmsg (syscalls 46-47)
 
 Advanced message send/receive with scatter-gather I/O and ancillary data support.
 
-## setsockopt / getsockopt (syscalls 89-90)
+## socketpair (syscall 53)
+
+```c
+int socketpair(int domain, int type, int protocol, int sv[2]);
+```
+
+Creates an unnamed pair of connected sockets (used for `AF_UNIX` IPC, e.g. the ADE launcher).
+
+## setsockopt / getsockopt (syscalls 54-55)
 
 ```c
 int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
 int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 ```
 
-Set and get socket options (SO_* for SOL_SOCKET, IP_* for IPPROTO_IP, TCP_* for IPPROTO_TCP).
+Set and get socket options. `SOL_SOCKET` `SO_RCVTIMEO`/`SO_SNDTIMEO` are accepted but sockets are
+non-blocking; `IPPROTO_TCP` `TCP_NODELAY` is honored.
 
-## shutdown (syscall 88)
-
-```c
-int shutdown(int sockfd, int how);
-```
-
-Shuts down part of a full-duplex connection. `how`: SHUT_RD, SHUT_WR, SHUT_RDWR.
-
-## getsockname / getpeername (syscalls 91-92)
+## getsockname / getpeername (syscalls 51-52)
 
 ```c
 int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);

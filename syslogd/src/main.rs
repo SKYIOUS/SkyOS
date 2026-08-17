@@ -3,28 +3,16 @@
 
 extern crate alloc;
 
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use libsarga::io::{self, open, read, write};
-use libsarga::process::{exit, fork, wait};
+use alloc::string::String;
+use libsarga::io::{open, read, write};
+use libsarga::process::fork;
 use libsarga::sarga_main;
 
 const LOG_FIFO: &str = "/var/run/syslog.fifo";
 const LOG_FILE: &str = "/var/log/syslog";
 
-fn ensure_fifo() -> Result<i64, ()> {
-    match open(LOG_FIFO, 0) {
-        Ok(fd) => Ok(fd),
-        Err(_) => {
-            // Create FIFO via mknod — libsarga doesn't have mknod wrapper
-            // ponytail: fallback to temp log mode
-            Err(())
-        }
-    }
-}
-
 fn append_log(msg: &str) {
-    let ts = "timestamp"; // ponytail: real time formatting when clock_gettime is available
+    let ts = get_timestamp();
     let line = alloc::format!("[{}] {}\n", ts, msg.trim_end_matches('\n'));
     if let Ok(fd) = open(LOG_FILE, 0o201) {
         // O_WRONLY|O_CREAT|O_APPEND
@@ -33,8 +21,24 @@ fn append_log(msg: &str) {
     }
 }
 
+fn get_timestamp() -> String {
+    let mut tv_sec: i64 = 0;
+    unsafe {
+        libsarga::syscall::syscall2(228, &mut tv_sec as *mut i64 as u64, 0);
+    }
+    if tv_sec > 0 {
+        let secs = tv_sec as u64;
+        let time = secs % 86400;
+        let h = time / 3600;
+        let m = (time % 3600) / 60;
+        let s = time % 60;
+        alloc::format!("{:02}:{:02}:{:02}", h, m, s)
+    } else {
+        alloc::format!("t={}", tv_sec)
+    }
+}
+
 fn user_main() -> i32 {
-    // ponytail: FIFO-based log daemon, poll instead of blocking if needed
     if fork().unwrap_or(0) != 0 {
         return 0;
     }
@@ -55,10 +59,7 @@ fn user_main() -> i32 {
                 let _ = libsarga::io::close(fd);
             }
             Err(_) => {
-                // ponytail: sleep and retry
-                for _ in 0..1000000 {
-                    core::hint::spin_loop();
-                }
+                let _ = libsarga::io::nanosleep(1_000_000_000);
             }
         }
     }

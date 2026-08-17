@@ -13,9 +13,8 @@ We welcome contributions to SkyOS. This guide outlines the contribution process.
 
 - Create a feature branch: `git checkout -b my-feature`
 - Write code following the [coding style](coding_style.md)
-- Add or update tests as appropriate
-- Run the test suite: `cargo test`
-- Ensure all existing tests pass
+- Add or update tests as appropriate (see [testing](testing.md))
+- Run the checks: `cargo fmt --check`, `cargo clippy -Zbuild-std=core,alloc --target x86_64-sarga.json -- -D warnings`, and a userspace build (`cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json`)
 
 ## Commit Messages
 

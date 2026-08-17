@@ -1,41 +1,41 @@
 # QEMU Setup and Debugging
 
-SkyOS uses QEMU as the primary emulation and debugging platform.
+SkyOS uses QEMU (with OVMF firmware) as the primary emulation and debugging platform.
 
 ## Basic QEMU Configuration
 
-Create a `qemu.sh` script in the project root:
+```bash
+qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -drive format=raw,file=skyos_uefi.img \
+    -m 512M -smp 2 \
+    -serial stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+```
+
+Or boot the ISO directly:
 
 ```bash
-#!/bin/bash
 qemu-system-x86_64 \
-    -machine q35 \
-    -cpu max \
-    -m 512M \
-    -serial stdio \
-    -drive format=raw,file=target/x86_64-skyos/release/bootimage-skyos.bin \
-    -device virtio-net,netdev=net0 \
-    -netdev user,id=net0,hostfwd=tcp::8080-:80
+    -bios OVMF.fd \
+    -cdrom release/skyos-<version>.iso \
+    -m 512M -smp 2 \
+    -serial mon:stdio \
+    -nographic
 ```
+
+`make run` and `make run-nographic` wrap these commands (see `docs/build/building.md`).
 
 ## GDB Debugging
 
-For debugging with GDB, start QEMU with the `-s` flag:
+Start QEMU with the `-s` flag, then attach GDB to the kernel ELF:
 
 ```bash
-qemu-system-x86_64 \
-    -s -S \
-    -machine q35 \
-    -cpu max \
-    -m 512M \
-    -serial stdio \
-    -drive format=raw,file=bootimage.bin
+qemu-system-x86_64 -bios OVMF.fd -drive format=raw,file=skyos_uefi.img -m 512M -smp 2 -serial stdio -s
 ```
 
-Then in another terminal:
-
 ```bash
-gdb target/x86_64-skyos/release/skyos
+gdb kernel/kernel/target/x86_64-unknown-none/debug/vahi_kernel
 (gdb) target remote :1234
 (gdb) break kernel_main
 (gdb) continue
@@ -43,7 +43,8 @@ gdb target/x86_64-skyos/release/skyos
 
 ## Networking
 
-For network testing, QEMU's user-mode networking provides NAT and port forwarding. Use `-nic user,hostfwd=tcp::8080-:80` to forward host port 8080 to guest port 80.
+QEMU's user-mode networking provides NAT and port forwarding: `-nic user,hostfwd=tcp::8080-:80`
+forwards host port 8080 to guest port 80. The Makefile QEMU targets attach an e1000 device.
 
 ## QEMU Monitor
 

@@ -18,9 +18,6 @@ mod raw {
     pub fn kill(pid: u64, sig: u64) -> i64 {
         unsafe { libsarga::syscall::syscall2(62, pid, sig) }
     }
-    pub fn sigprocmask(how: i32, set: *const u64, oldset: *mut u64) -> i64 {
-        unsafe { libsarga::syscall::syscall3(309, how as u64, set as u64, oldset as u64) }
-    }
 }
 
 #[repr(C)]

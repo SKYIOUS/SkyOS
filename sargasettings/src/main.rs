@@ -38,7 +38,6 @@ enum UpdateStatus {
     Checking,
     UpToDate,
     UpdateAvailable(String),
-    Downloading,
     Downloaded,
     Error(String),
 }
@@ -98,21 +97,6 @@ const ACCENT_COLORS: &[(&str, u32)] = &[
     ("Pink", 0xFFE3008C),
 ];
 
-fn draw_checkbox(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, checked: bool) {
-    // Checkbox box
-    let bg = if checked {
-        theme.accent
-    } else {
-        theme.bg_elevated
-    };
-    win.draw_rounded_rect(x, y, 16, 16, 3, bg);
-    if checked {
-        win.draw_string(x + 2, y + 1, "x", 0xFFFFFFFF, 0);
-    }
-    // Label
-    win.draw_string(x + 22, y + 1, label, theme.text, 0);
-}
-
 fn draw_radio(win: &mut Window, theme: &Theme, x: u32, y: u32, label: &str, selected: bool) {
     // Radio circle (draw as rounded rect approximation)
     let bg = if selected {
@@ -142,6 +126,8 @@ fn user_main() -> i32 {
             return 0;
         }
     };
+
+    io::print_str("[settings] ready\n");
 
     let mut prev_pressed = false;
 
@@ -196,7 +182,9 @@ fn user_main() -> i32 {
                     }
                     2 => {
                         // Update - Check for updates button
-                        if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= 100 && my < 140 {
+                        if (SIDEBAR_W + 16..SIDEBAR_W + 180).contains(&mx)
+                            && (100..140).contains(&my)
+                        {
                             settings.update_status = UpdateStatus::Checking;
                             notify("Checking for updates...", 3000);
 
@@ -209,19 +197,18 @@ fn user_main() -> i32 {
                                             if let Some(remote_version_str) =
                                                 doc.get_string("version")
                                             {
-                                                let current_version = match Version::parse(
-                                                    SKYOS_VERSION,
-                                                ) {
-                                                    Some(v) => v,
-                                                    None => {
-                                                        settings.update_status =
+                                                let current_version =
+                                                    match Version::parse(SKYOS_VERSION) {
+                                                        Some(v) => v,
+                                                        None => {
+                                                            settings.update_status =
                                                             UpdateStatus::Error(
                                                                 "Failed to parse current version"
                                                                     .into(),
                                                             );
-                                                        continue;
-                                                    }
-                                                };
+                                                            continue;
+                                                        }
+                                                    };
 
                                                 if let Some(remote_version) =
                                                     Version::parse(remote_version_str)
@@ -288,7 +275,9 @@ fn user_main() -> i32 {
                     }
                     3 => {
                         // About - copy info button
-                        if mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= 256 && my < 284 {
+                        if (SIDEBAR_W + 16..SIDEBAR_W + 160).contains(&mx)
+                            && (256..284).contains(&my)
+                        {
                             let version_info = get_version_info();
                             let copy_text = alloc::format!(
                                 "{}\nArch: x86_64\nShell: SargaSH\nDesktop: ADE",
@@ -467,15 +456,6 @@ fn user_main() -> i32 {
                             0,
                         );
                     }
-                    UpdateStatus::Downloading => {
-                        win.draw_string(
-                            SIDEBAR_W + 16,
-                            150,
-                            "Status: Downloading...",
-                            theme.accent,
-                            0,
-                        );
-                    }
                     UpdateStatus::Downloaded => {
                         win.draw_string(
                             SIDEBAR_W + 16,
@@ -497,8 +477,8 @@ fn user_main() -> i32 {
                 }
 
                 let btn_y = 100;
-                let btn_hover =
-                    mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 180 && my >= btn_y && my < btn_y + 40;
+                let btn_hover = (SIDEBAR_W + 16..SIDEBAR_W + 180).contains(&mx)
+                    && (btn_y..btn_y + 40).contains(&my);
                 let btn_bg = if btn_hover { theme.hover } else { theme.accent };
                 win.draw_rounded_rect(SIDEBAR_W + 16, btn_y, 164, 40, 6, btn_bg);
                 win.draw_string(
@@ -560,8 +540,8 @@ fn user_main() -> i32 {
 
                 // Copy button
                 let btn_y = 256;
-                let btn_hover =
-                    mx >= SIDEBAR_W + 16 && mx < SIDEBAR_W + 160 && my >= btn_y && my < btn_y + 28;
+                let btn_hover = (SIDEBAR_W + 16..SIDEBAR_W + 160).contains(&mx)
+                    && (btn_y..btn_y + 28).contains(&my);
                 let btn_bg = if btn_hover { theme.hover } else { theme.accent };
                 win.draw_rounded_rect(SIDEBAR_W + 16, btn_y, 144, 28, 4, btn_bg);
                 win.draw_string(SIDEBAR_W + 28, btn_y + 6, "Copy Info", 0xFFFFFFFF, 0);
@@ -571,12 +551,29 @@ fn user_main() -> i32 {
 
         // Keyboard
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'1' => settings.active_tab = 0,
                 b'2' => settings.active_tab = 1,
                 b'3' => settings.active_tab = 2,
                 b'4' => settings.active_tab = 3,
+                // Keyboard resolution cycle (probe + a11y affordance):
+                // mirrors the mouse-click body exactly - same set_mode
+                // call, same save + notify. The serial print gives the
+                // DRM probe a routing tripmine: seeing it but no
+                // 'DRM: set_mode' means K5 isn't landed, while missing it
+                // after a sendkey 'r' means the key never reached this
+                // window (focus/routing defect).
+                b'r' => {
+                    let n = RESOLUTIONS.len();
+                    settings.resolution_idx = (settings.resolution_idx + 1) % n;
+                    let (_, w, h) = RESOLUTIONS[settings.resolution_idx];
+                    io::print_str(&alloc::format!("[settings] applying {}x{}\n", w, h));
+                    let _ = libsarga::gpu::set_mode(w, h, 32);
+                    settings.save();
+                    notify(&alloc::format!("Resolution: {}x{}", w, h), 2000);
+                }
                 _ => {}
             }
         }

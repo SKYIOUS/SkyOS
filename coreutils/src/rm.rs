@@ -46,24 +46,21 @@ fn remove_recursive(path: &str, force: bool) -> i64 {
                         continue;
                     }
                     let entry_path = join_path(path, name);
-                    match libsarga::fs::stat(&entry_path) {
-                        Ok(st) => {
-                            if (st.mode & 0o170000) == 0o040000 {
-                                remove_recursive(&entry_path, force);
-                                let mut ep_c = String::from(&entry_path);
-                                ep_c.push('\0');
-                                unsafe {
-                                    syscall::syscall1(84, ep_c.as_ptr() as u64);
-                                }
-                            } else {
-                                let mut ep_c = String::from(&entry_path);
-                                ep_c.push('\0');
-                                unsafe {
-                                    syscall::syscall1(87, ep_c.as_ptr() as u64);
-                                }
+                    if let Ok(st) = libsarga::fs::stat(&entry_path) {
+                        if (st.mode & 0o170000) == 0o040000 {
+                            remove_recursive(&entry_path, force);
+                            let mut ep_c = String::from(&entry_path);
+                            ep_c.push('\0');
+                            unsafe {
+                                syscall::syscall1(84, ep_c.as_ptr() as u64);
+                            }
+                        } else {
+                            let mut ep_c = String::from(&entry_path);
+                            ep_c.push('\0');
+                            unsafe {
+                                syscall::syscall1(87, ep_c.as_ptr() as u64);
                             }
                         }
-                        Err(_) => {}
                     }
                 }
             }

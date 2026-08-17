@@ -1,67 +1,44 @@
 # Building Userspace Programs
 
-This guide covers building programs for the SkyOS userspace environment.
+SkyOS userspace is a Rust workspace. Every program links the `libsarga` runtime and is compiled
+for the custom `x86_64-sarga.json` target (see `docs/build/cross_compilation.md`).
 
-## Cross-Compiler Setup
-
-SkyOS userspace programs require a cross-compiler targeting `x86_64-skyos-unknown`.
-
-### Using the Provided Toolchain
+## Building
 
 ```bash
-# Download the pre-built toolchain
-make toolchain-download
+# Debug (default)
+cargo build --target x86_64-sarga.json
 
-# Add to PATH
-export PATH=$PATH:$(pwd)/toolchain/bin
+# Release (optimized, used for the disk image)
+cargo build --target x86_64-sarga.json --release
 ```
 
-### Building from Source
-
-```bash
-# Build GCC cross-compiler
-make toolchain-build
-```
-
-## Compiling Programs
-
-```bash
-# Compile a C program
-x86_64-skyos-gcc -o hello hello.c
-
-# Compile with optimizations
-x86_64-skyos-gcc -O2 -o hello hello.c
-
-# Static linking
-x86_64-skyos-gcc -static -o hello hello.c
-```
+Binaries land in `target/x86_64-sarga/{debug,release}/`. The `Makefile` wraps this as
+`make build` / `make build-release`.
 
 ## Building the Init System
 
-The init system and core userspace programs are built as part of the main build:
-
-```bash
-cargo build -p skyos-userspace
-```
-
-This produces binaries in `target/x86_64-skyos/release/`.
+The init service (`init/`) and the ADE desktop (`ade/`) are regular workspace crates and build with
+the same command.
 
 ## Including in the Initrd
 
-Userspace binaries are packed into the initial ramdisk:
+`build_initrd.py` packs the userspace binaries (init, sash, coreutils, ADE, login-manager, …) into
+`initrd.tar`, which the bootloader embeds as the kernel ramdisk:
 
 ```bash
-# Create initrd with default binaries
+python build_initrd.py      # → initrd.tar (also copied to kernel/SkyOS/)
 make initrd
-
-# Create initrd with custom binaries
-make initrd INITRD_EXTRA=/path/to/binaries
 ```
 
 ## Library Support
 
-Userspace programs link against `libc.a` (the SkyOS C standard library) and `libgui.a` (GUI toolkit):
+There is no C libc. Programs `extern crate libsarga;` and use its modules:
 
-```bash
-x86_64-skyos-gcc -o myapp myapp.c -lgui -lc
-```
+- POSIX syscall wrappers (`posix.rs`)
+- Memory management / allocator (`mem.rs`)
+- Networking and socketpair IPC (`net.rs`)
+- GUI windows (`gui.rs`), signals (`signal.rs`), hashing (`hash.rs`), audio (`libskyaudio`), and
+  more
+
+`libskyaudio` provides audio playback for programs that need it.

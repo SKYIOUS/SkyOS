@@ -33,3 +33,7 @@ Thumbs.db
 .idea/
 .vscode/
 .aider*
+__pycache__/
+*.pyc
+.freebuff/
+target-ws/

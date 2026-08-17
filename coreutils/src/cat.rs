@@ -27,7 +27,7 @@ fn user_main() -> i32 {
             let mut path_c = alloc::string::String::from(path);
             path_c.push('\0');
             let fd = unsafe { libsarga::syscall::syscall2(2, path_c.as_ptr() as u64, 0) };
-            if (fd as i64) < 0 {
+            if fd < 0 {
                 println!("cat: {}: not found", path);
                 exit_code = 1;
                 continue;
@@ -37,7 +37,7 @@ fn user_main() -> i32 {
                 let n = unsafe {
                     libsarga::syscall::syscall3(0, fd as u64, buf.as_mut_ptr() as u64, 1024)
                 };
-                if (n as i64) <= 0 {
+                if n <= 0 {
                     break;
                 }
                 let _ = io::write(1, &buf[..n as usize]);

@@ -24,17 +24,17 @@ fn user_main() -> i32 {
     let mut i = 1;
     while i < args::argc() {
         let arg = args::get(i as usize).unwrap_or("");
-        if arg.starts_with("-d") {
+        if let Some(stripped) = arg.strip_prefix("-d") {
             let d = if arg.len() > 2 {
-                &arg[2..]
+                stripped
             } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
             };
             delim = d.as_bytes()[0];
-        } else if arg.starts_with("-f") {
+        } else if let Some(stripped) = arg.strip_prefix("-f") {
             let f = if arg.len() > 2 {
-                &arg[2..]
+                stripped
             } else {
                 i += 1;
                 args::get(i as usize).unwrap_or("")
@@ -58,7 +58,7 @@ fn user_main() -> i32 {
     let data = read_all_stdin();
     let text = alloc::string::String::from_utf8_lossy(&data);
     for line in text.lines() {
-        let parts: alloc::vec::Vec<&str> = line.split(|c| c == delim as char).collect();
+        let parts: alloc::vec::Vec<&str> = line.split(delim as char).collect();
         let mut first = true;
         for &(start, end) in &fields {
             if start >= 1 && start <= parts.len() {

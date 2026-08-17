@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
-use alloc::vec::Vec;
 use libsarga::io::{read, write};
 use libsarga::net::{self, accept, bind, listen, socket, SockAddrIn};
 use libsarga::process::{execve, exit, fork};
@@ -34,14 +33,16 @@ fn user_main() -> i32 {
         Err(_) => return 1,
     };
     let addr = SockAddrIn::new([0, 0, 0, 0], port);
-    if bind(fd, &addr).is_err() {
+    if bind(fd, addr.as_bytes()).is_err() {
         return 1;
     }
     if listen(fd, 5).is_err() {
         return 1;
     }
+    let mut addr_buf = [0u8; 16];
+    let mut addr_len = 16u32;
     loop {
-        if let Ok((client_fd, _)) = accept(fd) {
+        if let Ok(client_fd) = accept(fd, &mut addr_buf, &mut addr_len) {
             handle_client(client_fd);
         }
     }

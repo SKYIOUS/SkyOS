@@ -1,0 +1,37 @@
+# Auto-label PRs based on changed paths
+"kernel":
+  - kernel/**/*
+
+"userspace":
+  - init/**/*
+  - sash/**/*
+  - coreutils/**/*
+
+"ade":
+  - ade/**/*
+
+"libsarga":
+  - libsarga/**/*
+
+"docs":
+  - docs/**/*
+  - "**/*.md"
+
+"ci":
+  - .github/**/*
+
+"build":
+  - build_disk.py
+  - build_initrd.py
+  - scripts/make_iso.py
+  - Makefile
+
+"dependencies":
+  - Cargo.lock
+  - Cargo.toml
+  - deny.toml
+
+"scripts":
+  - scripts/**/*
+  - "*.ps1"
+  - "*.sh"

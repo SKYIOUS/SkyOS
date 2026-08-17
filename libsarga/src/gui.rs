@@ -90,7 +90,7 @@ impl OutlineBuilder {
 
     fn finish_contour(&mut self) {
         if !self.current.is_empty() {
-            let c = core::mem::replace(&mut self.current, Vec::new());
+            let c = core::mem::take(&mut self.current);
             self.contours.push(OutlineContour { points: c });
         }
         self.first = None;
@@ -219,7 +219,6 @@ fn outline_rasterize(contours: &[OutlineContour], scale: f32, width: u32, height
 // ═════════════════════════════════════════════════════════════════════════════
 
 pub struct TtfFont {
-    data: &'static [u8],
     font: ttf_parser::Face<'static>,
     cache: GlyphCache,
 }
@@ -231,7 +230,6 @@ impl TtfFont {
         let data: &'static [u8] = data.leak();
         let font = ttf_parser::Face::parse(data, 0).ok()?;
         Some(TtfFont {
-            data,
             font,
             cache: GlyphCache::new(2048),
         })
@@ -315,8 +313,8 @@ impl TtfFont {
             .outline_glyph(ttf_parser::GlyphId(gid), &mut builder);
         builder.finish_contour();
 
-        let gw = w.max(1) as u32;
-        let gh = h.max(1) as u32;
+        let gw = w.max(1);
+        let gh = h.max(1);
         let data = outline_rasterize(&builder.contours, scale, gw, gh);
 
         // Cache the result
@@ -341,6 +339,7 @@ impl TtfFont {
 // Font Abstraction
 // ═════════════════════════════════════════════════════════════════════════════
 
+#[allow(clippy::large_enum_variant)] // TtfFont is intentionally inline; boxing would complicate the API
 pub enum Font {
     Ttf(TtfFont),
     Bitmap,
@@ -376,7 +375,7 @@ impl Font {
         match self {
             Font::Ttf(f) => {
                 let asc = f.ascender(size).max(0) as u32;
-                let desc = f.descender(size).abs() as u32;
+                let desc = f.descender(size).unsigned_abs();
                 asc + desc + size / 6
             }
             Font::Bitmap => size,
@@ -462,12 +461,15 @@ impl Window {
         self.buffer
     }
 
-    pub fn get_key(&mut self) -> Option<u8> {
+    /// Low byte = char; bits 8..11 = alt/ctrl/shift/super held (0 until
+    /// the kernel delivers them — additive; high bits arrive as zero
+    /// today). Design A of ade/docs/kernel-gui-modifier-delivery.md.
+    pub fn get_key(&mut self) -> Option<u16> {
         let k = unsafe { syscall1(SYS_GUI_GET_KEY, self.id) };
         if k == 0 {
             None
         } else {
-            Some(k as u8)
+            Some(k as u16)
         }
     }
 
@@ -636,6 +638,7 @@ impl Window {
         self.draw_line_v(x + w - 1, y, h, color);
     }
 
+    #[allow(clippy::too_many_arguments)] // drawing API; all 7 args are independent draw parameters
     pub fn draw_gradient_rect(
         &mut self,
         x: u32,
@@ -891,5 +894,94 @@ impl Window {
 
     pub fn move_to(&mut self, x: u64, y: u64) {
         crate::io::move_window(self.id, x, y);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alpha_blend_opaque_and_transparent() {
+        assert_eq!(alpha_blend(0x112233, 0x445566, 0), 0x112233);
+        assert_eq!(alpha_blend(0x112233, 0x445566, 255), 0x445566);
+    }
+
+    #[test]
+    fn alpha_blend_white_over_black_halves() {
+        // 128/255: exactly mid gray. (255*128 + 0*127)/255 == 128 per channel.
+        assert_eq!(alpha_blend(0x000000, 0xFFFFFF, 128), 0x808080);
+        assert_eq!(alpha_blend(0x000000, 0xFFFFFF, 64), 0x404040);
+    }
+
+    #[test]
+    fn alpha_blend_exact_one_third_blend() {
+        // 85 == 255/3: blending (0x40,0x50,0x60) over (0x10,0x20,0x30)
+        // lands exactly one third of the way: (0x20,0x30,0x40).
+        assert_eq!(alpha_blend(0x102030, 0x405060, 85), 0x203040);
+    }
+
+    #[test]
+    fn glyph_cache_insert_get_and_miss() {
+        let mut c = GlyphCache::new(4);
+        assert!(c.get(1, 10).is_none());
+        c.insert(
+            1,
+            10,
+            CacheEntry {
+                width: 4,
+                height: 8,
+                bearing_x: 0,
+                bearing_y: -2,
+                advance: 6,
+                data: alloc::vec![1, 2, 3],
+            },
+        );
+        let got = c.get(1, 10).unwrap();
+        assert_eq!((got.width, got.height, got.advance), (4, 8, 6));
+        assert_eq!(got.data, alloc::vec![1, 2, 3]);
+        // Same glyph at another size, and another glyph at the same size,
+        // are distinct cache keys.
+        assert!(c.get(1, 11).is_none());
+        assert!(c.get(2, 10).is_none());
+    }
+
+    #[test]
+    fn glyph_cache_evicts_lowest_key_at_capacity() {
+        let e = |w: u16| CacheEntry {
+            width: w,
+            height: 1,
+            bearing_x: 0,
+            bearing_y: 0,
+            advance: 1,
+            data: alloc::vec![],
+        };
+        let mut c = GlyphCache::new(2);
+        c.insert(5, 5, e(1));
+        c.insert(3, 3, e(2));
+        // At capacity, insert evicts the lowest (glyph_id, size) key
+        // currently present -- here (3,3) -- before the new entry lands.
+        c.insert(1, 1, e(3));
+        assert!(c.get(3, 3).is_none());
+        assert!(c.get(5, 5).is_some());
+        assert!(c.get(1, 1).is_some());
+        // Replacing an existing key at capacity still evicts the lowest
+        // key FIRST (eviction runs before the insert), so (1,1) is gone
+        // and the replacement (5,5) is the only survivor.
+        c.insert(5, 5, e(9));
+        assert_eq!(c.get(5, 5).unwrap().width, 9);
+        assert!(c.get(1, 1).is_none());
+        assert_eq!(c.entries.len(), 1);
+    }
+
+    #[test]
+    fn bitmap_font_metrics() {
+        let f = Font::bitmap();
+        assert_eq!(f.advance('a', 16), 8);
+        assert_eq!(f.advance('€', 16), 8); // any glyph, fixed 8px cell
+        assert_eq!(f.text_width("hello", 16), 40);
+        assert_eq!(f.text_width("", 16), 0);
+        assert_eq!(f.line_height(16), 16);
+        assert_eq!(f.line_height(32), 32);
     }
 }

@@ -92,9 +92,9 @@ fn parse_bmp(data: &[u8]) -> Option<Image> {
         return None;
     }
 
-    let h = height_raw.abs() as u32;
-    let w = width.abs() as u32;
-    let row_stride = ((w * bpp as u32 + 31) / 32) * 4;
+    let h = height_raw.unsigned_abs();
+    let w = width.unsigned_abs();
+    let row_stride = (w * bpp as u32).div_ceil(32) * 4;
     let bottom_up = height_raw > 0;
 
     let bytes_pp = bpp as usize / 8;
@@ -281,7 +281,7 @@ fn parse_ppm_p3(data: &[u8]) -> Option<Image> {
                 let b = val;
                 let r8 = r.min(255);
                 let g8 = g.min(255);
-                let b8 = (b.min(255)) as u32;
+                let b8 = b.min(255);
                 pixels.push(0xFF000000 | (r8 << 16) | (g8 << 8) | b8);
             }
             _ => {}
@@ -356,6 +356,7 @@ fn user_main() -> i32 {
 
         // Keyboard
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 b'q' | b'Q' => return 0,
                 b'+' | b'=' => {
@@ -383,8 +384,8 @@ fn user_main() -> i32 {
 
         let disp_w = (image.width as f32 * zoom) as u32;
         let disp_h = (image.height as f32 * zoom) as u32;
-        let off_x = ((win_w - disp_w) / 2).max(0) as i32 + scroll_x;
-        let off_y = ((win_h - 40 - disp_h) / 2).max(0) as i32 + scroll_y;
+        let off_x = ((win_w - disp_w) / 2) as i32 + scroll_x;
+        let off_y = ((win_h - 40 - disp_h) / 2) as i32 + scroll_y;
 
         // Draw image (nearest-neighbor scaling)
         for dy in 0..disp_h {

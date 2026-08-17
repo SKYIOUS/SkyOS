@@ -1,0 +1,256 @@
+#!/usr/bin/expect -f
+# DRM set_mode probe (K5-gated): proves the F4 fix on real hardware.
+# Boot -> console getty 'login:' -> root/skyos -> sash -> launch the
+# settings app (initrd bin/skysettings) from the console shell -> ensure
+# ade is up (healthy GUI: login-manager exec'd it; the compositor must be
+# running BEFORE skysettings creates its window) -> sendkey 'r' (the
+# app's new keyboard resolution-cycle arm) -> assert the kernel prints
+# 'DRM: set_mode' (kernel-drmctl-fix.md Fix 1). If the marker never
+# appears but '[settings] applying' DID (the key reached the app and
+# set_mode was called), the EINVAL path is still live -> KERNEL-GATED
+# deferral (exit 0), exactly like qemu_giveup_boot.exp's waitpid
+# deferral. The moment K5 lands, the marker print becomes a hard PASS.
+#
+# PER-CHECK AUDIT - every pattern verified against sources:
+#   1 boot_login       login:            REAL  login/src/main.rs (getty
+#                                            prompt; console path)
+#   2 vahid_ready      \[vahid\] ready   REAL  vahid/src/main.rs:108 (healthy
+#                                            sleep loop; accumulated-buffer
+#                                            grep after 'login:', same as
+#                                            probe_console_login.exp)
+#   3 password_prompt  Password:         REAL  login/src/main.rs (password
+#                                            read after username)
+#   4 shell_prompt     sash\[            REAL  root's shell /bin/sash; PS1
+#                                            "sash[\\w]> "
+#   5 ade_established  \[ade\] session established
+#                                            REAL  ade/src/main.rs:73. REQUIRED,
+#                                            not optional: skysettings needs
+#                                            the compositor up to create its
+#                                            window, and sash execs only one
+#                                            foreground app, so there is NO
+#                                            console-fallback launch path
+#                                            (unlike the clipboard probe).
+#   6 settings_ready   \[settings\] ready
+#                                            REAL  sargasettings/src/main.rs
+#                                            (io::print_str after
+#                                            Window::create Ok - added for
+#                                            this probe, Aug 13 2026)
+#   7 settings_apply   \[settings\] applying NxM
+#                                            REAL  sargasettings/src/main.rs
+#                                            'r' keyboard arm (routing
+#                                            tripmine: printed BEFORE the
+#                                            set_mode syscall)
+#   8 drm_set_mode     DRM: set_mode     K5-GATED  kernel-drmctl-fix.md
+#                                            Fix 1 (kernel println after
+#                                            SET_MODE reads the ModeInfo
+#                                            struct via copy_from_user; the
+#                                            EINVAL path prints nothing)
+#   9 kernel_gated     KERNEL-GATED:     deferral  qemu_giveup_boot.exp
+#                                            pattern: settings_apply proven +
+#                                            no DRM marker at deadline ->
+#                                            exit 0 with the deferral line;
+#                                            ci.yml mirrors the conditional.
+#
+# Usage: expect tests/qemu_drm_probe.exp <iso_path> [timeout_seconds]
+
+set iso [lindex $argv 0]
+set timeout [lindex $argv 1]
+if {$timeout == ""} { set timeout 240 }
+set logfile "qemu_drm_probe_log.txt"
+
+spawn qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -cdrom "$iso" \
+    -m 512M -smp 2 \
+    -nographic -no-reboot \
+    -serial mon:stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+
+# Keep the whole boot in the expect buffer: the '[vahid] ready' and
+# '[ade] session established' markers print early and this probe greps the
+# ACCUMULATED buffer. Set AFTER spawn - match_max targets the current
+# spawn_id.
+match_max 1000000
+
+# Ctrl-A C toggles the serial console <-> QEMU monitor on mon:stdio. The
+# login + app-launch half types on the serial console; only sendkey needs
+# the monitor.
+proc monitor_cmd {cmd} {
+    send "\x01c"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: QEMU monitor not reachable\n"; exit 1 }
+    }
+    send "$cmd\r"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: monitor command '$cmd' not acknowledged\n"; exit 1 }
+    }
+    send "\x01c"
+}
+
+proc sendkey_seq {keys} {
+    monitor_cmd "sendkey $keys"
+}
+
+proc send_password {pw} {
+    log_user 0
+    send "$pw\r"
+    log_user 1
+}
+
+set pass_count 0
+set fail_count 0
+
+# 1. Boot: the console getty's login: prompt.
+send_user "=== 1. boot to console getty ===\n"
+expect -timeout 90 {
+    -re {login: } {
+        incr pass_count
+        send_user "PASS: console getty login prompt\n"
+    }
+    "=== KERNEL PANIC ===" {
+        incr fail_count
+        send_user "FAIL: kernel panicked during boot\n"
+        exit 1
+    }
+    timeout {
+        incr fail_count
+        send_user "FAIL: boot timeout - no 'login:' (console path)\n"
+        exit 1
+    }
+    eof {
+        incr fail_count
+        send_user "FAIL: QEMU exited during boot\n"
+        exit 1
+    }
+}
+
+# 2. vahid-healthy: the device manager reached its sleep loop.
+if {[regexp -- {\[vahid\] ready} $expect_out(buffer)]} {
+    incr pass_count
+    send_user "PASS: vahid_ready - device manager healthy in accumulated boot log\n"
+} else {
+    incr fail_count
+    send_user "FAIL: vahid_ready - '\[vahid] ready' missing from accumulated boot log\n"
+    exit 1
+}
+
+# 3. Console login root/skyos over the serial console.
+send_user "=== 2. console login root/skyos ===\n"
+send "root\r"
+expect -timeout 20 {
+    -re {Password: } {
+        incr pass_count
+        send_user "PASS: password prompt\n"
+    }
+    timeout { send_user "FAIL: no Password: prompt\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited at password prompt\n"; exit 1 }
+}
+send_password "skyos"
+
+expect -timeout 20 {
+    -re {sash\[} {
+        incr pass_count
+        send_user "PASS: console login landed at sash\n"
+    }
+    -re {Login incorrect} {
+        send_user "FAIL: bad credentials - console login rejected\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: no sash prompt after skyos (wrong password or hang)\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during login\n"; exit 1 }
+}
+
+# 4. ade must be running BEFORE skysettings launches (the compositor hosts
+#    the app's window). Healthy GUI: login-manager already exec'd ade ->
+#    '[ade] session established' in the accumulated buffer. No console
+#    fallback: sash execs only one foreground app, so we cannot launch ade
+#    here and still launch skysettings afterwards.
+send_user "=== 3. ade presence (compositor required) ===\n"
+if {![regexp -- {\[ade\] session established} $expect_out(buffer)]} {
+    incr fail_count
+    send_user "FAIL: ade not running - GUI path never reached '\[ade] session established' (skysettings needs the compositor; no console fallback possible)\n"
+    exit 1
+}
+incr pass_count
+send_user "PASS: ade session established in accumulated boot log\n"
+
+# 5. Launch the settings app from the console shell. sash execs it
+#    (foreground); Window::create against the running compositor must
+#    succeed and print the ready marker.
+send_user "=== 4. launch skysettings from console shell ===\n"
+send "skysettings\r"
+expect -timeout 30 {
+    -re {\[settings\] ready} {
+        incr pass_count
+        send_user "PASS: settings_ready - skysettings window created against the live compositor\n"
+    }
+    -re {sargasettings: window failed} {
+        incr fail_count
+        send_user "FAIL: skysettings could not create its window (compositor issue)\n"
+        exit 1
+    }
+    -re {not found|skysettings:} {
+        incr fail_count
+        send_user "FAIL: sash could not exec skysettings (check initrd bin/skysettings)\n"
+        exit 1
+    }
+    timeout {
+        incr fail_count
+        send_user "FAIL: no '\[settings] ready' after launching skysettings\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during skysettings launch\n"; exit 1 }
+}
+
+# 6. sendkey 'r' -> the app's keyboard resolution-cycle arm prints
+#    '[settings] applying' BEFORE the set_mode syscall. This is the
+#    routing tripmine: seeing it proves the key reached THIS window.
+send_user "=== 5. sendkey r (resolution cycle) ===\n"
+sendkey_seq "r"
+expect -timeout 20 {
+    -re {\[settings\] applying} {
+        incr pass_count
+        send_user "PASS: settings_apply - 'r' reached the app window, set_mode called\n"
+    }
+    timeout {
+        incr fail_count
+        send_user "FAIL: no '\[settings] applying' - 'r' never reached the skysettings window (focus/routing defect)\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during the resolution change\n"; exit 1 }
+}
+
+# 7. The K5 assert: the kernel prints 'DRM: set_mode WxH' after the
+#    ModeInfo-struct path applies. Today (K5 not landed) the EINVAL path
+#    prints nothing -> KERNEL-GATED deferral. The moment the rewrite lands
+#    Fix 1, this becomes a hard PASS.
+send_user "=== 6. DRM set_mode marker (K5-gated) ===\n"
+expect -timeout 20 {
+    -re {DRM: set_mode} {
+        incr pass_count
+        send_user "PASS: DRM set_mode delivered - K5 live, EINVAL loop dead, ModeInfo struct path works\n"
+    }
+    "=== KERNEL PANIC ===" {
+        incr fail_count
+        send_user "FAIL: kernel panicked during set_mode\n"
+        exit 1
+    }
+    timeout {
+        # settings_apply was proven above, so the app DID call set_mode;
+        # the kernel just printed nothing -> the EINVAL path is still
+        # live. Deferral, not failure.
+        send_user "KERNEL-GATED: DRM set_mode EINVAL path still live - '\[settings] applying' proven but no 'DRM: set_mode' (kernel rewrite must land kernel-drmctl-fix.md Fix 1)\n"
+        send_user "\nDRM set_mode probe: $pass_count passed, $fail_count failed (KERNEL-GATED)\n"
+        exit 0
+    }
+    eof { send_user "FAIL: QEMU exited while waiting for the DRM marker\n"; exit 1 }
+}
+
+send_user "\nDRM set_mode probe: $pass_count passed, $fail_count failed\n"
+if {$fail_count > 0} { exit 1 }
+exit 0

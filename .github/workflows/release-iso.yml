@@ -1,0 +1,131 @@
+name: Build Release ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.6.0)"
+        required: true
+        default: "0.6.0"
+      kernel_ref:
+        description: "Kernel commit/tag/branch to build. Must boot to userspace (reachability gate fails otherwise). The working local ISO (release/skyos-0.6.0.iso) was built from the local tree a18848f + 50 uncommitted files - pin that commit once it is pushed (see ade/docs/iso-capture-artifact.md)."
+        required: false
+        default: "master"
+        type: string
+      boot_capture:
+        description: "Seconds to boot the ISO while capturing the serial log (0 skips the boot; keep under ~840s - the step times out at 15 min)."
+        required: false
+        default: "90"
+        type: string
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          repository: SKYIOUS/SKYIOUS-KERNEL
+          ref: ${{ github.event.inputs.kernel_ref }}
+          path: SKYIOUS-KERNEL
+
+      - name: Install deps
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86
+
+      - name: Install nightly
+        run: |
+          # Pinned nightly-2026-01-15 (matches local 1.94 dev; the pinned cargo is the last that
+          # accepts .json target specs without -Zjson-target-spec, and its rustc still has the
+          # x86-softfloat rustc-abi value - both renamed on newer nightlies).
+          rustup toolchain install nightly-2026-01-15 --component rust-src --component llvm-tools-preview --allow-downgrade
+          rustup default nightly-2026-01-15
+
+      - name: Build kernel
+        working-directory: SKYIOUS-KERNEL/kernel
+        run: cargo build --release --target x86_64-unknown-none
+
+      - name: Build userspace
+        run: cargo build -Zbuild-std=core,alloc --target x86_64-sarga.json --release
+
+      - name: Build initrd
+        run: python3 build_initrd.py
+
+      - name: Copy initrd
+        run: |
+          mkdir -p SKYIOUS-KERNEL/SkyOS
+          cp initrd.tar SKYIOUS-KERNEL/SkyOS/
+
+      - name: Run builder
+        working-directory: SKYIOUS-KERNEL
+        run: cargo run --release --manifest-path builder/Cargo.toml
+
+      - name: Create ISO
+        run: |
+          pip install pycdlib 2>/dev/null || true
+          python3 scripts/make_iso.py "${{ github.event.inputs.version }}"
+
+      - name: Boot and capture serial
+        timeout-minutes: 15
+        env:
+          KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
+          BOOT_SECONDS: ${{ github.event.inputs.boot_capture }}
+        run: |
+          if [ "$BOOT_SECONDS" = "0" ]; then
+            echo "boot_capture=0 - skipping boot"
+            echo "boot_capture=0 - boot skipped" > capture_serial.log
+            exit 0
+          fi
+          ISO="$(ls release/skyos-*.iso 2>/dev/null | head -1)"
+          if [ -z "$ISO" ]; then echo "ERROR: No ISO found in release/"; exit 1; fi
+          echo "Booting $ISO at kernel_ref=${KERNEL_REF} for ${BOOT_SECONDS}s"
+          # Intentional timeout kill (rc=124) - we capture whatever serial the
+          # boot produced. -display none -monitor none -serial file: keeps the
+          # whole guest stream in the log artifact instead of a console.
+          timeout "$BOOT_SECONDS" qemu-system-x86_64 \
+            -bios OVMF.fd \
+            -cdrom "$ISO" \
+            -m 512M -smp 2 \
+            -display none -monitor none \
+            -serial file:capture_serial.log \
+            -device e1000,netdev=net0 -netdev user,id=net0 \
+            -no-reboot || true
+          echo "--- serial log: $(wc -c < capture_serial.log) bytes ---"
+
+      - name: Verify reachability
+        env:
+          KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
+          BOOT_SECONDS: ${{ github.event.inputs.boot_capture }}
+        run: |
+          if [ "$BOOT_SECONDS" = "0" ]; then
+            echo "boot_capture=0 - reachability not verified"
+            exit 0
+          fi
+          if [ ! -s capture_serial.log ]; then
+            echo "FAIL: empty serial log"
+            exit 1
+          fi
+          if grep -q "login:" capture_serial.log; then
+            echo "PASS: kernel_ref=${KERNEL_REF} reached the getty login prompt"
+            grep -E "\[vahid\]|\[init\]|\[ade\]|login:" capture_serial.log | head -20
+          else
+            echo "FAIL: kernel_ref=${KERNEL_REF} did not reach userspace (no 'login:' in serial)"
+            echo "--- tail of serial log ---"
+            tail -40 capture_serial.log
+            exit 1
+          fi
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyos-${{ github.event.inputs.version }}-iso
+          path: release/
+          compression-level: 0
+
+      - name: Upload serial log
+        uses: actions/upload-artifact@v4
+        with:
+          name: skyos-${{ github.event.inputs.version }}-serial-run${{ github.run_number }}
+          path: capture_serial.log
+          if-no-files-found: error

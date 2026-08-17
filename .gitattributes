@@ -1,0 +1,40 @@
+# Auto-detect text files
+* text=auto
+
+# Rust source
+*.rs text diff=rust
+*.rlib binary
+*.rlink binary
+
+# Python
+*.py text diff=python
+
+# Shell/PowerShell
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Config
+*.toml text
+*.json text
+*.yml text
+*.yaml text
+*.md text diff=markdown
+
+# Binary
+*.bin binary
+*.img binary
+*.iso binary
+*.vdi binary
+*.tar binary
+*.efi binary
+*.fd binary
+
+# Generated
+initrd.tar binary
+Cargo.lock text
+
+# Normalize line endings
+.gitattributes text eol=lf
+.gitignore text eol=lf

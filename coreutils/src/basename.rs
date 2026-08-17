@@ -10,11 +10,7 @@ fn user_main() -> i32 {
         return 0;
     }
     let path = args::get(1).unwrap_or("");
-    let base = path
-        .rsplit('/')
-        .filter(|s| !s.is_empty())
-        .next()
-        .unwrap_or(path);
+    let base = path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path);
     let mut result = String::from(base);
     if args::argc() > 2 {
         if let Some(suffix) = args::get(2) {

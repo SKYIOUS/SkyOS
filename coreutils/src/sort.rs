@@ -10,7 +10,7 @@ fn user_main() -> i32 {
     let mut buf = [0u8; 1024];
     let fd = if args::argc() > 1 {
         let path = args::get(1).unwrap_or_default();
-        io::open(&path, 0).unwrap_or(0)
+        io::open(path, 0).unwrap_or(0)
     } else {
         0
     };

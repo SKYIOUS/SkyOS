@@ -1,33 +1,17 @@
 # Mouse Driver
 
-The PS/2 mouse driver handles relative motion input from standard PS/2 mice.
+The PS/2 mouse driver (`kernel/kernel/src/drivers/mouse.rs`) handles relative motion input from standard PS/2 mice, fed by IRQ12.
 
-## Initialization
-
-The mouse is initialized after the PS/2 controller is ready:
+## Public API
 
 ```rust
-pub fn init_mouse(controller: &mut Ps2Controller) -> Result<MouseDevice, DriverError> {
-    // Enable mouse on PS/2 port 2
-    controller.write_command(0xA8);
-    
-    // Set default settings
-    controller.write_to_mouse(0xF6); // Set defaults
-    controller.read_from_mouse()?;   // ACK
-    
-    // Enable data reporting
-    controller.write_to_mouse(0xF4);
-    controller.read_from_mouse()?;   // ACK
-    
-    // Enable scroll wheel (IntelliMouse protocol)
-    controller.write_to_mouse(0xF3); // Set sample rate
-    controller.read_from_mouse()?;
-    controller.write_to_mouse(200);  // 200 samples/sec
-    controller.read_from_mouse()?;
-    
-    Ok(MouseDevice::new())
-}
+pub fn init();              // called after ps2::init() enables the mouse
+pub fn enable_wheel();      // armed by ps2::init() when the IntelliMouse device ID is 3 or 4
+pub fn feed_byte(byte: u8); // push a packet byte into the decoder
+pub fn handle_interrupt();  // IRQ12 handler: reads port 0x60, feeds feed_byte
 ```
+
+There is no `MouseDevice` struct or `DriverError`.
 
 ## Data Packet Format
 
@@ -45,12 +29,14 @@ Standard PS/2 mouse uses 3-byte packets:
 | 1 | 0-7 | X movement delta |
 | 2 | 0-7 | Y movement delta |
 
-IntelliMouse protocol adds a 4th byte for scroll wheel data.
+IntelliMouse protocol adds a 4th byte for scroll wheel data (enabled via `enable_wheel`).
 
 ## Event Processing
 
-The mouse driver converts raw packets into motion events:
+`feed_byte` accumulates packet bytes and converts them into motion events:
 - Accumulates delta X/Y values
 - Tracks button state (press/release)
 - Reports scroll wheel movement
 - Handles overflow conditions by discarding large deltas
+
+Processed events feed the input layer (`drivers/input.rs`) and ultimately the GUI/compositor.

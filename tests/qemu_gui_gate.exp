@@ -1,0 +1,394 @@
+#!/usr/bin/expect -f
+# GUI + device-manager reachability gate: boots the SkyOS ISO and asserts
+# THREE signals from serial markers on a single boot:
+#
+#   1. "[vahid] ready"           - device manager reached its healthy sleep
+#                                  loop (vahid/src/main.rs), spawned ahead
+#                                  of login-manager in init's table.
+#   2. "[login] window created"  - GUI Window::create succeeded.
+#   Signals 1+2 are collected order-tolerantly by ONE state-tracked loop
+#   (saw_vahid/saw_window flags, single deadline): whichever marker prints
+#   first is recorded first, so a future marker reordering cannot regress
+#   the gate. FATAL / give-up / panic fail immediately at any position.
+#   3. "[KBD] IRQ1 fired!"       - sendkey reaches the kernel keyboard
+#                                  handler (one-shot marker, interrupts.rs;
+#                                  step 4 sends sendkey shift).
+#   4. "[login] tab: focus -> password"
+#                                - one sendkey Tab advances the login-manager
+#                                  field (Phase B Tab/Enter routing,
+#                                  kernel-keyboard-gate.md section 3; step 4a
+#                                  sends sendkey tab).
+#
+#   FAIL -> "[login] failed to create window"  (the documented respawn loop,
+#           traced in ade/docs/session-lifecycle.md - add_window cannot fail;
+#           the trigger is sys_gui_create_window's silent content fallback
+#           leaving phys_addr=None, so sys_gui_map_buffer returns 0/NULL and
+#           libsarga Window::create returns Err(5))
+#   FAIL -> "[vahid] FATAL: failed to create device nodes"  (vahid exits 1;
+#           init's accounting gives up after MAX_RESPAWNS - bounded)
+#
+# This closes the Gap 1 open question ("does Window::create succeed in a
+# stock boot?") and adds device-manager health to the same boot, so one
+# QEMU run asserts both.
+#
+# PER-CHECK AUDIT (Aug 9, 2026) — every pattern verified against sources:
+#
+#   1 boot_spawn      \[init\] starting service:
+#                                            REAL  prefix only (init/src/main.rs:28).
+#                                            The full name is never contiguous: init
+#                                            writes prefix/name/newline in three
+#                                            write_all calls and the kernel's TTY0
+#                                            path emits "[TTY0W] len=N" between parts
+#                                            (kernel/src/vfs/devfs.rs:110).
+#   2 vahid_ready     \[vahid\] ready
+#                                            REAL  vahid/src/main.rs:108 (single
+#                                            print_str; stable end of healthy path).
+#   3 vahid_fatal     \[vahid\] FATAL:
+#                                            REAL  vahid/src/main.rs:101.
+#   4 give_up         (?s)\[init\] giving up on .*?vahid
+#                                            REAL*: 3-part message (init/src/main.rs:
+#                                            141-143) + TTY0W interleave; name on its
+#                                            own line. Old full-name pattern DEAD.
+#   5 win_created     \[login\] window created
+#                                            REAL  login-manager/src/main.rs:62.
+#   6 win_failed      \[login\] failed to create window
+#                                            REAL  login-manager/src/main.rs:66.
+#   7 panic           "=== KERNEL PANIC ==="
+#                                            REAL  kernel/src/main.rs:631-632.
+#                                            "SARGA OS PANIC" was DEAD (no such
+#                                            string in the kernel).
+#   8 kbd_irq1        \[KBD\] IRQ1 fired!
+#                                            REAL  kernel/src/interrupts.rs:656
+#                                            (one-shot: AtomicBool swap, first
+#                                            IRQ1 only). Sent via sendkey shift
+#                                            after the window verdict; its
+#                                            ABSENCE fails the gate (sendkey
+#                                            never reached the keyboard
+#                                            handler).
+#                                            Airtight (Aug 12, 2026):
+#                                            expect -timeout 0 absent-check
+#                                            before the sendkey proves no
+#                                            stale buffered copy can
+#                                            false-PASS (match_max 1000000).
+#   9 tab_routing     \[login\] tab: focus -> password
+#                                            REAL  login-manager/src/main.rs
+#                                            (Tab arm serial announce). Sent
+#                                            via sendkey tab after the IRQ1
+#                                            probe; one Tab moves the active
+#                                            field username -> password and
+#                                            prints the marker. Answers the
+#                                            Phase B Tab/Enter routing
+#                                            question (kernel-keyboard-gate.md
+#                                            section 3) on real input.
+#   9 ls_dev          ls /dev shows all six node names
+#                                            REAL*: vahid's six-node table
+#                                            (vahid/src/main.rs:69-76). The
+#                                            kernel devfs natively mounts
+#                                            null/zero/tty0/tty/fb0/speaker
+#                                            only (kernel/src/vfs/devfs.rs),
+#                                            so random/urandom/console exist
+#                                            ONLY if the O_CREAT fallback
+#                                            created them. Live Aug 10
+#                                            selftest-ISO boot: "[vahid]
+#                                            ready" with ZERO "[vahid]
+#                                            FAILED to create" lines — all
+#                                            six opens succeeded on that
+#                                            build; the listing itself is
+#                                            asserted by this probe.
+#  10 dd_zero_null    dd if=/dev/zero of=/dev/null bs=16 count=1
+#                                            REAL  devfs Zero read returns
+#                                            zeros (devfs.rs:41), Null write
+#                                            accepts (devfs.rs:94); coreutils
+#                                            dd supports bs=/count=
+#                                            (coreutils/src/dd.rs:18-21).
+#                                            Proves /dev/zero is READABLE and
+#                                            /dev/null is WRITABLE, not just
+#                                            listed — the O_CREAT fallback
+#                                            must yield working char devices.
+#   (* init multi-write messages + devfs TTY0W diag interleave; give_up is
+#      additionally waitpid-gated: init must first reap exits - see the live
+#      probe in tests/qemu_giveup_boot.exp. On the Aug 10, 2026 kernel init
+#      reaps nothing, so "giving up on X" cannot print yet.)
+# Usage: expect qemu_gui_gate.exp <iso_path> [timeout_seconds]
+
+set iso [lindex $argv 0]
+set timeout [lindex $argv 1]
+if {$timeout == ""} { set timeout 180 }
+
+spawn qemu-system-x86_64 \
+    -bios OVMF.fd \
+    -cdrom "$iso" \
+    -m 512M -smp 2 \
+    -nographic -no-reboot \
+    -serial mon:stdio \
+    -device e1000,netdev=net0 -netdev user,id=net0
+
+# Keep the whole boot in the expect buffer (default match_max is 2000
+# bytes): the /dev probe later greps the ACCUMULATED log for the six node
+# names and the console 'login:' prompt must survive the boot markers.
+match_max 1000000
+
+# 1. Boot gate: init must reach its service-spawn loop. The stable prefix
+#    "[init] starting service:" is matched, NOT the full service name - the
+#    kernel's serial path has been seen garbling names (e.g. "[TTY0W] len=5"),
+#    so an exact-name match could hang. A timeout here means the kernel never
+#    got to userspace (or init died before spawning anything) - the kernel
+#    gate, not a GUI regression.
+expect {
+    {\[init\] starting service:} {
+        send_user "PASS: boot reached init's service spawn\n"
+    }
+    "=== KERNEL PANIC ===" {
+        send_user "FAIL: kernel panicked during boot\n"
+        exit 1
+    }
+    timeout {
+        send_user "FAIL: kernel never reached init's service spawn (boot gate)\n"
+        exit 1
+    }
+    eof {
+        send_user "FAIL: QEMU exited before login-manager\n"
+        exit 1
+    }
+}
+
+# 2+3. State-tracked boot-verdict loop (Aug 10, 2026): vahid health and
+# the login-manager window verdict are collected in ONE order-tolerant
+# loop. Two flags (saw_vahid / saw_window) are set as the markers arrive —
+# whichever prints first is recorded first. FATAL / give-up / panic fail
+# immediately regardless of position, and the single deadline below
+# replaces the two sequential 120s timeouts. This is order-tolerant BY
+# DESIGN: a future kernel change that reorders markers (e.g. login-manager
+# emits its window marker before vahid's ready) can never regress the gate.
+# expect matches against the accumulated buffer across iterations, so a
+# marker that arrives mid-iteration is matched at the start of the next.
+set saw_vahid 0
+set saw_window 0
+# Free-page count at login-manager's Window::create, from its
+# boot-time memory-pressure marker (ctlFS /ctl/sys/mem/free). Empty
+# until the marker arrives; the FAIL/PASS arms below report it so the
+# captured log settles persistent-vs-transient OOM (kernel-gui-window-
+# fix.md Option 1 vs Option 2).
+set mem_free ""
+set verdict_deadline [expr {[clock seconds] + 240}]
+while {!$saw_vahid || !$saw_window} {
+    # Adaptive per-iteration timeout: the final wait expires exactly at the
+    # deadline (a fixed 30s would fail up to 30s late). Don't trim the 240s
+    # deadline to shorten the failure path - it preserves the old 120+120
+    # sequential budget, and a slow-but-healthy boot needs the headroom.
+    set rem [expr {$verdict_deadline - [clock seconds]}]
+    expect -timeout [expr {$rem < 30 ? $rem : 30}] {
+        # Memory-pressure marker (passive capture): login-manager
+        # prints '[login] mem free=N pages' right before Window::create
+        # on every (re)spawn. Record the count; do NOT set a saw flag -
+        # this arm only feeds evidence into the FAIL/PASS verdicts.
+        -re {\[login\] mem free=(\d+) pages} {
+            set mem_free $expect_out(1,string)
+            send_user "PASS: memory-pressure marker: buddy free=$mem_free pages at create\n"
+        }
+        {\[vahid\] ready} {
+            set saw_vahid 1
+            send_user "PASS: vahid device manager healthy\n"
+        }
+        {\[vahid\] FATAL:} {
+            send_user "FAIL: vahid fatal device-scan failure (device-manager gate)\n"
+            exit 1
+        }
+        # Fallback only: FATAL fires ~2.5-3s before init's give-up (which
+        # needs MAX_RESPAWNS non-zero exits), so this arm exists in case the
+        # FATAL line is garbled by the serial path — not the primary signal.
+        -re {(?s)\[init\] giving up on .*?vahid} {
+            send_user "FAIL: init gave up on vahid after too many crashes\n"
+            exit 1
+        }
+        {\[login\] window created} {
+            set saw_window 1
+            send_user "PASS: login-manager created its GUI window\n"
+        }
+        {\[login\] failed to create window} {
+            if {$mem_free == ""} {
+                send_user "FAIL: login-manager could not create a window (respawn loop), memory marker missing\n"
+            } else {
+                send_user "FAIL: login-manager could not create a window (respawn loop) - buddy free=$mem_free pages at create\n"
+            }
+            exit 1
+        }
+        "=== KERNEL PANIC ===" {
+            send_user "FAIL: kernel panicked during boot\n"
+            exit 1
+        }
+        timeout {
+            if {[clock seconds] >= $verdict_deadline} {
+                send_user "FAIL: deadline passed waiting for \[vahid\] ready / window verdict (saw_vahid=$saw_vahid saw_window=$saw_window)\n"
+                exit 1
+            }
+            # Deadline not reached — keep waiting for the missing marker(s).
+        }
+        eof {
+            send_user "FAIL: QEMU exited before both markers (saw_vahid=$saw_vahid saw_window=$saw_window)\n"
+            exit 1
+        }
+    }
+}
+# 4. Phase B routing probe: [KBD] IRQ1 fired! is the kernel's one-shot
+#    marker that IRQ1 actually fired (interrupts.rs:656, AtomicBool swap) -
+#    the answer to the kernel-keyboard-gate.md §6 open question: do QEMU
+#    monitor sendkey scancodes reach the kernel's keyboard handler on this
+#    build? The window verdict above says nothing about input routing, so
+#    this gate sends one harmless key (Shift, no side effects) via the
+#    monitor (Ctrl-A C toggle on mon:stdio) and requires the marker - a
+#    fresh one-shot per boot.
+#    Airtight (Aug 12, 2026): an expect -timeout 0 absent-check before the
+#    sendkey proves the marker was not already buffered from early boot
+#    (match_max 1000000 keeps the whole boot) - one-shot means any pre-probe
+#    copy is a stray false-PASS.
+send_user "=== routing probe: \[KBD\] IRQ1 fired! ===\n"
+proc monitor_cmd {cmd} {
+    send "\x01c"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: QEMU monitor not reachable\n"; exit 1 }
+    }
+    send "$cmd\r"
+    expect -timeout 5 {
+        "(qemu) " {}
+        timeout { send_user "FAIL: monitor command '$cmd' not acknowledged\n"; exit 1 }
+    }
+    send "\x01c"
+}
+# Airtight ordering (Aug 12, 2026): IRQ1 fired! is one-shot per boot, so a
+# stray IRQ1 from early boot (PS/2 controller probe) would linger in the
+# expect buffer (gate.exp raises match_max to 1000000) and false-PASS this
+# probe by matching the STALE byte. Prove the marker is ABSENT right before
+# the probe key - `expect -timeout 0` matches immediately if a stale copy is
+# buffered, otherwise the timeout arm fires instantly - then require it
+# after the sendkey. Buffer position at probe time is the stream's byte
+# offset, so this is the same "appears only after this point" guarantee a
+# log-file offset check would give.
+expect -timeout 0 {
+    {\[KBD\] IRQ1 fired!} {
+        send_user "FAIL: stray IRQ1 marker already present before the probe sendkey - routing claim unproven\n"
+        exit 1
+    }
+    timeout { }
+}
+
+monitor_cmd "sendkey shift"
+expect -timeout 10 {
+    {\[KBD\] IRQ1 fired!} {
+        send_user "PASS: sendkey reached IRQ1 (kernel keyboard routing live)\n"
+    }
+    timeout {
+        send_user "FAIL: \[KBD\] IRQ1 fired! never appeared - sendkey does not route into the kernel keyboard handler\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during routing probe\n"; exit 1 }
+}
+
+# 4a. Tab/Enter routing probe (Aug 12, 2026): the IRQ1 marker only proves
+#     sendkey scancodes reach the kernel's keyboard handler. The Phase B
+#     Tab/Enter question (kernel-keyboard-gate.md section 3) is whether a
+#     Unicode key from sendkey actually drives the GUI consumer: Tab
+#     arrives as Unicode 0x09 via the compositor's Unicode arm, and
+#     login-manager advances its active field (username -> password) on
+#     0x09 with the serial announce '[login] tab: focus -> password'. One
+#     Tab, require the '-> password' leg.
+send_user "=== Tab routing probe: \[login\] tab: focus -> password ===\n"
+monitor_cmd "sendkey tab"
+expect -timeout 10 {
+    {\[login\] tab: focus -> password} {
+        send_user "PASS: sendkey Tab advanced the login-manager field (Phase B Tab/Enter routing live)\n"
+    }
+    timeout {
+        send_user "FAIL: sendkey Tab never advanced the login field - Tab/Enter routing broken\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during Tab routing probe\n"; exit 1 }
+}
+
+# 5. /dev usability probe (Aug 10, 2026): vahid's O_CREAT fallback must
+#    produce USABLE /dev/null and /dev/zero on a real boot, not just
+#    "open succeeded" (the boot marker only proves vahid did not go FATAL).
+#    DIAGNOSIS: a timeout at the 'login:' expect below means the console
+#    getty did not appear (console-session failure, not a /dev issue) - the
+#    live Aug 10 selftest-ISO boot reached '[vahid] ready' with no 'login:'
+#    in 80s, so on a slow TCG boot this stage may sit on the global timeout.
+#    A timeout AFTER login (ls /dev or dd) means a /dev node is broken.
+#    Log in on the console getty (same root/skyos path the shell harness
+#    proves) and check the nodes exist AND work:
+#      a. ls /dev -> all six names present (null zero random urandom tty
+#                    console); random/urandom/console are NOT native devfs
+#                    nodes, so they exist only if the fallback created them.
+#      b. dd if=/dev/zero of=/dev/null bs=16 count=1 -> reads 16 real zero
+#         bytes from /dev/zero AND writes them into /dev/null. A hang or
+#         error means one of the two is NOT a working char device.
+send_user "=== /dev usability probe ===\n"
+expect {
+    {login:} {}
+    timeout { send_user "FAIL: no console login prompt for the /dev probe\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited before the /dev probe\n"; exit 1 }
+}
+send "root\r"
+expect {
+    {Password:} {}
+    timeout { send_user "FAIL: no Password prompt during /dev probe login\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited during /dev probe login\n"; exit 1 }
+}
+# Same log_user discipline as the shell harness: keep the password out of
+# the CI log (the guest never echoes, but expect's own send echo would).
+log_user 0
+send "skyos\r"
+log_user 1
+expect {
+    {sash\[} { send_user "PASS: console login reached sash for the /dev probe\n" }
+    timeout { send_user "FAIL: no sash prompt after login for the /dev probe\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited during /dev probe login\n"; exit 1 }
+}
+send "ls /dev\r"
+expect {
+    {sash\[} {}
+    timeout { send_user "FAIL: 'ls /dev' timed out\n"; exit 1 }
+    eof { send_user "FAIL: QEMU exited during 'ls /dev'\n"; exit 1 }
+}
+# Assert all six node names in the accumulated buffer since the ls command.
+if {[regexp -- {\bnull\b} $expect_out(buffer)] \
+    && [regexp -- {\bzero\b} $expect_out(buffer)] \
+    && [regexp -- {\brandom\b} $expect_out(buffer)] \
+    && [regexp -- {\burandom\b} $expect_out(buffer)] \
+    && [regexp -- {\btty\b} $expect_out(buffer)] \
+    && [regexp -- {\bconsole\b} $expect_out(buffer)]} {
+    send_user "PASS: ls /dev shows all six nodes (null zero random urandom tty console)\n"
+} else {
+    send_user "FAIL: ls /dev missing one or more of the six nodes\n"
+    exit 1
+}
+# Usable check: dd reads 16 bytes from /dev/zero and writes them into
+# /dev/null. If either device is a broken placeholder, the read hangs or
+# the write fails and this expect times out -> gate FAILs.
+send "dd if=/dev/zero of=/dev/null bs=16 count=1\r"
+expect {
+    {sash\[} {
+        # Note: null/zero are NATIVE devfs nodes (mounted unconditionally in
+        # DevFs::new), so this proves native /dev/null + /dev/zero are
+        # usable char devices and that all six names are listed - it does
+        # not prove the O_CREAT fallback produced usable nodes. Node
+        # provenance is state-keyed: on the in-flight kernel random/urandom/
+        # console are ALSO native (minted in DevFs::new between tty and
+        # fb0), while on the committed CI default branch the fallback is
+        # their only possible source (they do not exist there at all).
+        send_user "PASS: native /dev/null + /dev/zero usable; all six nodes listed\n"
+    }
+    timeout {
+        send_user "FAIL: dd on /dev/zero -> /dev/null timed out (device not usable)\n"
+        exit 1
+    }
+    eof { send_user "FAIL: QEMU exited during dd probe\n"; exit 1 }
+}
+
+if {$mem_free == ""} {
+    send_user "WARN: memory-pressure marker never appeared (ctlFS read failed?)\n"
+} else {
+    send_user "memory-pressure: buddy free=$mem_free pages at login-manager create (Option 1 vs 2 evidence)\n"
+}
+send_user "\n=== GUI + device-manager reachability gate: PASS ===\n"
+exit 0

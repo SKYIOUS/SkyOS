@@ -101,9 +101,9 @@ impl Config {
 
         for entry in &self.entries {
             content.push_str(&entry.key);
-            content.push_str("=");
+            content.push('=');
             content.push_str(&entry.value);
-            content.push_str("\n");
+            content.push('\n');
         }
 
         fs::write_file(&self.path, &content)

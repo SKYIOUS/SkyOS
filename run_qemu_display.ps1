@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
-$KERNEL_PATH = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin"
-$BIOS_PATH = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\OVMF.fd"
-$LOG_PATH = "C:\Users\nanda\Desktop\Github\SKYIOUS KERNEL\qemu_display.log"
+$scriptDir = $PSScriptRoot
+$KERNEL_PATH = "$scriptDir\kernel\target\x86_64-vahi\debug\bootimage-vahi_kernel.bin"
+$BIOS_PATH = "$scriptDir\OVMF.fd"
+$LOG_PATH = "$scriptDir\qemu_display.log"
 
 Write-Host "Starting SkyOS in QEMU (SDL display)..." -ForegroundColor Cyan
 Write-Host "Boot log will be written to: $LOG_PATH" -ForegroundColor Gray

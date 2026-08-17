@@ -7,78 +7,80 @@ use libsarga::{gui::Window, sarga_main};
 use libsarga::{io, process};
 
 const SHADOW_PATH: &str = "/etc/shadow";
-
-fn hex_decode(s: &[u8]) -> Option<alloc::vec::Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    let mut out = alloc::vec::Vec::with_capacity(s.len() / 2);
-    for chunk in s.chunks(2) {
-        let hi = (chunk[0] as char).to_digit(16)? as u8;
-        let lo = (chunk[1] as char).to_digit(16)? as u8;
-        out.push((hi << 4) | lo);
-    }
-    Some(out)
-}
+const MAX_FAILED_ATTEMPTS: u32 = 10;
+/// Backoff pause in nanoseconds after MAX_FAILED_ATTEMPTS (30 s).
+const BACKOFF_NS: u64 = 30_000_000_000;
 
 fn verify_password(username: &str, password: &str) -> bool {
     let data = match libsarga::fs::read_to_string(SHADOW_PATH) {
         Ok(d) => d.into_bytes(),
-        Err(_) => return username == "root",
+        Err(_) => return false,
     };
-    let lines: alloc::vec::Vec<&[u8]> = data.split(|&b| b == b'\n').collect();
-    for line in &lines {
-        if line.is_empty() {
-            continue;
-        }
-        let mut parts = line.splitn(2, |&b| b == b':');
-        let name = parts.next().unwrap_or(b"");
-        if name != username.as_bytes() {
-            continue;
-        }
-        let rest = parts.next().unwrap_or(b"");
-        if rest.starts_with(b"PBKDF2-") {
-            let inner = &rest[7..];
-            let mut parts2 = inner.splitn(2, |&b| b == b':');
-            let salt_hex = parts2.next().unwrap_or(b"");
-            let rest3 = parts2.next().unwrap_or(b"");
-            let salt_bytes = match hex_decode(salt_hex) {
-                Some(s) if s.len() == 16 => s,
-                _ => return false,
-            };
-            let mut salt_arr = [0u8; 16];
-            salt_arr.copy_from_slice(&salt_bytes);
-            let mut dk_hex = rest3;
-            let mut iterations: u32 = 10000;
-            if let Some(pos) = rest3.iter().position(|&b| b == b':') {
-                dk_hex = &rest3[..pos];
-                iterations = core::str::from_utf8(&rest3[pos + 1..])
-                    .unwrap_or("10000")
-                    .parse()
-                    .unwrap_or(10000);
-            }
-            let stored_dk = match hex_decode(dk_hex) {
-                Some(s) if s.len() == 32 => s,
-                _ => return false,
-            };
-            let pw = password.as_bytes();
-            let mut dk_out = [0u8; 32];
-            if libsarga::hash::pbkdf2_sha256(pw, &salt_arr, &mut dk_out, iterations).is_ok() {
-                return dk_out == stored_dk.as_slice();
-            }
-            return false;
-        }
-        return password == core::str::from_utf8(rest).unwrap_or("");
+    libsarga::hash::verify_password(&data, username, password)
+}
+
+/// Count one failed GUI login attempt. When the cap is reached, show the
+/// pause message in the window and announce it on serial. The BACKOFF_NS
+/// sleep itself runs in the main loop AFTER win.flush() (see below), so the
+/// window shows the message for the whole pause instead of freezing on a
+/// stale frame; only a successful sleep disarms the counter (a failed
+/// nanosleep, e.g. EINTR, must not skip the backoff and arm the next burst
+/// at full speed) and clears the pause message, so the next attempt shows
+/// the plain "Invalid username or password". Never exits, by design: the
+/// GUI session is init service
+/// "login-manager" with respawn: true, so an auth-failure exit would burn
+/// MAX_RESPAWNS the same way the console getty's used to — the loop just
+/// re-prompts in the window.
+fn note_failed_attempt(failures: &mut u32, error_msg: &mut String) {
+    *failures += 1;
+    if *failures >= MAX_FAILED_ATTEMPTS {
+        *error_msg = String::from("Too many failed attempts - pausing 30s");
+        io::print_str("\nToo many failed attempts - pausing 30s\n");
     }
-    username == "root"
 }
 
 fn user_main() -> i32 {
     let theme = Theme::dark();
+    // Boot-time memory-pressure marker (evidence for
+    // kernel-gui-window-fix.md Option 1 vs Option 2): read the kernel
+    // buddy allocator's live free-page count from ctlFS right before
+    // the GUI buffer allocation. If Window::create then fails, this
+    // number tells the gate whether the failure was persistent OOM
+    // (free near zero -> Option 2's honest -ENOMEM is the right fix)
+    // or transient/fragmentation (plenty free -> Option 1's
+    // map-the-heap-fallback). Printed on every respawn, so the serial
+    // capture also shows whether free memory recovers between attempts.
+    match libsarga::fs::read_to_string("/ctl/sys/mem/free") {
+        Ok(free) => {
+            let pages = free.trim().split(' ').next().unwrap_or("?");
+            io::print_str(&alloc::format!("[login] mem free={} pages\n", pages));
+        }
+        Err(_) => io::print_str("[login] mem free=unavailable\n"),
+    }
     let mut win = match Window::create("SARGA OS", 800, 600) {
-        Ok(w) => w,
-        Err(_) => {
-            io::print_str("[login] failed to create window\n");
+        Ok(w) => {
+            io::print_str("[login] window created\n");
+            w
+        }
+        Err(e) => {
+            // WHY marker for the GUI-hang gate: paired with the
+            // "[login] mem free=N pages" line above, this settles whether
+            // the window-failure loop is the known ENOMEM path (errno 12 -
+            // kernel-gui-window-fix.md Option 2: create_window returns
+            // -ENOMEM when the contiguous allocation fails) or something
+            // new (any other errno, e.g. 5 = map_buffer returned NULL).
+            // free~0 + Out of memory = persistent OOM; plenty free + any
+            // errno = a fresh cause, not the documented ENOMEM loop. (The
+            // exit stays 0 here by design - the non-zero Option 2b exit is
+            // kernel-gated and only lands with the kernel change.)
+            let msg = if e == libsarga::errno::ENOMEM as i64 {
+                alloc::string::String::from(
+                    "[login] failed to create window: Out of memory (errno 12)\n",
+                )
+            } else {
+                alloc::format!("[login] failed to create window: errno {}\n", e)
+            };
+            io::print_str(&msg);
             return 0;
         }
     };
@@ -87,6 +89,7 @@ fn user_main() -> i32 {
     let mut password_buf = alloc::vec::Vec::new();
     let mut active_field = 0usize;
     let mut error_msg = String::new();
+    let mut failures: u32 = 0;
 
     let mut show_password = false;
     let mut power_menu = false;
@@ -101,24 +104,52 @@ fn user_main() -> i32 {
         m_was_pressed = m_pressed;
 
         while let Some(key) = win.get_key() {
+            let key = key as u8;
             match key {
                 0x09 => {
                     active_field = (active_field + 1) % 2;
+                    // Serial announce for the QEMU gate's Tab/Enter routing
+                    // probe (kernel-keyboard-gate.md section 3, Phase B):
+                    // Tab arrives as Unicode 0x09 through the GUI pipeline,
+                    // and this marker proves the focus advance happened on
+                    // real hardware - the gate asserts the '-> password'
+                    // leg after one Tab.
+                    let which = if active_field == 1 {
+                        "password"
+                    } else {
+                        "username"
+                    };
+                    io::print_str(&alloc::format!("\n[login] tab: focus -> {}\n", which));
                 } // Tab
                 0x0A | 0x0D => {
                     let user = core::str::from_utf8(&username_buf).unwrap_or("");
                     let pass = core::str::from_utf8(&password_buf).unwrap_or("");
+                    // Parity with the console getty's bare-Enter guard: a
+                    // stray Enter with no username re-prompts WITHOUT
+                    // consuming a failed attempt, so it can't silently burn
+                    // the brute-force budget.
+                    if user.is_empty() {
+                        error_msg.clear();
+                        continue;
+                    }
                     if verify_password(user, pass) {
                         match process::execve("/bin/ade", &["/bin/ade"], &[]) {
                             Ok(_) => return 0,
                             Err(_) => {
                                 let _ = io::write_all(1, b"[login] execve failed, continuing\n");
+                                error_msg.clear();
                                 password_buf.clear();
                             }
                         }
                     } else {
                         error_msg = String::from("Invalid username or password");
                         password_buf.clear();
+                        note_failed_attempt(&mut failures, &mut error_msg);
+                        // Serial announce (parity with the console getty's
+                        // "Login incorrect"): the QEMU harness asserts this
+                        // marker to prove a bad password re-prompts in place
+                        // (window up, no exit/respawn) on real hardware.
+                        io::print_str("\n[login] invalid credentials - re-prompting\n");
                     }
                 }
                 0x7F | 0x08 => {
@@ -129,7 +160,7 @@ fn user_main() -> i32 {
                     }
                     error_msg.clear();
                 }
-                c if c >= 0x20 && c < 0x7F => {
+                c if (0x20..0x7F).contains(&c) => {
                     if active_field == 0 {
                         if username_buf.len() < 32 {
                             username_buf.push(c);
@@ -209,7 +240,7 @@ fn user_main() -> i32 {
         let pw_text: String = if show_password {
             core::str::from_utf8(&password_buf).unwrap_or("").into()
         } else {
-            core::iter::repeat('*').take(password_buf.len()).collect()
+            "*".repeat(password_buf.len())
         };
         win.draw_string(field_x + 10, pwy + 10, &pw_text, theme.text, 0);
 
@@ -283,6 +314,18 @@ fn user_main() -> i32 {
         }
 
         let _ = win.flush();
+        // The 30 s backoff runs AFTER the frame is flushed so the "Too many
+        // failed attempts" message stays on screen for the whole pause; only
+        // a successful sleep disarms the counter (EINTR must not skip the
+        // backoff and re-arm the next burst), and the successful disarm also
+        // clears the pause message so the next attempt shows the plain
+        // "Invalid username or password" instead of the stale cap message.
+        // `&&` short-circuits exactly like the nested form: below the cap,
+        // nanosleep never runs.
+        if failures >= MAX_FAILED_ATTEMPTS && io::nanosleep(BACKOFF_NS).is_ok() {
+            failures = 0;
+            error_msg.clear();
+        }
         let _ = io::nanosleep(16_000_000);
     }
 }

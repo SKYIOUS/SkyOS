@@ -6,7 +6,7 @@ use libsarga::{gui::Window, sarga_main, theme::Theme};
 fn user_main() -> i32 {
     let mut win = Window::create("Paint", 800, 600).expect("Window::create failed");
     let theme = Theme::dark();
-    let mut colors = [
+    let colors = [
         0xFFFFFFFF, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF,
         0xFF000000,
     ];
@@ -45,9 +45,9 @@ fn user_main() -> i32 {
         win.draw_rect(0, 0, 800, 60, theme.bg_surface);
         win.draw_line_h(0, 60, 800, theme.border);
 
-        for i in 0..8 {
+        for (i, color) in colors.iter().enumerate() {
             let cx = 10 + i as u32 * 50;
-            win.draw_rounded_rect(cx, 10, 40, 40, 6, colors[i]);
+            win.draw_rounded_rect(cx, 10, 40, 40, 6, *color);
             if selected_color == i {
                 win.draw_rounded_rect_outline(cx, 10, 40, 40, 6, theme.accent);
             }

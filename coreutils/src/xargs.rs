@@ -35,7 +35,7 @@ fn user_main() -> i32 {
         }
         let mut child_args = cmd_args.clone();
         child_args.push(String::from(trimmed));
-        let pid = unsafe { syscall::syscall0(57) } as i64;
+        let pid = unsafe { syscall::syscall0(57) };
         if pid == 0 {
             let mut arg_ptrs = alloc::vec::Vec::new();
             for a in &child_args {

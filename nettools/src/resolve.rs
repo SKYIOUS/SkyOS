@@ -24,12 +24,9 @@ fn user_main() -> i32 {
     }
 
     if name.contains(':') {
-        match net::parse_ipv6(name) {
-            Some(ip6) => {
-                println!("{} is an IPv6 literal: [{}]", name, fmt_ipv6(&ip6));
-                return 0;
-            }
-            None => {}
+        if let Some(ip6) = net::parse_ipv6(name) {
+            println!("{} is an IPv6 literal: [{}]", name, fmt_ipv6(&ip6));
+            return 0;
         }
     }
 

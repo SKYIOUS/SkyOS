@@ -4,13 +4,14 @@ use crate::render::compositor::Canvas;
 use crate::render::snapshot::RenderSnapshot;
 
 pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
+    let accent_soft = (snap.theme.accent & 0x00FF_FFFF) | 0x10_000000;
     canvas.draw_gradient_rect(
         0,
         0,
         snap.screen_w,
         snap.screen_h,
-        0xFF1A1A2E,
-        0xFF0F0F1A,
+        snap.theme.bg_surface,
+        snap.theme.bg_primary,
         true,
     );
     canvas.draw_rounded_rect(
@@ -19,7 +20,7 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         300,
         300,
         150,
-        0x103D5AFE,
+        accent_soft,
     );
     canvas.draw_rounded_rect(
         snap.screen_w / 4,
@@ -27,6 +28,6 @@ pub(crate) fn draw(canvas: &mut Canvas, snap: &RenderSnapshot) {
         200,
         200,
         100,
-        0x103D5AFE,
+        accent_soft,
     );
 }

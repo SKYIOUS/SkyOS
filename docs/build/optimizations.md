@@ -4,48 +4,47 @@ SkyOS uses several optimization techniques for release builds.
 
 ## Link-Time Optimization (LTO)
 
-LTO is enabled in release builds for the kernel:
+LTO is enabled in release builds for the kernel (`kernel/kernel/Cargo.toml`):
 
 ```toml
 [profile.release]
-lto = "fat"
+opt-level = "z"   # size-optimized
+lto = true        # thin LTO
 codegen-units = 1
+panic = "abort"
 ```
-
-"Fat" LTO allows cross-language LTO between Rust and C/C++ code.
 
 ## Code Generation
 
 ```toml
 [profile.release]
-opt-level = 3
+opt-level = "z"
 debug = false
 panic = "abort"
 ```
 
-- **opt-level = 3**: Maximum optimization for speed
+- **opt-level = "z"**: Maximum optimization for size
 - **panic = "abort"**: No unwinding code, reduces binary size
+- **lto = true / codegen-units = 1**: Cross-crate inlining at the cost of compile time
 
 ## Target-Specific Optimizations
 
+The kernel's flags live in `kernel/kernel/.cargo/config.toml`:
+
 ```toml
-[target.x86_64-skyos-unknown]
+[target.x86_64-unknown-none]
 rustflags = [
-    "-C", "target-cpu=x86-64-v3",  # Modern x86_64 features
-    "-C", "link-arg=-Tlinker.ld",  # Custom linker script
-    "-C", "force-frame-pointers=no",  # Omit frame pointers for perf
+    "-C", "target-feature=-mmx,-sse,+soft-float",  # SIMD not saved on ctx switch
+    "-C", "link-arg=-Tlinker.ld",                  # Custom linker script
+    "-C", "relocation-model=static",
 ]
 ```
 
 ## Binary Size Reduction
 
 ```bash
-# Strip debug symbols
-cargo build --release
-strip -s target/x86_64-skyos/release/skyos
-
-# Use LTO for cross-crate inlining
-# Already enabled in profile.release
+# Strip debug symbols from the kernel ELF
+strip -s kernel/kernel/target/x86_64-unknown-none/release/vahi_kernel
 
 # Remove unused code
 rustflags = ["-C", "link-arg=--gc-sections"]
@@ -57,13 +56,13 @@ For maximum performance, PGO can be used:
 
 ```bash
 # Step 1: Build with instrumentation
-RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
+RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --target x86_64-sarga.json --release
 
 # Step 2: Run representative workloads in QEMU
-cargo run --release
+make run
 
 # Step 3: Rebuild using profiling data
-RUSTFLAGS="-Cprofile-use=/tmp/pgo-data" cargo build --release
+RUSTFLAGS="-Cprofile-use=/tmp/pgo-data" cargo build --target x86_64-sarga.json --release
 ```
 
 ## Compile-Time Optimization

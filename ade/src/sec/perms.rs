@@ -1,46 +1,12 @@
 //! Permissions layer — application capability grants.
 // Permission API v1.0 — STABLE
-#![allow(dead_code)]
 
+use crate::ipc::permission::AppPermission;
 use alloc::vec::Vec;
-
-pub(crate) const PERM_CLIPBOARD: u32 = 0x0001;
-pub(crate) const PERM_NOTIFICATIONS: u32 = 0x0002;
-pub(crate) const PERM_FILESYSTEM: u32 = 0x0004;
-pub(crate) const PERM_SETTINGS: u32 = 0x0008;
-pub(crate) const PERM_NETWORK: u32 = 0x0010;
-pub(crate) const PERM_EXEC: u32 = 0x0020;
-
-/// Permission API v1.0
-pub(crate) struct PermissionSet {
-    pub perms: u32,
-}
-
-impl PermissionSet {
-    pub fn new() -> Self {
-        PermissionSet { perms: 0 }
-    }
-
-    pub fn all() -> Self {
-        PermissionSet { perms: u32::MAX }
-    }
-
-    pub fn grant(&mut self, perm: u32) {
-        self.perms |= perm;
-    }
-
-    pub fn revoke(&mut self, perm: u32) {
-        self.perms &= !perm;
-    }
-
-    pub fn has(&self, perm: u32) -> bool {
-        self.perms & perm == perm
-    }
-}
 
 /// Permission API v1.0
 pub(crate) struct PermissionManager {
-    pub app_perms: Vec<(u64, PermissionSet)>, // pid → permissions
+    pub app_perms: Vec<(u64, AppPermission)>, // pid → permissions
 }
 
 impl PermissionManager {
@@ -50,19 +16,37 @@ impl PermissionManager {
         }
     }
 
-    pub fn register(&mut self, pid: u64, perms: PermissionSet) {
+    pub fn register(&mut self, pid: u64, perms: AppPermission) {
         self.app_perms.push((pid, perms));
     }
 
-    pub fn check(&self, pid: u64, perm: u32) -> bool {
+    pub fn check(&self, pid: u64, perm: AppPermission) -> bool {
         self.app_perms
             .iter()
             .find(|(p, _)| *p == pid)
-            .map(|(_, set)| set.has(perm))
+            .map(|(_, set)| set.contains(perm))
             .unwrap_or(false)
+    }
+
+    pub fn granted(&self, pid: u64) -> Option<AppPermission> {
+        self.app_perms
+            .iter()
+            .find(|(p, _)| *p == pid)
+            .map(|(_, set)| *set)
     }
 
     pub fn unregister(&mut self, pid: u64) {
         self.app_perms.retain(|(p, _)| *p != pid);
     }
+}
+
+/// Default grant for launched apps: everyday capabilities, no power or
+/// hardware access. // ponytail: flat grant until app manifests drive per-app
+/// permissions.
+pub(crate) fn default_grant() -> AppPermission {
+    AppPermission::CLIPBOARD
+        | AppPermission::NOTIFICATIONS
+        | AppPermission::FILESYSTEM
+        | AppPermission::WINDOW_CONTROL
+        | AppPermission::SETTINGS
 }

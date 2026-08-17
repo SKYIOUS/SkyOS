@@ -64,19 +64,6 @@ fn lookup_user(username: &str) -> Option<(u32, u32, alloc::vec::Vec<u8>, alloc::
     None
 }
 
-fn hex_decode(s: &[u8]) -> Option<alloc::vec::Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    let mut out = alloc::vec::Vec::with_capacity(s.len() / 2);
-    for chunk in s.chunks(2) {
-        let hi = (chunk[0] as char).to_digit(16)? as u8;
-        let lo = (chunk[1] as char).to_digit(16)? as u8;
-        out.push((hi << 4) | lo);
-    }
-    Some(out)
-}
-
 fn verify_password(username: &str, password: &str) -> bool {
     let data = match read_whole_file("/etc/shadow\0") {
         Ok(d) => d,
@@ -97,7 +84,7 @@ fn verify_password(username: &str, password: &str) -> bool {
             let mut parts2 = inner.splitn(2, |&b| b == b':');
             let salt_hex = parts2.next().unwrap_or(b"");
             let rest3 = parts2.next().unwrap_or(b"");
-            let salt_bytes = match hex_decode(salt_hex) {
+            let salt_bytes = match hash::hex_decode(salt_hex) {
                 Some(s) if s.len() == 16 => s,
                 _ => return false,
             };
@@ -112,7 +99,7 @@ fn verify_password(username: &str, password: &str) -> bool {
                     .parse()
                     .unwrap_or(10000);
             }
-            let stored_dk = match hex_decode(dk_hex) {
+            let stored_dk = match hash::hex_decode(dk_hex) {
                 Some(s) if s.len() == 32 => s,
                 _ => return false,
             };
@@ -160,8 +147,8 @@ fn user_main() -> i32 {
         io::print_str("\n");
     }
 
-    setgid(gid as u64);
-    setuid(uid as u64);
+    let _ = setgid(gid as u64);
+    let _ = setuid(uid as u64);
 
     let shell_name = core::str::from_utf8(&shell).unwrap_or("/bin/sash");
     let home_dir = core::str::from_utf8(&home).unwrap_or("/");
@@ -178,8 +165,8 @@ fn user_main() -> i32 {
         .map(|s: &alloc::string::String| s.as_str())
         .collect();
 
-    execve(shell_name, &[], &env_refs);
-    return 1;
+    let _ = execve(shell_name, &[], &env_refs);
+    1
 }
 
 sarga_main!(user_main);

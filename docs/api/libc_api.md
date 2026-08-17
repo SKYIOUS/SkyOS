@@ -1,52 +1,77 @@
-# Userspace libc API Reference
+# Userspace API Reference (`libsarga`)
 
-The SkyOS C standard library provides POSIX-compatible interfaces for userspace programs.
+SkyOS userspace is written in Rust (`#![no_std]`). The standard library is `libsarga`, located at `libsarga/`. There is no C libc.
 
-## Standard I/O
+## Entry Point
 
-```c
-int printf(const char *format, ...);
-int fprintf(FILE *stream, const char *format, ...);
-int sprintf(char *str, const char *format, ...);
-size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
-size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
-int fclose(FILE *stream);
-FILE *fopen(const char *path, const char *mode);
+Every program exports `main()` via the `sarga_main!` macro:
+
+```rust
+#[no_std]
+#[no_main]
+extern crate alloc;
+use libsarga::{println, sarga_main};
+
+fn user_main() -> i32 {
+    println!("hello");
+    0
+}
+sarga_main!(user_main);
 ```
 
-## Memory Management
+`libsarga` provides the `#[panic_handler]` and re-exports `alloc`.
 
-```c
-void *malloc(size_t size);
-void *calloc(size_t nmemb, size_t size);
-void *realloc(void *ptr, size_t size);
-void free(void *ptr);
-void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
-int munmap(void *addr, size_t length);
+## Standard I/O (`io`, `stdio`)
+
+- `println!` / `print!` / `fprintf!` macros
+- `libsarga::io::*` — raw syscall-backed I/O
+
+## Filesystem (`fs`)
+
+```rust
+pub fn open(path: &str, flags: u64) -> Result<i64, i64>;
+pub fn read(fd: i64, buf: &mut [u8]) -> Result<usize, i64>;
+pub fn write(fd: i64, buf: &[u8]) -> Result<usize, i64>;
+pub fn close(fd: i64) -> i64;
+pub fn stat(path: &str) -> Result<Stat, i64>;
+pub fn statfs(path: &str) -> Result<StatFs, i64>;
+pub fn read_to_string(path: &str) -> Result<String, i64>;
+pub fn write_file(path: &str, content: &str) -> Result<(), i64>;
+pub fn mount(source: &str, target: &str, fstype: &str, flags: u64) -> Result<(), i64>;
+pub fn umount(target: &str) -> Result<(), i64>;
+pub fn mkfs(fstype: &str, device: u64) -> Result<(), i64>;
 ```
 
-## String Functions
+## Memory (`mem`)
 
-```c
-size_t strlen(const char *s);
-char *strcpy(char *dest, const char *src);
-int strcmp(const char *s1, const char *s2);
-char *strchr(const char *s, int c);
-void *memcpy(void *dest, const void *src, size_t n);
-void *memset(void *s, int c, size_t n);
-int memcmp(const void *s1, const void *s2, size_t n);
-```
+`malloc`/`calloc`/`realloc`/`free` wrappers over the kernel heap + `mmap`/`munmap` syscalls.
 
-## System Call Wrappers
+## Processes & Threads (`process`, `thread`, `pthread`, `signal`, `sync`)
 
-```c
-ssize_t read(int fd, void *buf, size_t count);
-ssize_t write(int fd, const void *buf, size_t count);
-int open(const char *pathname, int flags, mode_t mode);
-int close(int fd);
-pid_t fork(void);
-int execve(const char *path, char *const argv[], char *const envp[]);
-void exit(int status);
-```
+- `process::exit`, `process::spawn`, `fork`/`exec`/`wait` wrappers
+- `thread::*`, `pthread::*` threading primitives
+- `signal::*` — signal handlers (see `docs/security/syscall_security.md`)
+- `sync::*` — mutex/condvar
 
-The libc translates these function calls into the appropriate `syscall` instruction invocations, handling errno propagation.
+## Networking (`net`) & IPC (`ipc`)
+
+- `net::*` — socket API (AF_INET/AF_INET6, TCP/UDP; see `docs/socket-api.md`)
+- `ipc::*` — userland message passing / service RPC
+
+## Graphics & GUI (`gui`, `glass`, widget modules)
+
+- `gui::*` — window/event syscall wrappers (see `docs/api/gui_syscalls.md`)
+- `glass::*` — hardware compositor API (Vahi-Glass)
+- Widget toolkit: `button`, `checkbox`, `combobox`, `dialog`, `label`, `layout`, `menubar`, `progress_bar`, `scrollbar`, `slider`, `tab_widget`, `textbox`, `theme`, `widget`
+
+## Misc (`toml`, `serialize`, `semver`, `uuid_util`, `random`, `hash`, `regex_util`, `datetime`, `vahiai`)
+
+TOML parser, serialization helpers, semver, UUIDs, RNG, hashing, regex helpers, chrono-backed dates, and the Vahiai LLM query helper.
+
+## Errors
+
+Syscall wrappers return `Result<T, i64>` with a negative errno; `libsarga::errno` has `set_errno`/`get_errno` for C-style code paths.
+
+## Full Module List
+
+`ai`, `args`, `config`, `datetime`, `errno`, `error`, `fs`, `gpu`, `gui`, `hash`, `init`, `init_services`, `io`, `ipc`, `libskyos`, `mem`, `net`, `posix`, `process`, `pthread`, `random`, `regex_util`, `semver`, `serialize`, `signal`, `start`, `stdio`, `sync`, `syscall`, `thread`, `time`, `toml`, `uuid_util`, `vahiai`, `version`, `glass`, plus the widget toolkit.

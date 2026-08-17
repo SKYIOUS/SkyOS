@@ -161,7 +161,7 @@ fn builtin_exec(args: &[String]) -> i64 {
 }
 
 fn builtin_echo(args: &[String]) -> i64 {
-    let newline = !args.get(1).map_or(false, |a| a == "-n");
+    let newline = args.get(1).is_none_or(|a| a != "-n");
     let start = if !newline && args.len() > 1 { 2 } else { 1 };
     let mut s = String::new();
     for (i, a) in args[start..].iter().enumerate() {
@@ -178,7 +178,7 @@ fn builtin_echo(args: &[String]) -> i64 {
 }
 
 fn builtin_test(args: &[String]) -> i64 {
-    let test_args = if args[0] == "[" && args.last().map_or(false, |a| a == "]") {
+    let test_args = if args[0] == "[" && args.last().is_some_and(|a| a == "]") {
         &args[1..args.len() - 1]
     } else {
         &args[1..]
@@ -301,16 +301,21 @@ fn is_executable(path: &str) -> bool {
 fn builtin_read(args: &[String]) -> i64 {
     let var = args
         .get(1)
-        .map(|s| s.clone())
+        .cloned()
         .unwrap_or_else(|| String::from("REPLY"));
-    let mut buf = [0u8; 4096];
-    let n = libsarga::io::read(0, &mut buf).unwrap_or(0);
-    if n == 0 {
-        return 1;
+    let mut line = alloc::string::String::new();
+    let mut buf = [0u8; 1];
+    loop {
+        let n = libsarga::io::read(0, &mut buf).unwrap_or(0);
+        if n == 0 {
+            break;
+        }
+        if buf[0] == b'\n' {
+            break;
+        }
+        line.push(buf[0] as char);
     }
-    let s = core::str::from_utf8(&buf[..n]).unwrap_or("");
-    let trimmed = s.trim_end_matches('\n');
-    crate::set_env(&var, trimmed);
+    crate::set_env(&var, &line);
     0
 }
 

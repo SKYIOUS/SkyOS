@@ -49,7 +49,7 @@ fn user_main() -> i32 {
             io::print_str(&alloc::format!("chown: {}: failed\n", file));
         }
     }
-    return 0;
+    0
 }
 
 sarga_main!(user_main);
